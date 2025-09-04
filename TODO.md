@@ -1,0 +1,3 @@
+- paste in images
+- specify a locally hosted model
+- specify a model hosted outside of Vertex Model Garden
