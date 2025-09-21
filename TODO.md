@@ -1,4 +1,5 @@
 - search the web, to enhance prompt queries whilst researching questions
+- chunk processing to workaround small token input count
 - paste in images - seems to work but requires more testing
 - specify a locally hosted model
 - specify a model hosted outside of Vertex Model Garden
