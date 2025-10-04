@@ -47,14 +47,15 @@ AVAILABLE_MODELS = {
         "display_name": "Claude 3.7 Sonnet",
         "max_input_tokens": 200000,
         "max_output_tokens": 64000,
-        "icon": "üöÄ",
+        "icon": "‚ö°",
         "color": "#FF6B6B",
         "description": "Fast, balanced performance with 200k input / 64k output tokens",
         "pricing": {
             "input": 0.003,
             "output": 0.015
         },
-        "supports_1m_context": False
+        "supports_1m_context": False,
+        "supports_memory": False
     },
     "claude-sonnet-4-5": {
         "publisher": "anthropic",
@@ -63,16 +64,17 @@ AVAILABLE_MODELS = {
         "max_input_tokens": 200000,  # Default, can be extended to 1M
         "max_output_tokens": 64000,
         "max_input_tokens_extended": 1000000,  # 1M context window
-        "icon": "‚ö°",
+        "icon": "üöÄ",
         "color": "#9333EA",
-        "description": "Latest Sonnet model with enhanced capabilities (supports 1M context)",
+        "description": "Latest Sonnet model with enhanced capabilities (supports 1M context + memory)",
         "pricing": {
             "input": 0.003,
             "output": 0.015,
             "input_premium": 0.006,  # 2x for >200K tokens
             "output_premium": 0.0225  # 1.5x for >200K tokens
         },
-        "supports_1m_context": True
+        "supports_1m_context": True,
+        "supports_memory": True  # Memory tool support
     },
     "claude-opus-4-1": {
         "publisher": "anthropic",
@@ -80,14 +82,15 @@ AVAILABLE_MODELS = {
         "display_name": "Claude 4.1 Opus",
         "max_input_tokens": 200000,
         "max_output_tokens": 32000,
-        "icon": "üíé",
+        "icon": "üëë",
         "color": "#C92A2A",
         "description": "Most capable model with 200k input / 32k output tokens",
         "pricing": {
             "input": 0.015,
             "output": 0.075
         },
-        "supports_1m_context": False
+        "supports_1m_context": False,
+        "supports_memory": False
     },
     "gemini-2-5-pro": {
         "publisher": "google",
@@ -95,14 +98,15 @@ AVAILABLE_MODELS = {
         "display_name": "Gemini 2.5 Pro",
         "max_input_tokens": 1048576,
         "max_output_tokens": 65536,
-        "icon": "üåü",
+        "icon": "üéØ",
         "color": "#4DABF7",
         "description": "Advanced multimodal with 1M+ input / 65k output tokens",
         "pricing": {
             "input": 0.0025,
             "output": 0.01
         },
-        "supports_1m_context": False
+        "supports_1m_context": False,
+        "supports_memory": False
     },
     "gemini-2-5-flash": {
         "publisher": "google",
@@ -117,7 +121,8 @@ AVAILABLE_MODELS = {
             "input": 0.00025,
             "output": 0.001
         },
-        "supports_1m_context": False
+        "supports_1m_context": False,
+        "supports_memory": False
     }
 }
 
@@ -226,7 +231,7 @@ class AboutDialog(QDialog):
         layout.addWidget(title_label)
 
         # Version info
-        version_label = QLabel("Version 1.2.0")
+        version_label = QLabel("Version 1.3.1 - Memory Support Edition")
         version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         version_label.setStyleSheet(f"color: {COLORS['text_secondary']}; margin-bottom: 20px;")
         layout.addWidget(version_label)
@@ -267,6 +272,17 @@ class AboutDialog(QDialog):
         <p>MEX (Model EXplorer) is a powerful desktop interface for Google Cloud's Vertex AI,
         providing easy access to multiple AI models including Claude and Gemini.</p>
 
+        <h3>üß† NEW: Memory Tool Support</h3>
+        <div class="info">
+            <p><b>Claude Sonnet 4.5 now includes memory capabilities!</b></p>
+            <ul>
+                <li>‚úÖ Disabled by default - enable via checkbox</li>
+                <li>üîß Toggle memory tool in the query interface</li>
+                <li>üí° AI can remember context across conversations</li>
+                <li>üìö Improves responses with persistent knowledge</li>
+            </ul>
+        </div>
+
         <h3>Token & Character Counting</h3>
         <div class="info">
             <p><b>Approximations used in MEX:</b></p>
@@ -284,19 +300,9 @@ class AboutDialog(QDialog):
             shown are estimates. The actual usage may differ by ¬±10-20%.</p>
         </div>
 
-        <h3>1M Context Window Support</h3>
-        <div class="info">
-            <p><b>Claude Sonnet 4.5</b> now supports up to 1 million tokens in the context window!</p>
-            <ul>
-                <li>Enable via the "Use 1M Context" checkbox</li>
-                <li>Shared between input and output tokens</li>
-                <li>Premium pricing applies for tokens >200K (2x input, 1.5x output)</li>
-                <li>Beta feature - subject to change</li>
-            </ul>
-        </div>
-
         <h3>Features</h3>
         <ul>
+            <li>üß† Memory tool support for Claude Sonnet 4.5 (disabled by default)</li>
             <li>Support for multiple AI models (Claude 3.7, 4.5, 4.1, Gemini 2.5)</li>
             <li>1M token context window for Claude Sonnet 4.5</li>
             <li>Real-time character and token counting</li>
@@ -310,14 +316,17 @@ class AboutDialog(QDialog):
             <li>Fictional pricing estimates</li>
         </ul>
 
-        <h3>Model Token Limits</h3>
-        <ul>
-            <li><b>Claude 3.7 Sonnet:</b> 200k input / 64k output tokens</li>
-            <li><b>Claude 4.5 Sonnet:</b> 200k input / 64k output tokens (1M with beta)</li>
-            <li><b>Claude 4.1 Opus:</b> 200k input / 32k output tokens</li>
-            <li><b>Gemini 2.5 Pro:</b> 1M+ input / 65k output tokens</li>
-            <li><b>Gemini 2.5 Flash:</b> 1M+ input / 65k output tokens</li>
-        </ul>
+        <h3>Memory Tool</h3>
+        <div class="info">
+            <p>The memory tool allows Claude to:</p>
+            <ul>
+                <li>Store information across conversations</li>
+                <li>Learn from past interactions</li>
+                <li>Build context over time</li>
+                <li>Provide more personalized responses</li>
+            </ul>
+            <p><b>Note:</b> Memory is model-specific and conversation-scoped.</p>
+        </div>
 
         <h3>Keyboard Shortcuts</h3>
         <ul>
@@ -616,12 +625,13 @@ class APIWorker(QThread):
     finished = pyqtSignal(str, str, str, int, int)  # response, error, raw_response, input_tokens, output_tokens
     progress = pyqtSignal(str, int)  # message, percentage
 
-    def __init__(self, model_config, prompt, credentials, use_1m_context=False):
+    def __init__(self, model_config, prompt, credentials, use_1m_context=False, use_memory=False):
         super().__init__()
         self.model_config = model_config
         self.prompt = prompt
         self.credentials = credentials
         self.use_1m_context = use_1m_context
+        self.use_memory = use_memory
         self._is_cancelled = False
 
     def cancel(self):
@@ -647,12 +657,22 @@ class APIWorker(QThread):
             else:
                 max_output = self.model_config["max_output_tokens"]
 
-            return {
+            payload = {
                 "anthropic_version": "vertex-2023-10-16",
                 "messages": [{"role": "user", "content": self.prompt}],
                 "max_tokens": max(1024, max_output),  # Ensure at least 1024 tokens
                 "stream": True
             }
+            
+            # Add memory tool if enabled and supported
+            if self.use_memory and self.model_config.get("supports_memory"):
+                payload["tools"] = [{
+                    "type": "memory_20250818",
+                    "name": "memory"
+                }]
+            
+            return payload
+            
         elif self.model_config["publisher"] == "google":
             return {
                 "contents": [{
@@ -667,7 +687,7 @@ class APIWorker(QThread):
             raise ValueError(f"Unknown publisher: {self.model_config['publisher']}")
 
     def parse_anthropic_stream(self, response_text):
-        """Parse Anthropic's Server-Sent Events streaming format - COMPLETE response."""
+        """Parse Anthropic's Server-Sent Events streaming format - handles text AND tool_use blocks."""
         full_text = ""
         lines = response_text.split('\n')
 
@@ -680,15 +700,31 @@ class APIWorker(QThread):
                     if data_str and data_str != '[DONE]':
                         data = json.loads(data_str)
 
-                        # Handle content_block_delta events
+                        # Handle content_block_delta events for TEXT content
                         if data.get("type") == "content_block_delta":
-                            delta_text = data.get("delta", {}).get("text", "")
-                            full_text += delta_text
+                            delta = data.get("delta", {})
+                            
+                            # Text content
+                            if delta.get("type") == "text_delta":
+                                delta_text = delta.get("text", "")
+                                full_text += delta_text
+                            
+                            # Tool use content (input_json_delta) - skip these
+                            elif delta.get("type") == "input_json_delta":
+                                logging.debug(f"Skipping tool_use input_json_delta: {delta.get('partial_json', '')}")
+                                continue
 
-                        # Handle content_block_start events (initial content)
+                        # Handle content_block_start events (initial content) - only for text blocks
                         elif data.get("type") == "content_block_start":
-                            block_text = data.get("content_block", {}).get("text", "")
-                            full_text += block_text
+                            content_block = data.get("content_block", {})
+                            
+                            # Only process text blocks, skip tool_use blocks
+                            if content_block.get("type") == "text":
+                                block_text = content_block.get("text", "")
+                                full_text += block_text
+                            elif content_block.get("type") == "tool_use":
+                                logging.debug(f"Skipping tool_use block: {content_block.get('name', 'unknown')}")
+                                continue
 
                 except json.JSONDecodeError as e:
                     logging.warning(f"Failed to parse line as JSON: {line[:100]}")
@@ -764,7 +800,12 @@ class APIWorker(QThread):
                 elif response_data and isinstance(response_data, dict):
                     if "content" in response_data:
                         if isinstance(response_data["content"], list) and len(response_data["content"]) > 0:
-                            return response_data["content"][0].get("text", "")
+                            # Filter out tool_use blocks, only get text blocks
+                            text_content = ""
+                            for block in response_data["content"]:
+                                if block.get("type") == "text":
+                                    text_content += block.get("text", "")
+                            return text_content
 
                 # If neither worked, return the raw text
                 logging.warning("Could not parse Anthropic response, returning raw text")
@@ -815,16 +856,28 @@ class APIWorker(QThread):
                 "Content-Type": "application/json; charset=utf-8"
             }
 
-            # Add beta header for 1M context window if enabled
+            # Add beta headers
+            beta_headers = []
+            
+            # Add 1M context header if enabled
             if self.use_1m_context and self.model_config.get("supports_1m_context"):
-                headers["anthropic-beta"] = "context-1m-2025-08-07"
+                beta_headers.append("context-1m-2025-08-07")
                 logging.info("Using 1M context window beta feature")
+
+            # Add memory header if enabled
+            if self.use_memory and self.model_config.get("supports_memory"):
+                beta_headers.append("context-management-2025-06-27")
+                logging.info("Using memory tool beta feature")
+            
+            # Combine beta headers
+            if beta_headers:
+                headers["anthropic-beta"] = ",".join(beta_headers)
 
             if self._is_cancelled:
                 self.finished.emit("", "Query cancelled by user", "", 0, 0)
                 return
 
-            self.progress.emit("üåê Sending request...", 50)
+            self.progress.emit("üì§ Sending request...", 50)
             logging.info(f"Sending request to: {url}")
             logging.info(f"Headers: {headers}")
             logging.info(f"Payload: {json.dumps(payload, indent=2)}")
@@ -841,7 +894,7 @@ class APIWorker(QThread):
                 self.finished.emit("", error_msg, "", 0, 0)
                 return
 
-            self.progress.emit("üìù Processing response...", 80)
+            self.progress.emit("üí¨ Processing response...", 80)
 
             # Read the COMPLETE response
             response_text = response.text
@@ -864,7 +917,7 @@ class APIWorker(QThread):
             self.finished.emit("", str(e), "", 0, 0)
 
 class QueryTab(QWidget):
-    """Individual query tab widget with enhanced design"""
+    """Individual query tab widget with enhanced design and memory support"""
     font_size_changed = pyqtSignal(int)  # Signal for font size changes
 
     def __init__(self, tab_name, credentials, parent=None):
@@ -907,12 +960,12 @@ class QueryTab(QWidget):
         header_layout.setSpacing(8)
 
         # Execute and Stop buttons
-        self.generate_btn = AnimatedButton("üåê Execute", primary=True)
+        self.generate_btn = AnimatedButton("üì§ Execute", primary=True)
         self.generate_btn.clicked.connect(self.generate_response)
         header_layout.addWidget(self.generate_btn)
 
         # Stop button (initially hidden)
-        self.stop_btn = AnimatedButton("üõë Stop", primary=True)
+        self.stop_btn = AnimatedButton("‚èπ Stop", primary=True)
         self.stop_btn.clicked.connect(self.stop_query)
         self.stop_btn.setVisible(False)
         self.stop_btn.setStyleSheet(f"""
@@ -986,7 +1039,61 @@ class QueryTab(QWidget):
         self.use_1m_context_checkbox.stateChanged.connect(self.update_pricing_estimate)
         header_layout.addWidget(self.use_1m_context_checkbox)
 
+        # Memory checkbox (only visible for supported models) - DISABLED BY DEFAULT
+        self.use_memory_checkbox = QCheckBox("üß† Memory")
+        self.use_memory_checkbox.setChecked(False)  # DISABLED BY DEFAULT
+        self.use_memory_checkbox.setStyleSheet(f"""
+            QCheckBox {{
+                color: {COLORS['secondary']};
+                font-size: {font_manager.base_size - 2}px;
+                font-weight: 600;
+            }}
+            QCheckBox::indicator {{
+                width: 14px;
+                height: 14px;
+                border-radius: 3px;
+                border: 1px solid {COLORS['border']};
+                background-color: {COLORS['surface']};
+            }}
+            QCheckBox::indicator:checked {{
+                background-color: {COLORS['secondary']};
+                border-color: {COLORS['secondary']};
+            }}
+        """)
+        self.use_memory_checkbox.setToolTip(
+            "Enable memory tool (beta)\n"
+            "‚Ä¢ AI can remember context across conversations\n"
+            "‚Ä¢ Improves responses with persistent knowledge\n"
+            "‚Ä¢ Only available for Claude Sonnet 4.5\n"
+            "‚Ä¢ DISABLED BY DEFAULT - check to enable"
+        )
+        self.use_memory_checkbox.stateChanged.connect(self.update_model_info)
+        header_layout.addWidget(self.use_memory_checkbox)
+
         header_layout.addStretch()
+
+        # Raw JSON checkbox - MOVED TO LEFT OF DARK MODE BUTTON POSITION
+        self.show_raw_json_checkbox = QCheckBox("Raw JSON")
+        self.show_raw_json_checkbox.setChecked(False)
+        self.show_raw_json_checkbox.setStyleSheet(f"""
+            QCheckBox {{
+                color: {COLORS['text_secondary']};
+                font-size: {font_manager.base_size - 2}px;
+            }}
+            QCheckBox::indicator {{
+                width: 14px;
+                height: 14px;
+                border-radius: 3px;
+                border: 1px solid {COLORS['border']};
+                background-color: {COLORS['surface']};
+            }}
+            QCheckBox::indicator:checked {{
+                background-color: {COLORS['primary']};
+                border-color: {COLORS['primary']};
+            }}
+        """)
+        self.show_raw_json_checkbox.stateChanged.connect(self.toggle_response_format)
+        header_layout.addWidget(self.show_raw_json_checkbox)
 
         # Pricing label
         self.pricing_label = QLabel("")
@@ -1021,28 +1128,6 @@ class QueryTab(QWidget):
             font-weight: 600;
         """)
 
-        # Raw JSON checkbox
-        self.show_raw_json_checkbox = QCheckBox("Raw JSON")
-        self.show_raw_json_checkbox.setChecked(False)
-        self.show_raw_json_checkbox.setStyleSheet(f"""
-            QCheckBox {{
-                color: {COLORS['text_secondary']};
-                font-size: {font_manager.base_size - 2}px;
-            }}
-            QCheckBox::indicator {{
-                width: 14px;
-                height: 14px;
-                border-radius: 3px;
-                border: 1px solid {COLORS['border']};
-                background-color: {COLORS['surface']};
-            }}
-            QCheckBox::indicator:checked {{
-                background-color: {COLORS['primary']};
-                border-color: {COLORS['primary']};
-            }}
-        """)
-        self.show_raw_json_checkbox.stateChanged.connect(self.toggle_response_format)
-
         # Add Save button
         self.save_btn = AnimatedButton("üíæ Save")
         self.save_btn.clicked.connect(self.save_response)
@@ -1062,7 +1147,6 @@ class QueryTab(QWidget):
 
         header_layout.addWidget(self.input_char_count_label)
         header_layout.addWidget(self.input_token_count_label)
-        header_layout.addWidget(self.show_raw_json_checkbox)
         header_layout.addWidget(self.save_btn)
         header_layout.addWidget(self.copy_output_btn)
         header_layout.addWidget(self.copy_btn)
@@ -1116,7 +1200,7 @@ class QueryTab(QWidget):
 
         # Response header
         response_header = QHBoxLayout()
-        response_label = QLabel("üìÑ Response")
+        response_label = QLabel("üí¨ Response")
         response_label.setFont(font_manager.get_font("subheading"))
         response_label.setStyleSheet(f"color: {COLORS['text_primary']}; font-weight: 600;")
 
@@ -1284,7 +1368,7 @@ class QueryTab(QWidget):
         self.stop_btn.setVisible(False)
         self.generate_btn.setEnabled(True)
         self.progress_bar.setVisible(False)
-        self.response_info.setText("üõë Stopped")
+        self.response_info.setText("‚èπ Stopped")
         self.show_message("Query stopped", "warning")
 
     def copy_output(self):
@@ -1354,10 +1438,12 @@ class QueryTab(QWidget):
 
                 # Add metadata header
                 use_1m = "Yes" if self.use_1m_context_checkbox.isChecked() else "No"
+                use_memory = "Yes" if self.use_memory_checkbox.isChecked() else "No"
                 metadata = f"""# Generated by MEX - Model EXplorer
 # Date: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 # Model: {self.model_combo.currentText()}
 # 1M Context: {use_1m}
+# Memory Tool: {use_memory}
 # Query Length: {len(self.prompt_edit.toPlainText())} characters
 # Response Length: {len(content_to_save)} characters
 # Format: {'Raw JSON' if (file_path.endswith('.json') or self.show_raw_json_checkbox.isChecked()) else 'Parsed Text'}
@@ -1401,6 +1487,10 @@ class QueryTab(QWidget):
             supports_1m = config.get("supports_1m_context", False)
             self.use_1m_context_checkbox.setVisible(supports_1m)
 
+            # Show/hide memory checkbox based on model support
+            supports_memory = config.get("supports_memory", False)
+            self.use_memory_checkbox.setVisible(supports_memory)
+
             # Determine max input tokens based on 1M context setting
             if self.use_1m_context_checkbox.isChecked() and supports_1m:
                 max_input = config.get("max_input_tokens_extended", config["max_input_tokens"])
@@ -1411,9 +1501,10 @@ class QueryTab(QWidget):
             input_display = self.format_token_display(max_input)
             output_display = self.format_token_display(config['max_output_tokens'])
 
-            # Update the label to show input/output limits
+            # Update the label to show input/output limits with memory indicator
             context_note = " (1M)" if self.use_1m_context_checkbox.isChecked() and supports_1m else ""
-            self.model_info.setText(f"{input_display}/{output_display} tokens{context_note}")
+            memory_note = " üß†" if self.use_memory_checkbox.isChecked() and supports_memory else ""
+            self.model_info.setText(f"{input_display}/{output_display} tokens{context_note}{memory_note}")
 
             # Calculate approximate words and characters
             input_words = int(max_input * 0.75)
@@ -1441,6 +1532,13 @@ class QueryTab(QWidget):
             <br><b>Premium Pricing (>200K tokens):</b><br>
             Input: ${pricing.get('input_premium', pricing['input'] * 2):.3f} per 1K tokens<br>
             Output: ${pricing.get('output_premium', pricing['output'] * 1.5):.3f} per 1K tokens<br>
+                """
+
+            if supports_memory:
+                memory_status = "ENABLED" if self.use_memory_checkbox.isChecked() else "disabled"
+                tooltip_text += f"""
+            <br><b>Memory Tool:</b> {memory_status}<br>
+            {'‚úÖ AI can remember context across conversations' if self.use_memory_checkbox.isChecked() else '‚ùå Memory tool disabled'}
                 """
 
             tooltip_text += f"""
@@ -1678,7 +1776,7 @@ class QueryTab(QWidget):
             self.response_edit.setPlainText(self.parsed_response)
 
     def generate_response(self):
-        """Generate response with enhanced UX"""
+        """Generate response with enhanced UX and memory support"""
         prompt = self.prompt_edit.toPlainText().strip()
 
         if not prompt:
@@ -1703,6 +1801,9 @@ class QueryTab(QWidget):
 
         # Get 1M context setting
         use_1m_context = self.use_1m_context_checkbox.isChecked() and model_config.get("supports_1m_context", False)
+        
+        # Get memory setting
+        use_memory = self.use_memory_checkbox.isChecked() and model_config.get("supports_memory", False)
 
         # Start timing
         self.query_timer.start()
@@ -1721,7 +1822,11 @@ class QueryTab(QWidget):
         self.output_char_count_label.setVisible(False)
         self.output_token_count_label.setVisible(False)
 
-        self.worker = APIWorker(model_config, prompt, self.credentials, use_1m_context)
+        # Show memory status in progress
+        if use_memory:
+            self.show_message("üß† Memory tool enabled", "info")
+
+        self.worker = APIWorker(model_config, prompt, self.credentials, use_1m_context, use_memory)
         self.worker.progress.connect(self.on_progress)
         self.worker.finished.connect(self.on_response)
         self.worker.start()
@@ -1804,7 +1909,8 @@ class QueryTab(QWidget):
                     price_text = f"${total_cost:.2f}"
 
                 premium_note = " (Premium)" if use_1m and total_tokens > 200000 else ""
-                self.response_info.setText(f"‚úÖ {elapsed:.1f}s | {price_text} USD*{premium_note}")
+                memory_note = " üß†" if self.use_memory_checkbox.isChecked() and self.current_model_config.get("supports_memory") else ""
+                self.response_info.setText(f"‚úÖ {elapsed:.1f}s | {price_text} USD*{premium_note}{memory_note}")
 
                 tooltip = (
                     f"Query completed in {elapsed:.1f} seconds\n"
@@ -1815,6 +1921,9 @@ class QueryTab(QWidget):
 
                 if use_1m and total_tokens > 200000:
                     tooltip += "\n‚ö†Ô∏è Premium pricing applied for tokens >200K\n"
+                
+                if self.use_memory_checkbox.isChecked() and self.current_model_config.get("supports_memory"):
+                    tooltip += "\nüß† Memory tool enabled\n"
 
                 tooltip += "\n*Fictional pricing for demonstration only"
 
@@ -1828,7 +1937,10 @@ class QueryTab(QWidget):
             self.response_edit.setTextCursor(cursor)
             self.response_edit.ensureCursorVisible()
 
-            self.show_message(f"Query executed successfully! ({len(response):,} chars)", "success")
+            success_msg = f"Query executed successfully! ({len(response):,} chars)"
+            if self.use_memory_checkbox.isChecked() and self.current_model_config.get("supports_memory"):
+                success_msg += " üß† Memory active"
+            self.show_message(success_msg, "success")
 
     def clear_all(self):
         """Clear all fields"""
@@ -1946,7 +2058,7 @@ class MainWindow(QMainWindow):
         app_title.setStyleSheet(f"color: {COLORS['text_primary']}; margin: 0 20px;")
 
         # Add project badge
-        project_badge = QLabel(f"üîß {PROJECT_ID}")
+        project_badge = QLabel(f"üéØ {PROJECT_ID}")
         project_badge.setStyleSheet(f"""
             color: {COLORS['primary']};
             font-size: {font_manager.base_size - 1}px;
@@ -2335,3 +2447,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
