@@ -972,9 +972,9 @@ class QueryTab(QWidget):
         top_layout.setSpacing(8)
         top_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Compact Header with Model Selector
-        header_layout = QHBoxLayout()
-        header_layout.setSpacing(8)
+        # Compact Header with Model Selector - using VBoxLayout for two rows
+        header_layout = QVBoxLayout()
+        header_layout.setSpacing(4)
 
         # First row: Execute, Stop, Model selector, and checkboxes
         first_row = QHBoxLayout()
@@ -1091,29 +1091,6 @@ class QueryTab(QWidget):
         self.use_memory_checkbox.stateChanged.connect(self.update_model_info)
         first_row.addWidget(self.use_memory_checkbox)
 
-        # Raw JSON checkbox
-        self.show_raw_json_checkbox = QCheckBox("Raw JSON")
-        self.show_raw_json_checkbox.setChecked(False)
-        self.show_raw_json_checkbox.setStyleSheet(f"""
-            QCheckBox {{
-                color: {COLORS['text_secondary']};
-                font-size: {font_manager.base_size - 2}px;
-            }}
-            QCheckBox::indicator {{
-                width: 14px;
-                height: 14px;
-                border-radius: 3px;
-                border: 1px solid {COLORS['border']};
-                background-color: {COLORS['surface']};
-            }}
-            QCheckBox::indicator:checked {{
-                background-color: {COLORS['primary']};
-                border-color: {COLORS['primary']};
-            }}
-        """)
-        self.show_raw_json_checkbox.stateChanged.connect(self.toggle_response_format)
-        first_row.addWidget(self.show_raw_json_checkbox)
-
         first_row.addStretch()
 
         # Input character and token count labels
@@ -1186,8 +1163,14 @@ class QueryTab(QWidget):
         second_row.addWidget(self.create_project_btn)
         second_row.addStretch()
 
+        # Add both rows to header layout
         header_layout.addLayout(first_row)
         header_layout.addLayout(second_row)
+
+        # Create a hidden Raw JSON checkbox for compatibility (controlled by main window)
+        self.show_raw_json_checkbox = QCheckBox()
+        self.show_raw_json_checkbox.setVisible(False)
+        self.show_raw_json_checkbox.stateChanged.connect(self.toggle_response_format)
 
         # Prompt Input - now with 9 lines minimum height
         self.prompt_edit = QTextEdit()
@@ -2217,6 +2200,29 @@ class MainWindow(QMainWindow):
 
         header_layout.addStretch()
 
+        # Raw JSON checkbox - moved to main header
+        self.raw_json_checkbox = QCheckBox("Raw JSON")
+        self.raw_json_checkbox.setChecked(False)
+        self.raw_json_checkbox.setStyleSheet(f"""
+            QCheckBox {{
+                color: {COLORS['text_secondary']};
+                font-size: {font_manager.base_size}px;
+            }}
+            QCheckBox::indicator {{
+                width: 16px;
+                height: 16px;
+                border-radius: 3px;
+                border: 1px solid {COLORS['border']};
+                background-color: {COLORS['surface']};
+            }}
+            QCheckBox::indicator:checked {{
+                background-color: {COLORS['primary']};
+                border-color: {COLORS['primary']};
+            }}
+        """)
+        self.raw_json_checkbox.stateChanged.connect(self.toggle_raw_json_all_tabs)
+        header_layout.addWidget(self.raw_json_checkbox)
+
         # Dark/Light mode toggle button
         self.theme_btn = AnimatedButton("🌙 Dark" if not theme_manager.is_dark_mode else "☀️ Light")
         self.theme_btn.clicked.connect(self.toggle_theme)
@@ -2304,6 +2310,12 @@ class MainWindow(QMainWindow):
 
         central_widget.setLayout(main_layout)
 
+    def toggle_raw_json_all_tabs(self):
+        """Toggle raw JSON display for all tabs"""
+        is_checked = self.raw_json_checkbox.isChecked()
+        for tab in self.tabs:
+            tab.show_raw_json_checkbox.setChecked(is_checked)
+
     def toggle_theme(self):
         """Toggle between dark and light mode"""
         global COLORS
@@ -2329,6 +2341,24 @@ class MainWindow(QMainWindow):
         self.sync_checkbox.setStyleSheet(f"""
             QCheckBox {{
                 color: {COLORS['text_primary']};
+                font-size: {font_manager.base_size}px;
+            }}
+            QCheckBox::indicator {{
+                width: 16px;
+                height: 16px;
+                border-radius: 3px;
+                border: 1px solid {COLORS['border']};
+                background-color: {COLORS['surface']};
+            }}
+            QCheckBox::indicator:checked {{
+                background-color: {COLORS['primary']};
+                border-color: {COLORS['primary']};
+            }}
+        """)
+
+        self.raw_json_checkbox.setStyleSheet(f"""
+            QCheckBox {{
+                color: {COLORS['text_secondary']};
                 font-size: {font_manager.base_size}px;
             }}
             QCheckBox::indicator {{
