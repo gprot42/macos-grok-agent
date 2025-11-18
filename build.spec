@@ -7,7 +7,14 @@ a = Analysis(
     datas=[('README.md', '.'), ('resources', 'resources')],
     hiddenimports=[
         'google.auth',
-        'google.auth.transport.requests'
+        'google.auth.transport.requests',
+        'PyQt6',
+        'PyQt6.QtCore',
+        'PyQt6.QtGui',
+        'PyQt6.QtWidgets',
+        'PyQt6.QtWebEngineWidgets',
+        'PyQt6.QtWebEngineCore',
+        'PyQt6.sip',
     ],
     hookspath=[],
     hooksconfig={},

@@ -162,7 +162,7 @@ AVAILABLE_MODELS = {
     "gemini-3-pro-preview": {
         "publisher": "google",
         "model_id": "gemini-3-pro-preview-11-2025:streamGenerateContent",
-        "ai_studio_model_id": "gemini-3-pro-preview-11-2025",
+        "ai_studio_model_id": "gemini-3-pro-preview",
         "display_name": "Gemini 3 Pro Preview",
         "max_input_tokens": 2097152,
         "max_output_tokens": 65536,
