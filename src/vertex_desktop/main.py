@@ -139,6 +139,22 @@ AVAILABLE_MODELS = {
         },
         "supports_1m_context": False,
         "supports_memory": False
+    },
+    "gemini-3-pro": {
+        "publisher": "google",
+        "model_id": "gemini-3.0-pro-001@default:streamGenerateContent",
+        "display_name": "Gemini 3 Pro",
+        "max_input_tokens": 2097152,
+        "max_output_tokens": 65536,
+        "icon": "🌟",
+        "color": "#4285F4",
+        "description": "Next-gen multimodal model with 2M+ input / 65k output tokens",
+        "pricing": {
+            "input": 0.0025,
+            "output": 0.01
+        },
+        "supports_1m_context": True,
+        "supports_memory": False
     }
 }
 
@@ -855,6 +871,7 @@ class APIWorker(QThread):
 
             self.progress.emit("🔐 Authenticating...", 20)
             access_token = self.get_access_token()
+            logging.info(f"🔑 Access Token (masked): {access_token[:10]}...{access_token[-5:]}")
 
             if self._is_cancelled:
                 self.finished.emit("", "Query cancelled by user", "", 0, 0)
@@ -908,6 +925,7 @@ class APIWorker(QThread):
             if response.status_code != 200:
                 error_msg = f"API call failed with status {response.status_code}: {response.text}"
                 logging.error(error_msg)
+                logging.error(f"Response Headers: {response.headers}")
                 self.finished.emit("", error_msg, "", 0, 0)
                 return
 
@@ -1279,6 +1297,7 @@ class QueryTab(QWidget):
         # Status label (compact)
         self.status_label = QLabel("")
         self.status_label.setWordWrap(True)
+        self.status_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.status_label.setVisible(False)
         self.status_label.setMaximumHeight(30)
         self.update_status_style()
@@ -2094,6 +2113,13 @@ class QueryTab(QWidget):
     def show_message(self, message, msg_type="info"):
         """Show status message with appropriate styling"""
         self.status_label.setVisible(True)
+        self.status_label.setWordWrap(True)  # Enable word wrapping
+
+        # Adjust height for errors to show more text
+        if msg_type == "error":
+            self.status_label.setMaximumHeight(150)  # Allow taller for errors
+        else:
+            self.status_label.setMaximumHeight(60)  # Normal height
 
         if msg_type == "success":
             icon = "✅"
@@ -2116,14 +2142,15 @@ class QueryTab(QWidget):
         self.status_label.setStyleSheet(f"""
             background-color: {bg_color};
             color: {text_color};
-            padding: 6px;
+            padding: 8px;
             border-radius: 4px;
             font-size: {font_manager.base_size}px;
             font-weight: 500;
         """)
 
-        # Auto-hide after delay
-        QTimer.singleShot(3000, lambda: self.status_label.setVisible(False))
+        # Auto-hide after delay - longer for errors
+        delay = 10000 if msg_type == "error" else 3000
+        QTimer.singleShot(delay, lambda: self.status_label.setVisible(False))
 
 class MainWindow(QMainWindow):
     """Enhanced main application window"""
@@ -2138,7 +2165,7 @@ class MainWindow(QMainWindow):
     def authenticate(self):
         """Authenticate with Google Cloud"""
         try:
-            self.credentials, project = default()
+            self.credentials, project = default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
             logging.info(f"✅ Authenticated with credentials for project: {project}")
         except Exception as e:
             logging.error(f"❌ Authentication failed: {e}")
