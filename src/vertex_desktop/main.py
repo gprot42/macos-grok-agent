@@ -140,10 +140,10 @@ AVAILABLE_MODELS = {
         "supports_1m_context": False,
         "supports_memory": False
     },
-    "gemini-3-pro": {
+    "gemini-3-pro-preview": {
         "publisher": "google",
-        "model_id": "gemini-3.0-pro-001@default:streamGenerateContent",
-        "display_name": "Gemini 3 Pro",
+        "model_id": "gemini-3-pro-preview-11-2025:streamGenerateContent",
+        "display_name": "Gemini 3 Pro Preview",
         "max_input_tokens": 2097152,
         "max_output_tokens": 65536,
         "icon": "🌟",
