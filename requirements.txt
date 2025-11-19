@@ -4,3 +4,4 @@ PyQt6-WebEngine>=6.6.0
 requests>=2.31.0
 google-auth>=2.25.0
 pyinstaller
+cryptography>=41.0.0

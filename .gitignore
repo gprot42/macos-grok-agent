@@ -62,6 +62,8 @@ Desktop.ini
 .env.local
 secrets.json
 config.json
+*.enc  # Encrypted API keys and secrets
+api_key.enc
 
 # Coverage and testing
 coverage/

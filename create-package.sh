@@ -13,9 +13,14 @@ SPEC_FILE="build.spec"
 
 # --- Pre-flight Checks and Setup ---
 echo "--- Starting Package Creation Process ---"
-# (Pre-flight checks remain the same)
+
+# Activate virtual environment if it exists
+if [ -d ".venv" ]; then
+    echo "Activating virtual environment..."
+    source .venv/bin/activate
+fi
+
 command -v uv >/dev/null 2>&1 || { echo >&2 "Error: 'uv' is not installed."; exit 1; }
-command -v pyinstaller >/dev/null 2>&1 || { echo >&2 "Error: 'pyinstaller' is not installed."; exit 1; }
 
 if [ ! -f "${SPEC_FILE}" ]; then
     echo "Error: Build spec file not found at '${SPEC_FILE}'. Please create it."
@@ -40,7 +45,30 @@ rm -rf "${DIST_DIR}" "${BUILD_DIR}" "${PKG_OUTPUT_NAME}" "${DMG_OUTPUT_NAME}"
 
 # --- Install Dependencies ---
 echo "Installing/updating Python dependencies with uv..."
-uv pip install -e . pyinstaller
+if [ -f "requirements.txt" ]; then
+    echo "Installing dependencies from requirements.txt..."
+    uv pip install -r requirements.txt
+else
+    echo "Warning: requirements.txt not found. Installing minimal dependencies..."
+    uv pip install pyinstaller
+fi
+
+# Verify critical dependencies are installed
+echo "Verifying critical dependencies..."
+MISSING_DEPS=()
+python3 -c "import PyQt6" 2>/dev/null || MISSING_DEPS+=("PyQt6")
+python3 -c "import google.auth" 2>/dev/null || MISSING_DEPS+=("google-auth")
+python3 -c "import requests" 2>/dev/null || MISSING_DEPS+=("requests")
+
+if [ ${#MISSING_DEPS[@]} -ne 0 ]; then
+    echo "Error: Missing critical dependencies: ${MISSING_DEPS[*]}"
+    echo "Please ensure requirements.txt is complete and try again."
+    exit 1
+fi
+echo "All critical dependencies verified."
+
+# Verify PyInstaller is available
+command -v pyinstaller >/dev/null 2>&1 || { echo >&2 "Error: 'pyinstaller' is not installed/found in path."; exit 1; }
 
 # --- Create the App Bundle with PyInstaller ---
 echo "Creating the application bundle using '${SPEC_FILE}'..."
