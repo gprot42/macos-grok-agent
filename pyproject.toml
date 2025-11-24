@@ -1,7 +1,7 @@
 # pyproject.toml
 [project]
 name = "vertex-ai-client" # Or whatever you want your pip-installable name to be
-version = "1.0.0"
+version = "1.5.1"
 description = "Desktop client for Vertex AI"
 # ... other project metadata ...
 

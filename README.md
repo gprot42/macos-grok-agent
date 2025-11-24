@@ -4,7 +4,7 @@ A powerful desktop application for interacting with Large Language Models on **G
 
 ## Features
 
-- **Multi-Model Support**: Claude (4.5 Haiku, 4.5 Sonnet, 4.1 Opus) and Gemini (2.5 Pro, 2.5 Flash, 3 Pro Preview)
+- **Multi-Model Support**: Claude (4.5 Haiku, 4.5 Sonnet, 4.1, 4.5 Opus) and Gemini (2.5 Pro, 2.5 Flash, 3 Pro Preview)
 - **Dual Endpoints**: Switch between Vertex AI and AI Studio
 - **📎 File Upload**: Attach text files, images, and PDFs with your prompts (up to 10MB)
 - **1M Context Window**: Available for Claude 4.5 Sonnet
@@ -59,4 +59,4 @@ For **AI Studio** users: Your API key is automatically encrypted and saved to `~
 
 ---
 
-**Version 1.5.0** - Theme & UI Edition
+**Version 1.5.1** - Theme & UI Edition
