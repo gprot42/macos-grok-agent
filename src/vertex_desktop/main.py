@@ -223,6 +223,23 @@ AVAILABLE_MODELS = {
         "supports_memory": True,  # Memory tool support
         "endpoint_support": [ENDPOINT_VERTEX_AI]
     },
+    "claude-opus-4-5": {
+        "publisher": "anthropic",
+        "model_id": "claude-opus-4-5@20251101:streamRawPredict",
+        "display_name": "Claude 4.5 Opus",
+        "max_input_tokens": 200000,
+        "max_output_tokens": 64000,
+        "icon": "👑",
+        "color": "#C92A2A",
+        "description": "Most capable model for coding, agents, and enterprise workflows",
+        "pricing": {
+            "input": 0.015,
+            "output": 0.075
+        },
+        "supports_1m_context": False,
+        "supports_memory": False,
+        "endpoint_support": [ENDPOINT_VERTEX_AI]
+    },
     "claude-opus-4-1": {
         "publisher": "anthropic",
         "model_id": "claude-opus-4-1@20250805:streamRawPredict",
@@ -444,7 +461,7 @@ class AboutDialog(QDialog):
         layout.addWidget(title_label)
 
         # Version info
-        version_label = QLabel("Version 1.3.2 - File Upload Edition")
+        version_label = QLabel("Version 1.3.3 - Claude Opus 4.5 Edition")
         version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         version_label.setStyleSheet(f"color: {COLORS['text_secondary']}; margin-bottom: 20px;")
         layout.addWidget(version_label)
@@ -529,7 +546,7 @@ class AboutDialog(QDialog):
             <li>📎 File upload support (text, images, PDFs up to 10MB)</li>
             <li>🔷 Dual endpoints: Vertex AI and AI Studio</li>
             <li>🧠 Memory tool for Claude Sonnet 4.5 (optional)</li>
-            <li>🤖 Multiple AI models (Claude 4.5 Haiku, 3.7, Sonnet 4.5, Opus 4.1, Gemini 2.5, 3.0)</li>
+            <li>🤖 Multiple AI models (Claude 4.5 Haiku, Sonnet 4.5, Opus 4.5, Gemini 2.5, 3.0)</li>
             <li>📊 1M token context window for Claude Sonnet 4.5</li>
             <li>📁 Create project structure from AI responses</li>
             <li>📏 Real-time character and token counting</li>
@@ -1565,8 +1582,12 @@ class QueryTab(QWidget):
         for key, config in AVAILABLE_MODELS.items():
             self.model_combo.addItem(f"{config['icon']} {config['display_name']}", key)
 
-        # Set Claude 4.5 Sonnet as default (it's the second item after adding Haiku)
-        self.model_combo.setCurrentIndex(2)
+        # Set Claude 4.5 Opus as default
+        index = self.model_combo.findData("claude-opus-4-5")
+        if index >= 0:
+            self.model_combo.setCurrentIndex(index)
+        else:
+            self.model_combo.setCurrentIndex(2)
 
         # Model info label with tooltip
         self.model_info = QLabel("")

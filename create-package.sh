@@ -122,14 +122,14 @@ if [ "${DEVELOPER_ID_INSTALLER_IDENTITY}" = "Developer ID Installer: Your Develo
     productbuild \
         --component "${APP_BUNDLE_FULL_PATH}" "/Applications" \
         --identifier "${APP_IDENTIFIER}" \
-        --version "1.0.0" \
+        --version "1.3.3" \
         "${PKG_OUTPUT_NAME}"
-else
+    else
     echo "Attempting to sign PKG with identity: '${DEVELOPER_ID_INSTALLER_IDENTITY}'"
     productbuild \
         --component "${APP_BUNDLE_FULL_PATH}" "/Applications" \
         --identifier "${APP_IDENTIFIER}" \
-        --version "1.0.0" \
+        --version "1.3.3" \
         --sign "${DEVELOPER_ID_INSTALLER_IDENTITY}" \
         "${PKG_OUTPUT_NAME}"
 fi
