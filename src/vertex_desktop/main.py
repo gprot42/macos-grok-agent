@@ -273,6 +273,7 @@ AVAILABLE_MODELS = {
         },
         "supports_1m_context": False,
         "supports_memory": False,
+        "supports_grounding": True,
         "endpoint_support": [ENDPOINT_VERTEX_AI, ENDPOINT_AI_STUDIO]
     },
     "gemini-2-5-flash": {
@@ -312,6 +313,27 @@ AVAILABLE_MODELS = {
         "supports_memory": False,
         "supports_grounding": True,
         "endpoint_support": [ENDPOINT_VERTEX_AI, ENDPOINT_AI_STUDIO]
+    },
+    "gemini-3-pro-preview-deep-think": {
+        "publisher": "google",
+        "model_id": "gemini-3-pro-preview:generateContent",
+        "ai_studio_model_id": "gemini-3-pro-preview",
+        "display_name": "Gemini 3 Pro Deep Think",
+        "max_input_tokens": 2097152,
+        "max_output_tokens": 65536,
+        "icon": "🧠",
+        "color": "#9334E6",
+        "description": "Deep Thinking + Google Search Grounding with thinking levels (none/low/medium/high)",
+        "pricing": {
+            "input": 0.0025,   # $2.50 per 1M tokens
+            "output": 0.015   # $15.00 per 1M tokens
+        },
+        "supports_1m_context": False,
+        "supports_memory": False,
+        "supports_grounding": True,
+        "supports_deep_thinking": True,
+        "default_thinking_level": "high",
+        "endpoint_support": [ENDPOINT_AI_STUDIO]  # Deep thinking only on AI Studio
     }
 }
 
@@ -869,7 +891,7 @@ class APIWorker(QThread):
     finished = pyqtSignal(str, str, str, int, int)  # response, error, raw_response, input_tokens, output_tokens
     progress = pyqtSignal(str, int)  # message, percentage
 
-    def __init__(self, model_config, prompt, credentials, use_1m_context=False, use_memory=False, endpoint_type=ENDPOINT_VERTEX_AI, api_key=None, file_path=None, file_data=None, history=None, use_grounding=False, custom_url=None):
+    def __init__(self, model_config, prompt, credentials, use_1m_context=False, use_memory=False, endpoint_type=ENDPOINT_VERTEX_AI, api_key=None, file_path=None, file_data=None, history=None, use_grounding=False, custom_url=None, thinking_level=None, include_thoughts=True):
         super().__init__()
         self.model_config = model_config
         self.prompt = prompt
@@ -883,6 +905,8 @@ class APIWorker(QThread):
         self.history = history or []
         self.use_grounding = use_grounding
         self.custom_url = custom_url
+        self.thinking_level = thinking_level
+        self.include_thoughts = include_thoughts
         self._is_cancelled = False
 
     def cancel(self):
@@ -1066,18 +1090,30 @@ class APIWorker(QThread):
                 "parts": parts
             })
             
+            # Build generation config
+            generation_config = {
+                "maxOutputTokens": self.model_config["max_output_tokens"]
+            }
+            
+            # Add deep thinking configuration if supported and enabled
+            if self.model_config.get("supports_deep_thinking") and self.thinking_level:
+                generation_config["thinkingConfig"] = {
+                    "includeThoughts": self.include_thoughts,
+                    "thinkingLevel": self.thinking_level
+                }
+            
             payload = {
                 "contents": contents,
-                "generationConfig": {
-                    "maxOutputTokens": self.model_config["max_output_tokens"]
-                }
+                "generationConfig": generation_config
             }
             
             # Add grounding tool if enabled
             if self.use_grounding:
-                payload["tools"] = [{
-                    "google_search_retrieval": {}
-                }]
+                # AI Studio uses 'googleSearch', Vertex AI uses 'google_search_retrieval'
+                if self.endpoint_type == ENDPOINT_AI_STUDIO:
+                    payload["tools"] = [{"googleSearch": {}}]
+                else:
+                    payload["tools"] = [{"google_search_retrieval": {}}]
             
             return payload
         elif self.endpoint_type == ENDPOINT_CUSTOM:
@@ -1154,13 +1190,48 @@ class APIWorker(QThread):
         return full_text
 
     def parse_google_stream(self, response_text):
-        """Parse Google's streaming format - COMPLETE response."""
+        """Parse Google's streaming format - COMPLETE response with deep thinking support."""
         full_text = ""
+        thoughts_text = ""
+        grounding_sources = []
 
         # Split by lines and filter out empty lines and commas
         lines = [line.strip() for line in response_text.split('\n') if line.strip() and line.strip() != ',']
 
         logging.info(f"Parsing Google stream with {len(lines)} valid lines")
+
+        def extract_content_from_data(data):
+            """Extract thoughts, grounding, and text from a response data object."""
+            local_thoughts = ""
+            local_text = ""
+            local_sources = []
+            
+            candidates = data.get("candidates", [])
+            if candidates:
+                candidate = candidates[0]
+                content = candidate.get("content", {})
+                parts = content.get("parts", [])
+                
+                for part in parts:
+                    # Check if this is a thought block
+                    if part.get("thought"):
+                        local_thoughts += part.get("text", "") + "\n"
+                    elif "text" in part:
+                        local_text += part.get("text", "")
+                
+                # Extract grounding metadata
+                grounding = candidate.get("groundingMetadata", {})
+                if grounding:
+                    chunks = grounding.get("groundingChunks", [])
+                    for chunk in chunks:
+                        web = chunk.get("web", {})
+                        if web:
+                            local_sources.append({
+                                "title": web.get("title", "Source"),
+                                "uri": web.get("uri", "#")
+                            })
+            
+            return local_thoughts, local_text, local_sources
 
         # Handle array format: [obj1, obj2, obj3]
         if response_text.strip().startswith('['):
@@ -1168,42 +1239,61 @@ class APIWorker(QThread):
                 # Try to parse as a JSON array
                 data_array = json.loads(response_text)
                 for data in data_array:
-                    candidates = data.get("candidates", [])
-                    if candidates:
-                        content = candidates[0].get("content", {})
-                        parts = content.get("parts", [])
-                        if parts:
-                            text = parts[0].get("text", "")
-                            full_text += text
-                logging.info(f"Parsed Google array response length: {len(full_text)} characters")
-                return full_text
+                    t, txt, src = extract_content_from_data(data)
+                    thoughts_text += t
+                    full_text += txt
+                    grounding_sources.extend(src)
+                logging.info(f"Parsed Google array response: {len(full_text)} chars, {len(thoughts_text)} thought chars")
             except json.JSONDecodeError:
                 pass
+        else:
+            # Handle newline-delimited JSON format
+            for line in lines:
+                # Skip lines that are just commas
+                if line == ',':
+                    continue
 
-        # Handle newline-delimited JSON format
-        for line in lines:
-            # Skip lines that are just commas
-            if line == ',':
-                continue
+                try:
+                    # Remove trailing comma if present
+                    if line.endswith(','):
+                        line = line[:-1]
 
-            try:
-                # Remove trailing comma if present
-                if line.endswith(','):
-                    line = line[:-1]
+                    data = json.loads(line)
+                    t, txt, src = extract_content_from_data(data)
+                    thoughts_text += t
+                    full_text += txt
+                    grounding_sources.extend(src)
+                except json.JSONDecodeError:
+                    continue
 
-                data = json.loads(line)
-                candidates = data.get("candidates", [])
-                if candidates:
-                    content = candidates[0].get("content", {})
-                    parts = content.get("parts", [])
-                    if parts:
-                        text = parts[0].get("text", "")
-                        full_text += text
-            except json.JSONDecodeError:
-                continue
+        # Build formatted output with sections
+        formatted_output = ""
+        
+        # Add deep thinking section if there are thoughts
+        if thoughts_text.strip() and self.include_thoughts:
+            formatted_output += "🧠 DEEP THINKING PROCESS\n"
+            formatted_output += "=" * 50 + "\n"
+            formatted_output += thoughts_text.strip() + "\n\n"
+        
+        # Add grounding sources section if there are sources
+        if grounding_sources:
+            formatted_output += "🔍 SEARCH SOURCES\n"
+            formatted_output += "=" * 50 + "\n"
+            seen_uris = set()  # Deduplicate sources
+            for i, source in enumerate(grounding_sources):
+                if source["uri"] not in seen_uris:
+                    seen_uris.add(source["uri"])
+                    formatted_output += f"[{len(seen_uris)}] {source['title']} ({source['uri']})\n"
+            formatted_output += "\n"
+        
+        # Add final answer section
+        if formatted_output:  # Only add header if there were previous sections
+            formatted_output += "📝 FINAL ANSWER\n"
+            formatted_output += "=" * 50 + "\n"
+        formatted_output += full_text.strip()
 
-        logging.info(f"Parsed Google response length: {len(full_text)} characters")
-        return full_text
+        logging.info(f"Parsed Google response: {len(formatted_output)} total chars")
+        return formatted_output
 
     def parse_response(self, response_text, response_data=None):
         """Parse the response based on the model publisher and format - COMPLETE response."""
@@ -1389,6 +1479,8 @@ class QueryTab(QWidget):
         self.selected_file_data = None  # Store selected file data
         self.history = []  # Store conversation history [{"role": "user"|"assistant", "content": "..."}]
         self.use_grounding = False  # Store grounding state
+        self.thinking_level = "high"  # Default thinking level for deep think models
+        self.include_thoughts = True  # Whether to include thoughts in output
         self.init_ui()
 
 
@@ -1659,10 +1751,10 @@ class QueryTab(QWidget):
         self.use_memory_checkbox.stateChanged.connect(self.update_model_info)
         first_row.addWidget(self.use_memory_checkbox)
 
-        # Grounding checkbox (only visible for supported models on Vertex AI)
+        # Grounding checkbox (enabled by default for supported models)
         self.use_grounding_checkbox = QCheckBox("🔍")
-        self.use_grounding_checkbox.setChecked(False)
-        self.use_grounding_checkbox.setEnabled(False)  # Disabled by default, enabled for Gemini on Vertex
+        self.use_grounding_checkbox.setChecked(True)  # Enabled by default when available
+        self.use_grounding_checkbox.setEnabled(False)  # Will be enabled for supported models
         self.use_grounding_checkbox.setStyleSheet(f"""
             QCheckBox {{
                 color: {COLORS['primary']};
@@ -1685,13 +1777,92 @@ class QueryTab(QWidget):
             }}
         """)
         self.use_grounding_checkbox.setToolTip(
-            "Enable Google Search Grounding\\n"
-            "• Search the web for real-time information\\n"
-            "• Ground responses in current data\\n"
-            "• Only available for Gemini models on Vertex AI"
+            "Google Search Grounding (enabled by default)\n"
+            "• Search the web for real-time information\n"
+            "• Ground responses in current data\n"
+            "• Uncheck to disable grounding\n"
+            "• Available for Gemini models"
         )
         self.use_grounding_checkbox.stateChanged.connect(self.update_model_info)
         first_row.addWidget(self.use_grounding_checkbox)
+
+        # Thinking level dropdown (only visible for deep thinking models)
+        self.thinking_level_label = QLabel("Think:")
+        self.thinking_level_label.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: {font_manager.base_size - 2}px;")
+        self.thinking_level_label.setVisible(False)
+        first_row.addWidget(self.thinking_level_label)
+        
+        self.thinking_level_combo = QComboBox()
+        self.thinking_level_combo.addItem("None", "none")
+        self.thinking_level_combo.addItem("Low", "low")
+        self.thinking_level_combo.addItem("Medium", "medium")
+        self.thinking_level_combo.addItem("High", "high")
+        self.thinking_level_combo.setCurrentIndex(3)  # Default to High
+        self.thinking_level_combo.setMinimumWidth(80)
+        self.thinking_level_combo.setMaximumWidth(100)
+        self.thinking_level_combo.setStyleSheet(f"""
+            QComboBox {{
+                background-color: {COLORS['surface']};
+                color: {COLORS['text_primary']};
+                border: 1px solid {COLORS['border']};
+                border-radius: 4px;
+                padding: 4px 8px;
+                font-size: {font_manager.base_size - 2}px;
+            }}
+            QComboBox:hover {{
+                border-color: {COLORS['primary']};
+            }}
+            QComboBox::drop-down {{
+                border: none;
+            }}
+            QComboBox::down-arrow {{
+                image: none;
+                border-left: 4px solid transparent;
+                border-right: 4px solid transparent;
+                border-top: 5px solid {COLORS['text_primary']};
+                margin-right: 5px;
+            }}
+        """)
+        self.thinking_level_combo.setToolTip(
+            "Set the thinking depth level:\n"
+            "• None: Skip deep thinking\n"
+            "• Low: Quick reasoning\n"
+            "• Medium: Balanced thinking\n"
+            "• High: Thorough analysis (default)"
+        )
+        self.thinking_level_combo.setVisible(False)
+        self.thinking_level_combo.currentIndexChanged.connect(self.on_thinking_level_changed)
+        first_row.addWidget(self.thinking_level_combo)
+
+        # Include thoughts checkbox (only visible for deep thinking models)
+        self.include_thoughts_checkbox = QCheckBox("💭")
+        self.include_thoughts_checkbox.setChecked(True)
+        self.include_thoughts_checkbox.setStyleSheet(f"""
+            QCheckBox {{
+                color: {COLORS['primary']};
+                font-size: {font_manager.base_size - 2}px;
+                font-weight: 600;
+            }}
+            QCheckBox::indicator {{
+                width: 14px;
+                height: 14px;
+                border-radius: 3px;
+                border: 1px solid {COLORS['border']};
+                background-color: {COLORS['surface']};
+            }}
+            QCheckBox::indicator:checked {{
+                background-color: {COLORS['primary']};
+                border-color: {COLORS['primary']};
+            }}
+        """)
+        self.include_thoughts_checkbox.setToolTip(
+            "Include thinking process in output\n"
+            "• Checked: Show the AI's reasoning process\n"
+            "• Unchecked: Show only the final answer"
+        )
+        self.include_thoughts_checkbox.setVisible(False)
+        self.include_thoughts_checkbox.stateChanged.connect(self.on_include_thoughts_changed)
+        first_row.addWidget(self.include_thoughts_checkbox)
 
         first_row.addStretch()
 
@@ -2227,11 +2398,28 @@ class QueryTab(QWidget):
             # Enable/disable grounding checkbox based on model support AND endpoint
             supports_grounding = config.get("supports_grounding", False)
             endpoint_type = self.endpoint_combo.currentData()
-            # Grounding only works on Vertex AI, not AI Studio
-            grounding_available = supports_grounding and endpoint_type == ENDPOINT_VERTEX_AI
+            # Grounding works on both Vertex AI and AI Studio for supported models
+            grounding_available = supports_grounding and endpoint_type in [ENDPOINT_VERTEX_AI, ENDPOINT_AI_STUDIO]
             self.use_grounding_checkbox.setEnabled(grounding_available)
-            if not grounding_available:
+            if grounding_available:
+                # Enable grounding by default when available
+                self.use_grounding_checkbox.setChecked(True)
+            else:
                 self.use_grounding_checkbox.setChecked(False)
+
+            # Show/hide deep thinking controls based on model support
+            supports_deep_thinking = config.get("supports_deep_thinking", False)
+            self.thinking_level_label.setVisible(supports_deep_thinking)
+            self.thinking_level_combo.setVisible(supports_deep_thinking)
+            self.include_thoughts_checkbox.setVisible(supports_deep_thinking)
+            
+            # Set default thinking level if supported
+            if supports_deep_thinking:
+                default_level = config.get("default_thinking_level", "high")
+                index = self.thinking_level_combo.findData(default_level)
+                if index >= 0:
+                    self.thinking_level_combo.setCurrentIndex(index)
+                self.thinking_level = default_level
 
             # Determine max input tokens based on 1M context setting
             if self.use_1m_context_checkbox.isChecked() and supports_1m:
@@ -2281,6 +2469,13 @@ class QueryTab(QWidget):
                 tooltip_text += f"""
             <br><b>Memory Tool:</b> {memory_status}<br>
             {'✅ AI can remember context across conversations' if self.use_memory_checkbox.isChecked() else '❌ Memory tool disabled'}
+                """
+
+            if supports_deep_thinking:
+                tooltip_text += f"""
+            <br><b>Deep Thinking:</b> Level={self.thinking_level}<br>
+            {'✅ Thoughts included' if self.include_thoughts else '❌ Thoughts hidden'}<br>
+            🧠 AI will reason step-by-step before answering
                 """
 
             tooltip_text += f"""
@@ -2339,6 +2534,16 @@ class QueryTab(QWidget):
         logging.info(f"API key changed signal received (length: {len(text)})")
         # Save to encrypted storage (will remove file if empty)
         secure_storage.save_api_key(text)
+
+    def on_thinking_level_changed(self, index):
+        """Handle thinking level selection changes"""
+        self.thinking_level = self.thinking_level_combo.currentData()
+        logging.info(f"Thinking level changed to: {self.thinking_level}")
+
+    def on_include_thoughts_changed(self, state):
+        """Handle include thoughts checkbox changes"""
+        self.include_thoughts = bool(state)
+        logging.info(f"Include thoughts changed to: {self.include_thoughts}")
 
 
     def update_char_count(self):
@@ -2522,6 +2727,8 @@ class QueryTab(QWidget):
             self.copy_output_btn.update_font_size(size)
             self.save_btn.update_font_size(size)
             self.create_project_btn.update_font_size(size)
+            self.attach_file_btn.update_font_size(size)
+            self.clear_file_btn.update_font_size(size)
 
         # Update labels
         self.model_info.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: {size - 2}px;")
@@ -2532,6 +2739,24 @@ class QueryTab(QWidget):
             background-color: {COLORS['background']};
             border-radius: 3px;
         """)
+        
+        # Update deep thinking controls
+        if hasattr(self, 'thinking_level_label'):
+            self.thinking_level_label.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: {size - 2}px;")
+        if hasattr(self, 'thinking_level_combo'):
+            self.thinking_level_combo.setStyleSheet(f"""
+                QComboBox {{
+                    background-color: {COLORS['surface']};
+                    color: {COLORS['text_primary']};
+                    border: 1px solid {COLORS['border']};
+                    border-radius: 4px;
+                    padding: 4px 8px;
+                    font-size: {size - 2}px;
+                }}
+                QComboBox:hover {{
+                    border-color: {COLORS['primary']};
+                }}
+            """)
 
     def update_theme(self):
         """Update all colors when theme changes"""
@@ -2683,10 +2908,18 @@ class QueryTab(QWidget):
 
         # Create and start worker
         use_grounding = self.use_grounding_checkbox.isChecked() and model_config.get("supports_grounding", False)
+        
+        # Get deep thinking settings if supported
+        thinking_level = None
+        include_thoughts = True
+        if model_config.get("supports_deep_thinking"):
+            thinking_level = self.thinking_level_combo.currentData()
+            include_thoughts = self.include_thoughts_checkbox.isChecked()
+            
         self.worker = APIWorker(
-            model_config, 
-            prompt, 
-            self.credentials, 
+            model_config,
+            prompt,
+            self.credentials,
             use_1m_context,
             use_memory,
             endpoint_type,
@@ -2695,7 +2928,9 @@ class QueryTab(QWidget):
             self.selected_file_data,
             history=self.history if chain_mode else None,
             use_grounding=use_grounding,
-            custom_url=custom_url
+            custom_url=custom_url,
+            thinking_level=thinking_level,
+            include_thoughts=include_thoughts
         )
         self.worker.finished.connect(self.on_response)
         self.worker.progress.connect(self.update_progress)
@@ -2822,6 +3057,13 @@ class QueryTab(QWidget):
                 
                 if self.use_memory_checkbox.isChecked() and self.current_model_config.get("supports_memory"):
                     tooltip += "\n🧠 Memory tool enabled\n"
+
+                if self.current_model_config.get("supports_deep_thinking"):
+                    tooltip += f"\n🧠 Deep Thinking: Level={self.thinking_level}"
+                    if self.include_thoughts:
+                        tooltip += " (thoughts shown)\n"
+                    else:
+                        tooltip += " (thoughts hidden)\n"
 
                 tooltip += "\n*Fictional pricing for demonstration only"
 
