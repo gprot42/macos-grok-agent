@@ -502,7 +502,7 @@ class AboutDialog(QDialog):
         layout.addWidget(title_label)
 
         # Version info
-        version_label = QLabel("Version 1.5.1 - Claude Opus 4.5 Edition")
+        version_label = QLabel("Version 1.5.2 - Gemini 3 Flash Edition")
         version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         version_label.setStyleSheet(f"color: {COLORS['text_secondary']}; margin-bottom: 20px;")
         layout.addWidget(version_label)
