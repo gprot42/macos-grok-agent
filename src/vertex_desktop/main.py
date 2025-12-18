@@ -334,6 +334,25 @@ AVAILABLE_MODELS = {
         "supports_deep_thinking": True,
         "default_thinking_level": "high",
         "endpoint_support": [ENDPOINT_AI_STUDIO]  # Deep thinking only on AI Studio
+    },
+    "gemini-3-flash-preview": {
+        "publisher": "google",
+        "model_id": "gemini-3-flash-preview:streamGenerateContent",
+        "ai_studio_model_id": "gemini-3-flash-preview",
+        "display_name": "Gemini 3 Flash Preview",
+        "max_input_tokens": 1048576,
+        "max_output_tokens": 65535,
+        "icon": "⚡",
+        "color": "#10B981",
+        "description": "Fast next-gen multimodal with 1M+ input tokens",
+        "pricing": {
+            "input": 0.0003,
+            "output": 0.0012
+        },
+        "supports_1m_context": False,
+        "supports_memory": False,
+        "supports_grounding": True,
+        "endpoint_support": [ENDPOINT_VERTEX_AI, ENDPOINT_AI_STUDIO]
     }
 }
 
@@ -568,7 +587,7 @@ class AboutDialog(QDialog):
             <li>📎 File upload support (text, images, PDFs up to 10MB)</li>
             <li>🔷 Dual endpoints: Vertex AI and AI Studio</li>
             <li>🧠 Memory tool for Claude Sonnet 4.5 (optional)</li>
-            <li>🤖 Multiple AI models (Claude 4.5 Haiku, Sonnet 4.5, Opus 4.5, Gemini 2.5, 3.0)</li>
+            <li>🤖 Multiple AI models (Claude 4.5 Haiku, Sonnet 4.5, Opus 4.5, Gemini 2.5, 3 Flash, 3 Pro)</li>
             <li>📊 1M token context window for Claude Sonnet 4.5</li>
             <li>📁 Create project structure from AI responses</li>
             <li>📏 Real-time character and token counting</li>
@@ -1109,11 +1128,11 @@ class APIWorker(QThread):
             
             # Add grounding tool if enabled
             if self.use_grounding:
-                # AI Studio uses 'googleSearch', Vertex AI uses 'google_search_retrieval'
+                # AI Studio uses 'googleSearch', Vertex AI uses 'google_search'
                 if self.endpoint_type == ENDPOINT_AI_STUDIO:
                     payload["tools"] = [{"googleSearch": {}}]
                 else:
-                    payload["tools"] = [{"google_search_retrieval": {}}]
+                    payload["tools"] = [{"google_search": {}}]
             
             return payload
         elif self.endpoint_type == ENDPOINT_CUSTOM:
@@ -1753,7 +1772,7 @@ class QueryTab(QWidget):
 
         # Grounding checkbox (enabled by default for supported models)
         self.use_grounding_checkbox = QCheckBox("🔍")
-        self.use_grounding_checkbox.setChecked(True)  # Enabled by default when available
+        self.use_grounding_checkbox.setChecked(False)  # Disabled by default
         self.use_grounding_checkbox.setEnabled(False)  # Will be enabled for supported models
         self.use_grounding_checkbox.setStyleSheet(f"""
             QCheckBox {{
@@ -2401,10 +2420,7 @@ class QueryTab(QWidget):
             # Grounding works on both Vertex AI and AI Studio for supported models
             grounding_available = supports_grounding and endpoint_type in [ENDPOINT_VERTEX_AI, ENDPOINT_AI_STUDIO]
             self.use_grounding_checkbox.setEnabled(grounding_available)
-            if grounding_available:
-                # Enable grounding by default when available
-                self.use_grounding_checkbox.setChecked(True)
-            else:
+            if not grounding_available:
                 self.use_grounding_checkbox.setChecked(False)
 
             # Show/hide deep thinking controls based on model support
