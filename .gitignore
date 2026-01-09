@@ -1,57 +1,26 @@
-# Gradle
-.gradle/
-build/
-*.iml  # IntelliJ files
+# Dependencies
+node_modules/
+.pnpm-store/
 
-# IDEs
-.idea/
-*.DS_Store  # macOS files
+# Build outputs
+dist/
+target/
+*.dmg
+*.pkg
+*.app
+*.exe
+*.msi
 
 # Logs and temp files
 *.log
 tmp/
 temp/
 
-# Dependencies (if not using wrapper)
-gradle/
+# OS files
+.DS_Store
+Thumbs.db
 
-# Byte-compiled / optimized / DLL files (Python-specific)
-__pycache__/
-*.py[cod]
-*.pyo
-*.pyd
-
-# Dependencies and virtual environments
-node_modules/
-venv/
-.venv/
-pip-wheel-metadata/
-*.egg-info/
-
-# Build artifacts and distributions
-dist/
-build/
-target/
-*.egg
-*.whl
-*.dmg
-*.pkg
-
-# Logs and temporary files
-*.log
-*.tmp
-*.swp
-~*
-.*.swp
-
-# OS-generated files
-.DS_Store  # macOS
-Thumbs.db  # Windows
-ehthumbs.db
-Desktop.ini
-*.~lock.*
-
-# Editor/IDE files
+# IDE files
 .vscode/
 .idea/
 *.sublime-project
@@ -61,24 +30,20 @@ Desktop.ini
 .env
 .env.local
 secrets.json
-config.json
-*.enc  # Encrypted API keys and secrets
-api_key.enc
+*.enc
+
+# Rust
+target/
+Cargo.lock
+**/*.rs.bk
+
+# Python (legacy)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
 
 # Coverage and testing
 coverage/
-.tox/
 .pytest_cache/
 .mypy_cache/
-
-# Databases and dumps
-*.sqlite
-*.sql.dump
-dump.rdb
-
-# Ignore everything in a folder except a specific file (example)
-#folder_name/*
-#!folder_name/keepme.txt
-
-# Virtual environments
-.venv

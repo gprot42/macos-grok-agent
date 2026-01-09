@@ -1,62 +1,60 @@
-# MEX - Model EXplorer 🚀
+# MEX - Model Explorer v0.0.1
 
-A powerful desktop application for interacting with Large Language Models on **Google Cloud Vertex AI** and **AI Studio**.
+A modern desktop application for interacting with Large Language Models on **Google Cloud Vertex AI** and **AI Studio**, built with Tauri, React, and TypeScript.
+
+## Tech Stack
+
+- **Frontend**: React 18, TypeScript, Vite, Tailwind CSS
+- **Backend**: Tauri 2.0 (Rust)
+- **Package Manager**: pnpm (Bun-compatible)
 
 ## Features
 
-- **Multi-Model Support**: Claude (4.5 Haiku, 4.5 Sonnet, 4.1, 4.5 Opus) and Gemini (2.5 Pro, 2.5 Flash, 3 Pro Preview)
+- **Multi-Model Support**: Claude (4.5 Haiku, Sonnet, Opus) and Gemini (2.5, 3 Pro/Flash)
 - **Dual Endpoints**: Switch between Vertex AI and AI Studio
-- **📎 File Upload**: Attach text files, images, and PDFs with your prompts (up to 10MB)
+- **Nano Banana Pro**: AI image generation and editing - load images to manipulate with prompts
+- **File Upload**: Attach text files, images, and PDFs with prompts
 - **1M Context Window**: Available for Claude 4.5 Sonnet
-- **🧠 Memory Tool**: Optional memory support for Claude 4.5 Sonnet
-- **🎨 Theme System**: Choose from Light, Tokyo Night, or Dark themes
-- **💬 Chat Mode**: Multi-turn conversation history within each tab
-- **Real-time Metrics**: Character and token counting with pricing estimates
-- **Query Tabs**: Multiple tabs with optional synchronization
-- **Response Export**: Save responses as text or JSON
+- **Memory Tool**: Optional memory support for Claude 4.5 Sonnet
+- **Deep Thinking**: Gemini 3 Pro Deep Think with thinking levels
+- **Theme System**: Light, Tokyo Night, and Dark themes
+- **Secure Storage**: Encrypted API key storage tied to machine ID
 
 ## Quick Start
 
 ```bash
-# Setup
-uv venv
-source .venv/bin/activate
-uv pip install -r requirements.txt
+# Install dependencies
+pnpm install
 
-# Run
-python src/vertex_desktop/main.py
+# Run development server
+pnpm tauri:dev
 
-# Build packages
-./create-package.sh
+# Build for production
+pnpm tauri:build
 ```
 
 ## Requirements
 
-- Python 3.8+
+- Node.js 18+
+- Rust 1.70+
+- pnpm (or npm/yarn)
 - Google Cloud credentials (for Vertex AI)
 - API key (for AI Studio)
-- Dependencies: PyQt6, google-auth, requests, cryptography
 
 ## API Key Storage
 
-For **AI Studio** users: Your API key is automatically encrypted and saved to `~/.mex-model-explorer/api_key.enc` when you enter it. The key is:
-- Encrypted using Fernet symmetric encryption
-- Tied to your machine's hardware UUID (cannot be transferred between computers)
-- Automatically loaded on application startup
-- Removed when you clear the API key field
-
-**Security Note**: While this provides reasonable protection against casual file inspection, treat your API keys as sensitive credentials.
+Your API key is encrypted using AES-256-GCM and stored securely at `~/.mex-model-explorer/api_key.enc`. The encryption key is derived from your machine's hardware UUID, making the stored key non-transferable between computers.
 
 ## Keyboard Shortcuts
 
-- **Ctrl+Enter**: Execute query
-- **Ctrl+T**: New tab
-- **Ctrl+W**: Close tab
+- **Ctrl+Enter**: Send message
+- **Ctrl+T**: New tab (planned)
+- **Ctrl+W**: Close tab (planned)
 
-## Notes
+## Disclaimer
 
-⚠️ **Disclaimer**: Pricing shown is fictional and for demonstration only. This is not an official Google product.
+This is not an official Google product. All pricing shown is fictional and for demonstration only.
 
 ---
 
-**Version 1.5.1** - Theme & UI Edition
+**Version 0.0.1** - Tauri Edition
