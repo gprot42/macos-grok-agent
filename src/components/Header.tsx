@@ -45,7 +45,7 @@ export function Header({
     <header className="bg-white dark:bg-tokyo-surface border-b border-gray-200 dark:border-tokyo-border px-6 py-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-6">
-          <h1 className="text-xl font-bold bg-gradient-to-r from-indigo-500 to-purple-500 bg-clip-text text-transparent">
+          <h1 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-indigo-500 to-purple-500 bg-clip-text text-transparent">
             Cortex Agent
           </h1>
 
