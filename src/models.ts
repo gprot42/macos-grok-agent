@@ -41,7 +41,6 @@ export const MODELS: Record<string, ModelConfig> = {
     color: "#C92A2A",
     description: "Most capable model with memory for coding, agents, and enterprise workflows",
     pricing: { input: 0.015, output: 0.075 },
-    supports1MContext: true,
     supportsMemory: true,
     endpointSupport: ["vertex_ai"],
   },
