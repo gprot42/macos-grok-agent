@@ -260,16 +260,16 @@ export function DeepResearchPanel({
               ))}
             </select>
 
-            <div className="text-xs theme-text-muted">
+            <div className="text-sm theme-text-muted">
               {query.length} chars
             </div>
             {!apiKey && (
-              <span className="text-xs text-amber-600 dark:text-amber-400">
+              <span className="text-sm text-amber-600 dark:text-amber-400">
                 ⚠️ API key required
               </span>
             )}
             {apiKey && !query.trim() && (
-              <span className="text-xs text-gray-500 dark:text-gray-400">
+              <span className="text-sm text-gray-500 dark:text-gray-400">
                 Enter a question
               </span>
             )}

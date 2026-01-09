@@ -58,11 +58,14 @@ pub async fn send_chat_message(
             request = request.header("x-goog-api-key", &api_key);
         }
         "vertex_ai" => {
-            // Use provided API key, or auto-fetch from service account
-            let token = if api_key.is_empty() {
+            // Always prefer service account for Vertex AI
+            let token = if crate::auth::has_service_account_key() {
                 crate::auth::get_access_token().await?
-            } else {
+            } else if !api_key.is_empty() {
+                // Fallback to API key if no service account (shouldn't happen but just in case)
                 api_key.clone()
+            } else {
+                return Err("Vertex AI requires a service account. Place your key at ~/.cortex-agent/vertex-key.json".to_string());
             };
             request = request.header("Authorization", format!("Bearer {}", token));
         }
