@@ -116,6 +116,14 @@ async fn generate_image(
 }
 
 #[tauri::command]
+async fn deep_research(
+    prompt: String,
+    api_key: String,
+) -> Result<ChatResponse, String> {
+    api::deep_research(prompt, api_key).await
+}
+
+#[tauri::command]
 async fn save_image(image_base64: String, filename: String) -> Result<(), String> {
     storage::save_image(&image_base64, &filename).await
 }
@@ -166,7 +174,29 @@ async fn get_vertex_token() -> Result<String, String> {
 }
 
 fn main() {
+    use tauri::menu::{Menu, Submenu, PredefinedMenuItem};
+    
     tauri::Builder::default()
+        .enable_macos_default_menu(false)
+        .menu(|handle| {
+            // Create Edit submenu with standard actions
+            let edit_menu = Submenu::with_items(
+                handle,
+                "Edit",
+                true,
+                &[
+                    &PredefinedMenuItem::undo(handle, None)?,
+                    &PredefinedMenuItem::redo(handle, None)?,
+                    &PredefinedMenuItem::separator(handle)?,
+                    &PredefinedMenuItem::cut(handle, None)?,
+                    &PredefinedMenuItem::copy(handle, None)?,
+                    &PredefinedMenuItem::paste(handle, None)?,
+                    &PredefinedMenuItem::select_all(handle, None)?,
+                ],
+            )?;
+            
+            Menu::with_items(handle, &[&edit_menu])
+        })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_http::init())
@@ -178,6 +208,7 @@ fn main() {
             save_api_key,
             send_chat_message,
             generate_image,
+            deep_research,
             save_image,
             save_output,
             create_project,

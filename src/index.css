@@ -4,6 +4,7 @@
 
 :root {
   font-family: "SF Pro Text", Inter, system-ui, sans-serif;
+  font-size: 15px;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;

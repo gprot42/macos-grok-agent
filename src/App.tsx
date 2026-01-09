@@ -9,6 +9,7 @@ import {
   DeepResearchPanel,
 } from "./components";
 import { useSettings, useChat } from "./hooks";
+import { useDeepResearch } from "./hooks/useDeepResearch";
 import { MODELS } from "./models";
 import { EndpointType, ThemeMode, ChatSession } from "./types";
 
@@ -31,8 +32,11 @@ function App() {
     createSession,
     deleteSession,
     stopGeneration,
+    deleteImage,
     clearImages: _clearImages,
   } = useChat();
+
+  const deepResearch = useDeepResearch();
 
   const [activeTab, setActiveTab] = useState<"chat" | "image" | "research">("chat");
   const [showSettings, setShowSettings] = useState(false);
@@ -219,14 +223,13 @@ function App() {
             isLoading={isLoading}
             error={error}
             activeProject={activeProject}
+            onDeleteImage={deleteImage}
           />
         ) : (
           <DeepResearchPanel
             apiKey={settings.apiKey}
-            isLoading={isLoading}
-            error={error}
             activeProject={activeProject}
-            onSendMessage={sendMessage}
+            research={deepResearch}
           />
         )}
       </main>

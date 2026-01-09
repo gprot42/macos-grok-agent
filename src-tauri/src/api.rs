@@ -181,6 +181,116 @@ pub async fn generate_image(
     Err("No image data in response".to_string())
 }
 
+/// Deep Research using the Interactions API
+/// This uses the background execution pattern with polling
+pub async fn deep_research(
+    prompt: String,
+    api_key: String,
+) -> Result<ChatResponse, String> {
+    let client = Client::new();
+    
+    // Step 1: Start the research task in background
+    let create_url = format!("{}/v1beta/interactions", AI_STUDIO_ENDPOINT);
+    
+    let create_payload = json!({
+        "input": prompt,
+        "agent": "deep-research-pro-preview-12-2025",
+        "background": true
+    });
+    
+    let create_response = client
+        .post(&create_url)
+        .header("x-goog-api-key", &api_key)
+        .header("Content-Type", "application/json")
+        .json(&create_payload)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to start research: {}", e))?;
+    
+    if !create_response.status().is_success() {
+        let status = create_response.status();
+        let body = create_response.text().await.unwrap_or_default();
+        return Err(format!("Failed to start research {}: {}", status, body));
+    }
+    
+    let create_body: Value = create_response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse create response: {}", e))?;
+    
+    let interaction_id = create_body
+        .get("id")
+        .and_then(|id| id.as_str())
+        .ok_or_else(|| "No interaction ID in response".to_string())?;
+    
+    // Step 2: Poll for completion
+    let poll_url = format!("{}/v1beta/interactions/{}", AI_STUDIO_ENDPOINT, interaction_id);
+    let max_attempts = 60; // 10 minutes max (10s intervals)
+    
+    for attempt in 0..max_attempts {
+        tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+        
+        let poll_response = client
+            .get(&poll_url)
+            .header("x-goog-api-key", &api_key)
+            .send()
+            .await
+            .map_err(|e| format!("Poll request failed: {}", e))?;
+        
+        if !poll_response.status().is_success() {
+            let status = poll_response.status();
+            let body = poll_response.text().await.unwrap_or_default();
+            return Err(format!("Poll failed {}: {}", status, body));
+        }
+        
+        let poll_body: Value = poll_response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse poll response: {}", e))?;
+        
+        let status = poll_body
+            .get("status")
+            .and_then(|s| s.as_str())
+            .unwrap_or("unknown");
+        
+        match status {
+            "completed" => {
+                // Extract the final output
+                if let Some(outputs) = poll_body.get("outputs").and_then(|o| o.as_array()) {
+                    if let Some(last_output) = outputs.last() {
+                        if let Some(text) = last_output.get("text").and_then(|t| t.as_str()) {
+                            return Ok(ChatResponse {
+                                content: text.to_string(),
+                                raw_json: serde_json::to_string(&poll_body).unwrap_or_default(),
+                                input_tokens: 0,
+                                output_tokens: 0,
+                            });
+                        }
+                    }
+                }
+                return Err("No output text in completed research".to_string());
+            }
+            "failed" => {
+                let error = poll_body
+                    .get("error")
+                    .and_then(|e| e.as_str())
+                    .unwrap_or("Unknown error");
+                return Err(format!("Research failed: {}", error));
+            }
+            "running" | "pending" => {
+                // Continue polling
+                continue;
+            }
+            _ => {
+                // Unknown status, log and continue
+                eprintln!("Unknown research status: {} (attempt {})", status, attempt);
+            }
+        }
+    }
+    
+    Err("Research timed out after 10 minutes".to_string())
+}
+
 fn build_url(
     endpoint: &str,
     publisher: &str,

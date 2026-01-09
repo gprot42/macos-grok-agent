@@ -142,8 +142,8 @@ export const MODELS: Record<string, ModelConfig> = {
   "gemini-deep-research": {
     id: "gemini-deep-research",
     publisher: "google",
-    modelId: "gemini-2.5-pro-deep-research-preview:streamGenerateContent",
-    aiStudioModelId: "gemini-2.5-pro-deep-research",
+    modelId: "deep-research-pro-preview-12-2025:streamGenerateContent",
+    aiStudioModelId: "deep-research-pro-preview-12-2025",
     displayName: "Gemini Deep Research",
     maxInputTokens: 1048576,
     maxOutputTokens: 65536,

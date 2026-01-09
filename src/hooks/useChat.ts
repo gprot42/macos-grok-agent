@@ -49,6 +49,14 @@ export function useChat() {
     options: ChatOptions,
     attachedFile?: { path: string; data: string; mimeType: string }
   ) => {
+    console.log("=== sendMessage called ===");
+    console.log("prompt:", prompt.substring(0, 100));
+    console.log("options:", options);
+    console.log("model:", options.model);
+    console.log("modelId:", options.model?.modelId);
+    console.log("aiStudioModelId:", options.model?.aiStudioModelId);
+    console.log("endpoint:", options.endpoint);
+
     cancelledRef.current = false;
     setIsLoading(true);
     setError(null);
@@ -62,6 +70,7 @@ export function useChat() {
     ));
 
     try {
+      console.log("Calling invoke('send_chat_message')...");
       const response = await invoke<ChatResponse>("send_chat_message", {
         prompt,
         history: messages,
@@ -80,8 +89,11 @@ export function useChat() {
         attachedFile,
       });
 
+      console.log("invoke response:", response);
+
       // If cancelled, don't update with the response
       if (cancelledRef.current) {
+        console.log("Cancelled, returning early");
         return;
       }
 
@@ -100,10 +112,13 @@ export function useChat() {
         output: prev.output + response.outputTokens,
       }));
 
+      console.log("Returning response.content:", response.content?.substring(0, 100));
       return response.content;
     } catch (e) {
+      console.error("sendMessage ERROR:", e);
       if (!cancelledRef.current) {
         const errorMsg = e instanceof Error ? e.message : String(e);
+        console.error("Setting error:", errorMsg);
         setError(errorMsg);
       }
     } finally {
@@ -200,6 +215,10 @@ export function useChat() {
     setError("Generation stopped by user");
   }, []);
 
+  const deleteImage = useCallback((index: number) => {
+    setGeneratedImages(prev => prev.filter((_, i) => i !== index));
+  }, []);
+
   return {
     messages,
     sessions,
@@ -216,6 +235,7 @@ export function useChat() {
     saveImage,
     clearMessages,
     clearImages,
+    deleteImage,
     createSession,
     deleteSession,
     renameSession,

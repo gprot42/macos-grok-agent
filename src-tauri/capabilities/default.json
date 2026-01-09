@@ -2,7 +2,9 @@
   "$schema": "../gen/schemas/capabilities.json",
   "identifier": "default",
   "description": "Default capabilities for MEX Model Explorer",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "dialog:default",
@@ -11,6 +13,17 @@
     "fs:default",
     "fs:allow-read",
     "fs:allow-write",
+    "fs:allow-write-file",
+    "fs:allow-download-write",
+    "fs:allow-download-write-recursive",
+    "fs:allow-home-write",
+    "fs:allow-home-write-recursive",
+    "fs:allow-desktop-write",
+    "fs:allow-desktop-write-recursive",
+    "fs:allow-document-write",
+    "fs:allow-document-write-recursive",
+    "fs:allow-picture-write",
+    "fs:allow-picture-write-recursive",
     "http:default",
     "http:allow-fetch",
     "store:default",
