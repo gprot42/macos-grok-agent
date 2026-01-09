@@ -211,8 +211,12 @@ export function ChatPanel({
     <div className="flex flex-col flex-1 overflow-hidden">
       <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
         {messages.length === 0 && (
-          <div className="flex items-center justify-center h-full theme-text-muted">
-            Start a conversation by typing a message below
+          <div className="flex flex-col items-center justify-center h-full gap-4">
+            <div className="text-6xl">💬</div>
+            <div className="text-center">
+              <h3 className="text-xl font-semibold theme-text mb-2">Start a Conversation</h3>
+              <p className="theme-text-muted">Type a message below to begin chatting with AI</p>
+            </div>
           </div>
         )}
 
