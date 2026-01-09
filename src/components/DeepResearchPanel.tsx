@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { invoke } from "@tauri-apps/api/core";
-import { Button, TextArea } from "./index";
+import { Button, TextArea, Select } from "./index";
 import { MODELS } from "../models";
 
 interface DeepResearchPanelProps {
@@ -16,6 +16,7 @@ interface DeepResearchPanelProps {
       endpoint: "ai_studio";
       apiKey: string;
       projectId: string;
+      thinkingLevel?: string;
     }
   ) => Promise<string | undefined>;
 }
@@ -31,9 +32,16 @@ export function DeepResearchPanel({
   const [results, setResults] = useState<string[]>([]);
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const [savedIdx, setSavedIdx] = useState<number | null>(null);
+  const [thinkingLevel, setThinkingLevel] = useState("medium");
   const resultsEndRef = useRef<HTMLDivElement>(null);
 
   const deepResearchModel = MODELS["gemini-deep-research"];
+
+  const thinkingOptions = [
+    { value: "low", label: "Low" },
+    { value: "medium", label: "Medium" },
+    { value: "high", label: "High" },
+  ];
 
   const handleResearch = async () => {
     if (!query.trim() || !apiKey) return;
@@ -45,6 +53,7 @@ export function DeepResearchPanel({
         endpoint: "ai_studio",
         apiKey,
         projectId: "",
+        thinkingLevel,
       }
     );
 
@@ -199,6 +208,13 @@ export function DeepResearchPanel({
           </div>
 
           <div className="flex items-center gap-3">
+            <Select
+              label="Thinking"
+              options={thinkingOptions}
+              value={thinkingLevel}
+              onChange={(e) => setThinkingLevel(e.target.value)}
+              className="min-w-[90px]"
+            />
             <div className="text-xs theme-text-muted">
               {query.length} chars
             </div>
