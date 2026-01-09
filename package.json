@@ -11,6 +11,9 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
+  },
   "dependencies": {
     "@tauri-apps/api": "^2.5.0",
     "@tauri-apps/plugin-clipboard-manager": "^2.3.2",
