@@ -10,6 +10,7 @@ interface ModelSelectorProps {
   useGrounding: boolean;
   thinkingLevel: string;
   customUrl: string;
+  showRawJson: boolean;
   onModelChange: (modelId: string) => void;
   onEndpointChange: (endpoint: EndpointType) => void;
   onUse1MContextChange: (value: boolean) => void;
@@ -17,6 +18,7 @@ interface ModelSelectorProps {
   onUseGroundingChange: (value: boolean) => void;
   onThinkingLevelChange: (level: string) => void;
   onCustomUrlChange: (url: string) => void;
+  onShowRawJsonChange: (value: boolean) => void;
 }
 
 const ICONS: Record<string, string> = {
@@ -38,6 +40,7 @@ export function ModelSelector({
   useGrounding,
   thinkingLevel,
   customUrl,
+  showRawJson,
   onModelChange,
   onEndpointChange,
   onUse1MContextChange,
@@ -45,6 +48,7 @@ export function ModelSelector({
   onUseGroundingChange,
   onThinkingLevelChange,
   onCustomUrlChange,
+  onShowRawJsonChange,
 }: ModelSelectorProps) {
   const model = MODELS[selectedModel];
   
@@ -131,6 +135,14 @@ export function ModelSelector({
           className="min-w-[100px]"
         />
       )}
+
+      <div className="border-l border-gray-300 dark:border-tokyo-border h-6 mx-1" />
+
+      <Checkbox
+        label="Raw JSON"
+        checked={showRawJson}
+        onChange={(e) => onShowRawJsonChange(e.target.checked)}
+      />
 
       <div className="text-xs text-gray-500 dark:text-tokyo-muted">
         {model?.description}

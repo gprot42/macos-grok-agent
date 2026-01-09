@@ -140,6 +140,7 @@ function App() {
             useGrounding={useGrounding}
             thinkingLevel={thinkingLevel}
             customUrl={customUrl}
+            showRawJson={showRawJson}
             onModelChange={setSelectedModel}
             onEndpointChange={handleEndpointChange}
             onUse1MContextChange={setUse1MContext}
@@ -147,6 +148,7 @@ function App() {
             onUseGroundingChange={setUseGrounding}
             onThinkingLevelChange={setThinkingLevel}
             onCustomUrlChange={setCustomUrl}
+            onShowRawJsonChange={handleShowRawJsonChange}
           />
         ) : activeTab === "image" ? (
           <div className="flex items-center gap-3">
