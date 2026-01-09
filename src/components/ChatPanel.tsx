@@ -335,7 +335,7 @@ export function ChatPanel({
           </div>
         )}
 
-        <div className="flex gap-3">
+        <div className="flex gap-3 items-end">
           <TextArea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
@@ -345,6 +345,14 @@ export function ChatPanel({
             autoResize
             className="flex-1 min-h-[80px] max-h-[200px]"
           />
+          <Button
+            variant="primary"
+            onClick={handleSend}
+            disabled={isLoading || (!prompt.trim() && !attachedFile)}
+            className="h-[80px] px-6"
+          >
+            {isLoading ? "..." : "Send"}
+          </Button>
         </div>
 
         <div className="flex items-center justify-between">
@@ -364,14 +372,6 @@ export function ChatPanel({
               </span>
             )}
           </div>
-
-          <Button
-            variant="primary"
-            onClick={handleSend}
-            disabled={isLoading || (!prompt.trim() && !attachedFile)}
-          >
-            {isLoading ? "Sending..." : "Send"}
-          </Button>
         </div>
       </div>
 
