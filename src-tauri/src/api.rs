@@ -83,7 +83,12 @@ pub async fn send_chat_message(
 
     if publisher == "anthropic" {
         let mut beta_headers = Vec::new();
-        // 1M context beta header deprecated - no longer needed
+        // Extended thinking for Claude 4 models
+        if let Some(ref level) = thinking_level {
+            if level != "none" && !level.is_empty() {
+                beta_headers.push("interleaved-thinking-2025-05-14");
+            }
+        }
         if use_memory {
             beta_headers.push("context-management-2025-06-27");
         }
@@ -354,6 +359,7 @@ fn build_payload(
             history,
             use_1m_context,
             use_memory,
+            thinking_level,
             attached_file,
         ),
         "google" => build_google_payload(
@@ -382,6 +388,7 @@ fn build_anthropic_payload(
     history: &[Message],
     _use_1m_context: bool,
     use_memory: bool,
+    thinking_level: Option<&str>,
     attached_file: Option<&AttachedFile>,
 ) -> Result<Value, String> {
     let mut messages: Vec<Value> = history
@@ -443,6 +450,22 @@ fn build_anthropic_payload(
         "max_tokens": 64000,
         "stream": true
     });
+
+    // Add extended thinking if enabled
+    if let Some(level) = thinking_level {
+        if level != "none" && !level.is_empty() {
+            let budget_tokens = match level {
+                "low" => 4096,
+                "medium" => 16384,
+                "high" => 65536,
+                _ => 16384,
+            };
+            payload["thinking"] = json!({
+                "type": "enabled",
+                "budget_tokens": budget_tokens
+            });
+        }
+    }
 
     if use_memory {
         payload["tools"] = json!([{

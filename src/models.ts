@@ -42,6 +42,8 @@ export const MODELS: Record<string, ModelConfig> = {
     description: "Most capable model with memory for coding, agents, and enterprise workflows",
     pricing: { input: 0.015, output: 0.075 },
     supportsMemory: true,
+    supportsDeepThinking: true,
+    defaultThinkingLevel: "none",
     endpointSupport: ["vertex_ai"],
   },
   "gemini-2-5-pro": {
