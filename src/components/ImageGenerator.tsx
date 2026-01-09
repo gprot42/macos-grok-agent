@@ -304,7 +304,7 @@ export function ImageGenerator({
         )}
       </div>
 
-      <div className="border-t border-gray-200 dark:border-tokyo-border p-4 space-y-3 relative z-10 bg-white dark:bg-tokyo-bg">
+      <div className="border-t theme-border p-4 space-y-3 relative z-10 theme-surface">
         <Textarea
           value={prompt}
           onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setPrompt(e.target.value)}

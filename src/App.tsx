@@ -286,17 +286,6 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
           </div>
 
           <div className="space-y-4">
-            <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-3">
-              <h4 className="font-semibold text-indigo-800 dark:text-indigo-200 mb-2">Token Approximation</h4>
-              <ul className="text-sm text-indigo-700 dark:text-indigo-300 space-y-1">
-                <li>• 1 token ≈ 4 characters (English)</li>
-                <li>• 1 token ≈ 0.75 words</li>
-                <li>• 100 tokens ≈ 75 words</li>
-                <li>• 1,000 tokens ≈ 750 words (1-2 pages)</li>
-                <li>• 1M tokens ≈ 750,000 words (several books)</li>
-              </ul>
-            </div>
-
             <div>
               <h4 className="font-semibold text-gray-800 dark:text-tokyo-text mb-2">AI Models</h4>
               <ul className="text-sm text-gray-600 dark:text-tokyo-muted space-y-1">
@@ -359,6 +348,17 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
                 <li>• Ctrl/Cmd + Enter - Send message</li>
                 <li>• Ctrl/Cmd + T - New prompt session</li>
                 <li>• Ctrl/Cmd + W - Close current session</li>
+              </ul>
+            </div>
+
+            <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-3">
+              <h4 className="font-semibold text-indigo-800 dark:text-indigo-200 mb-2">Token Approximation</h4>
+              <ul className="text-sm text-indigo-700 dark:text-indigo-300 space-y-1">
+                <li>• 1 token ≈ 4 characters (English)</li>
+                <li>• 1 token ≈ 0.75 words</li>
+                <li>• 100 tokens ≈ 75 words</li>
+                <li>• 1,000 tokens ≈ 750 words (1-2 pages)</li>
+                <li>• 1M tokens ≈ 750,000 words (several books)</li>
               </ul>
             </div>
           </div>

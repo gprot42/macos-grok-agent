@@ -7,7 +7,7 @@ interface CheckboxProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "typ
 export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(
   ({ className = "", label, id, ...props }, ref) => {
     const checkboxId = id || `checkbox-${label.toLowerCase().replace(/\s+/g, "-")}`;
-    
+
     return (
       <label
         htmlFor={checkboxId}
@@ -20,7 +20,7 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(
           className="w-4 h-4 rounded border-gray-300 dark:border-tokyo-border text-indigo-500 focus:ring-indigo-500 focus:ring-offset-0 bg-white dark:bg-tokyo-surface cursor-pointer"
           {...props}
         />
-        <span className="text-sm text-gray-700 dark:text-tokyo-text">{label}</span>
+        <span className="text-sm text-gray-800 dark:text-gray-200">{label}</span>
       </label>
     );
   }

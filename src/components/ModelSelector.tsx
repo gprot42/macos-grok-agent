@@ -51,8 +51,8 @@ export function ModelSelector({
   onShowRawJsonChange,
 }: ModelSelectorProps) {
   const model = MODELS[selectedModel];
-  
-  const availableModels = Object.values(MODELS).filter(m => 
+
+  const availableModels = Object.values(MODELS).filter(m =>
     m.endpointSupport.includes(selectedEndpoint)
   );
 
@@ -144,7 +144,7 @@ export function ModelSelector({
         onChange={(e) => onShowRawJsonChange(e.target.checked)}
       />
 
-      <div className="text-xs text-gray-500 dark:text-tokyo-muted">
+      <div className="text-sm text-gray-700 dark:text-gray-300">
         {model?.description}
       </div>
     </div>
