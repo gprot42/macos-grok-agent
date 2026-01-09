@@ -287,7 +287,9 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
               <h4 className="font-semibold text-gray-800 dark:text-tokyo-text mb-2">AI Models</h4>
               <ul className="text-sm text-gray-600 dark:text-tokyo-muted space-y-1">
                 <li>• Claude 4 Opus, Sonnet, Haiku - Anthropic's latest models</li>
-                <li>• Gemini 2.5 Pro/Flash - Google's multimodal AI</li>
+                <li>• Gemini 2.5/3 Pro/Flash - Google's multimodal AI</li>
+                <li>• Grok 3/3 Fast/3 Mini - xAI's real-time models</li>
+                <li>• GPT-4o, Llama 405B, DeepSeek R1 - via OpenRouter</li>
                 <li>• Gemini Deep Research - Multi-step web research agent</li>
                 <li>• Nano Banana Pro - Image generation and editing</li>
               </ul>
@@ -298,6 +300,9 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
               <ul className="text-sm text-gray-600 dark:text-tokyo-muted space-y-1">
                 <li>• Vertex AI - Google Cloud enterprise endpoint</li>
                 <li>• AI Studio - Google's free API endpoint</li>
+                <li>• OpenRouter - Access 100+ models with one API key</li>
+                <li>• xAI - Grok models with real-time X data</li>
+                <li>• Kilo Code - Coding-optimized model access</li>
                 <li>• Custom - Connect to any OpenAI-compatible API</li>
               </ul>
             </div>

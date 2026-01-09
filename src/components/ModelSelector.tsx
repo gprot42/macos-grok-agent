@@ -55,6 +55,9 @@ export function ModelSelector({
   const endpointOptions = [
     { value: "vertex_ai", label: "🔷 Vertex AI" },
     { value: "ai_studio", label: "🌟 AI Studio" },
+    { value: "openrouter", label: "🔀 OpenRouter" },
+    { value: "xai", label: "🅧 xAI" },
+    { value: "kilocode", label: "💻 Kilo Code" },
     { value: "custom", label: "🔧 Custom" },
   ];
 

@@ -5,6 +5,9 @@ use serde_json::{json, Value};
 
 const VERTEX_AI_ENDPOINT: &str = "https://aiplatform.googleapis.com";
 const AI_STUDIO_ENDPOINT: &str = "https://generativelanguage.googleapis.com";
+const OPENROUTER_ENDPOINT: &str = "https://openrouter.ai/api/v1";
+const XAI_ENDPOINT: &str = "https://api.x.ai/v1";
+const KILOCODE_ENDPOINT: &str = "https://api.kilocode.ai/v1";
 
 pub async fn send_chat_message(
     prompt: String,
@@ -45,14 +48,28 @@ pub async fn send_chat_message(
         include_thoughts,
         attached_file.as_ref(),
         &endpoint,
+        &model_id,
     )?;
 
     let mut request = client.post(&url).json(&payload);
 
-    if endpoint == "ai_studio" {
-        request = request.header("x-goog-api-key", &api_key);
-    } else if endpoint == "vertex_ai" {
-        request = request.header("Authorization", format!("Bearer {}", api_key));
+    match endpoint.as_str() {
+        "ai_studio" => {
+            request = request.header("x-goog-api-key", &api_key);
+        }
+        "vertex_ai" => {
+            request = request.header("Authorization", format!("Bearer {}", api_key));
+        }
+        "openrouter" => {
+            request = request
+                .header("Authorization", format!("Bearer {}", api_key))
+                .header("HTTP-Referer", "https://cortex-agent.app")
+                .header("X-Title", "Cortex Agent");
+        }
+        "xai" | "kilocode" => {
+            request = request.header("Authorization", format!("Bearer {}", api_key));
+        }
+        _ => {}
     }
 
     if publisher == "anthropic" {
@@ -188,6 +205,15 @@ fn build_url(
                 VERTEX_AI_ENDPOINT, project_id, publisher, model_path, method
             ))
         }
+        "openrouter" => {
+            Ok(format!("{}/chat/completions", OPENROUTER_ENDPOINT))
+        }
+        "xai" => {
+            Ok(format!("{}/chat/completions", XAI_ENDPOINT))
+        }
+        "kilocode" => {
+            Ok(format!("{}/chat/completions", KILOCODE_ENDPOINT))
+        }
         _ => Err(format!("Unknown endpoint: {}", endpoint)),
     }
 }
@@ -203,6 +229,7 @@ fn build_payload(
     include_thoughts: bool,
     attached_file: Option<&AttachedFile>,
     endpoint: &str,
+    model_id: &str,
 ) -> Result<Value, String> {
     match publisher {
         "anthropic" => build_anthropic_payload(
@@ -220,6 +247,13 @@ fn build_payload(
             include_thoughts,
             attached_file,
             endpoint,
+        ),
+        "openrouter" | "xai" | "kilocode" => build_openai_payload(
+            prompt,
+            history,
+            attached_file,
+            model_id,
+            thinking_level,
         ),
         _ => Err(format!("Unknown publisher: {}", publisher)),
     }
@@ -378,6 +412,85 @@ fn build_google_payload(
     Ok(payload)
 }
 
+fn build_openai_payload(
+    prompt: &str,
+    history: &[Message],
+    attached_file: Option<&AttachedFile>,
+    model_id: &str,
+    thinking_level: Option<&str>,
+) -> Result<Value, String> {
+    let mut messages: Vec<Value> = history
+        .iter()
+        .map(|m| {
+            json!({
+                "role": m.role,
+                "content": m.content
+            })
+        })
+        .collect();
+
+    let mut content_parts: Vec<Value> = Vec::new();
+
+    if let Some(file) = attached_file {
+        if file.mime_type.starts_with("image/") {
+            content_parts.push(json!({
+                "type": "image_url",
+                "image_url": {
+                    "url": format!("data:{};base64,{}", file.mime_type, file.data)
+                }
+            }));
+        } else {
+            if let Ok(decoded) = BASE64.decode(&file.data) {
+                if let Ok(text) = String::from_utf8(decoded) {
+                    content_parts.push(json!({
+                        "type": "text",
+                        "text": format!("[File: {}]\n{}\n[End of file]", file.path, text)
+                    }));
+                }
+            }
+        }
+    }
+
+    content_parts.push(json!({
+        "type": "text",
+        "text": prompt
+    }));
+
+    let user_content = if content_parts.len() == 1 {
+        json!(prompt)
+    } else {
+        json!(content_parts)
+    };
+
+    messages.push(json!({
+        "role": "user",
+        "content": user_content
+    }));
+
+    let mut payload = json!({
+        "model": model_id,
+        "messages": messages,
+        "stream": false
+    });
+
+    if let Some(level) = thinking_level {
+        if level != "none" {
+            let budget = match level {
+                "low" => 1024,
+                "medium" => 4096,
+                "high" => 16384,
+                _ => 4096,
+            };
+            payload["reasoning"] = json!({
+                "effort": level,
+                "budget_tokens": budget
+            });
+        }
+    }
+
+    Ok(payload)
+}
+
 fn parse_response(body: &str, publisher: &str, include_thoughts: bool, prompt: &str) -> Result<ChatResponse, String> {
     let raw_json = body.to_string();
     let input_estimate = (prompt.len() / 4) as u32;
@@ -385,6 +498,7 @@ fn parse_response(body: &str, publisher: &str, include_thoughts: bool, prompt: &
     match publisher {
         "anthropic" => parse_anthropic_response(body, raw_json, input_estimate),
         "google" => parse_google_response(body, include_thoughts, raw_json, input_estimate),
+        "openrouter" | "xai" | "kilocode" => parse_openai_response(body, raw_json, input_estimate),
         _ => Ok(ChatResponse {
             content: body.to_string(),
             raw_json,
@@ -591,6 +705,62 @@ fn parse_google_response(body: &str, include_thoughts: bool, raw_json: String, i
 
     if !output.is_empty() {
         output.push_str("FINAL ANSWER\n");
+        output.push_str(&"=".repeat(50));
+        output.push('\n');
+    }
+    output.push_str(full_text.trim());
+
+    if output_tokens == 0 {
+        output_tokens = (output.len() / 4) as u32;
+    }
+
+    Ok(ChatResponse {
+        content: output,
+        raw_json,
+        input_tokens,
+        output_tokens,
+    })
+}
+
+fn parse_openai_response(body: &str, raw_json: String, input_estimate: u32) -> Result<ChatResponse, String> {
+    let mut full_text = String::new();
+    let mut reasoning_text = String::new();
+    let mut input_tokens: u32 = input_estimate;
+    let mut output_tokens: u32 = 0;
+
+    if let Ok(data) = serde_json::from_str::<Value>(body) {
+        if let Some(choices) = data.get("choices").and_then(|c| c.as_array()) {
+            if let Some(choice) = choices.first() {
+                if let Some(message) = choice.get("message") {
+                    if let Some(content) = message.get("content").and_then(|c| c.as_str()) {
+                        full_text.push_str(content);
+                    }
+                    if let Some(reasoning) = message.get("reasoning_content").and_then(|r| r.as_str()) {
+                        reasoning_text.push_str(reasoning);
+                    }
+                }
+            }
+        }
+
+        if let Some(usage) = data.get("usage") {
+            if let Some(prompt_tokens) = usage.get("prompt_tokens").and_then(|t| t.as_u64()) {
+                input_tokens = prompt_tokens as u32;
+            }
+            if let Some(completion_tokens) = usage.get("completion_tokens").and_then(|t| t.as_u64()) {
+                output_tokens = completion_tokens as u32;
+            }
+        }
+    }
+
+    let mut output = String::new();
+
+    if !reasoning_text.is_empty() {
+        output.push_str("REASONING\n");
+        output.push_str(&"=".repeat(50));
+        output.push('\n');
+        output.push_str(reasoning_text.trim());
+        output.push_str("\n\n");
+        output.push_str("ANSWER\n");
         output.push_str(&"=".repeat(50));
         output.push('\n');
     }

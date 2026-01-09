@@ -1,8 +1,8 @@
-export type EndpointType = "vertex_ai" | "ai_studio" | "custom";
+export type EndpointType = "vertex_ai" | "ai_studio" | "openrouter" | "xai" | "kilocode" | "custom";
 
 export interface ModelConfig {
   id: string;
-  publisher: "anthropic" | "google";
+  publisher: "anthropic" | "google" | "openrouter" | "xai" | "kilocode";
   modelId: string;
   aiStudioModelId?: string;
   displayName: string;
