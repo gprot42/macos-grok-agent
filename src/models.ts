@@ -89,6 +89,8 @@ export const MODELS: Record<string, ModelConfig> = {
     pricing: { input: 0.0025, output: 0.015 },
     supportsGrounding: true,
     defaultGrounding: true,
+    supportsDeepThinking: true,
+    defaultThinkingLevel: "none",
     endpointSupport: ["vertex_ai", "ai_studio"],
   },
   "gemini-3-pro-deep-think": {
