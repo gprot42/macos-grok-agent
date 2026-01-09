@@ -9,3 +9,4 @@ export { ImageGenerator } from "./ImageGenerator";
 export { Header } from "./Header";
 export { SettingsPanel } from "./SettingsPanel";
 export { ProjectsPanel } from "./ProjectsPanel";
+export { DeepResearchPanel } from "./DeepResearchPanel";

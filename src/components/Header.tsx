@@ -4,8 +4,8 @@ import { ThemeMode } from "../types";
 interface HeaderProps {
   theme: ThemeMode;
   onThemeChange: (theme: ThemeMode) => void;
-  activeTab: "chat" | "image";
-  onTabChange: (tab: "chat" | "image") => void;
+  activeTab: "chat" | "image" | "research";
+  onTabChange: (tab: "chat" | "image" | "research") => void;
   onShowSettings: () => void;
   onShowProjects: () => void;
   onShowAbout: () => void;
@@ -76,6 +76,16 @@ export function Header({
               }`}
             >
               Image
+            </button>
+            <button
+              onClick={() => onTabChange("research")}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                activeTab === "research"
+                  ? "bg-white dark:bg-tokyo-surface text-gray-900 dark:text-tokyo-text shadow-sm"
+                  : "text-gray-600 dark:text-tokyo-muted hover:text-gray-900 dark:hover:text-tokyo-text"
+              }`}
+            >
+              Deep Research
             </button>
           </div>
         </div>

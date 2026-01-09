@@ -6,6 +6,7 @@ import {
   ImageGenerator,
   SettingsPanel,
   ProjectsPanel,
+  DeepResearchPanel,
 } from "./components";
 import { useSettings, useChat } from "./hooks";
 import { MODELS } from "./models";
@@ -32,7 +33,7 @@ function App() {
     clearImages: _clearImages,
   } = useChat();
 
-  const [activeTab, setActiveTab] = useState<"chat" | "image">("chat");
+  const [activeTab, setActiveTab] = useState<"chat" | "image" | "research">("chat");
   const [showSettings, setShowSettings] = useState(false);
   const [showProjects, setShowProjects] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
@@ -147,12 +148,20 @@ function App() {
             onThinkingLevelChange={setThinkingLevel}
             onCustomUrlChange={setCustomUrl}
           />
-        ) : (
+        ) : activeTab === "image" ? (
           <div className="flex items-center gap-3">
             <span className="text-2xl">🍌</span>
             <div>
               <div className="font-medium theme-text">Nano Banana Pro</div>
               <div className="text-xs theme-text-muted">Gemini 3 Pro Image - AI image generation and editing</div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🔬</span>
+            <div>
+              <div className="font-medium theme-text">Gemini Deep Research</div>
+              <div className="text-xs theme-text-muted">Multi-step web research agent with source synthesis</div>
             </div>
           </div>
         )}
@@ -191,7 +200,7 @@ function App() {
               onClearMessages={clearMessages}
             />
           </>
-        ) : (
+        ) : activeTab === "image" ? (
           <ImageGenerator
             apiKey={settings.apiKey}
             onGenerateImage={generateImage}
@@ -199,6 +208,14 @@ function App() {
             isLoading={isLoading}
             error={error}
             activeProject={activeProject}
+          />
+        ) : (
+          <DeepResearchPanel
+            apiKey={settings.apiKey}
+            isLoading={isLoading}
+            error={error}
+            activeProject={activeProject}
+            onSendMessage={sendMessage}
           />
         )}
       </main>
