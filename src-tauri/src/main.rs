@@ -119,8 +119,9 @@ async fn generate_image(
 async fn deep_research(
     prompt: String,
     api_key: String,
+    timeout_minutes: Option<u32>,
 ) -> Result<ChatResponse, String> {
-    api::deep_research(prompt, api_key).await
+    api::deep_research(prompt, api_key, timeout_minutes.unwrap_or(15)).await
 }
 
 #[tauri::command]

@@ -192,6 +192,7 @@ pub async fn generate_image(
 pub async fn deep_research(
     prompt: String,
     api_key: String,
+    timeout_minutes: u32,
 ) -> Result<ChatResponse, String> {
     let client = Client::new();
     
@@ -231,7 +232,7 @@ pub async fn deep_research(
     
     // Step 2: Poll for completion
     let poll_url = format!("{}/v1beta/interactions/{}", AI_STUDIO_ENDPOINT, interaction_id);
-    let max_attempts = 90; // 15 minutes max (10s intervals)
+    let max_attempts = (timeout_minutes * 6) as usize; // 10s intervals = 6 per minute
     
     for attempt in 0..max_attempts {
         tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
@@ -294,7 +295,7 @@ pub async fn deep_research(
         }
     }
     
-    Err("Research timed out after 15 minutes".to_string())
+    Err(format!("Research timed out after {} minutes", timeout_minutes))
 }
 
 fn build_url(

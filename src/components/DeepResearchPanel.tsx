@@ -12,7 +12,7 @@ interface DeepResearchPanelProps {
     tasks: ResearchTask[];
     runningTasks: ResearchTask[];
     completedTasks: ResearchTask[];
-    startResearch: (query: string, apiKey: string) => Promise<string>;
+    startResearch: (query: string, apiKey: string, timeoutMinutes?: number) => Promise<string>;
     dismissTask: (taskId: string) => void;
     clearCompleted: () => void;
   };
@@ -28,6 +28,7 @@ export function DeepResearchPanel({
   const [savedIdx, setSavedIdx] = useState<string | null>(null);
   const [saveFormat, setSaveFormat] = useState<"md" | "txt">("md");
   const [thinkingLevel, setThinkingLevel] = useState("medium");
+  const [timeoutMinutes, setTimeoutMinutes] = useState(15);
   const resultsEndRef = useRef<HTMLDivElement>(null);
 
   // Real-time elapsed timer component
@@ -56,12 +57,19 @@ export function DeepResearchPanel({
     { value: "high", label: "High" },
   ];
 
+  const timeoutOptions = [
+    { value: 15, label: "15 min" },
+    { value: 30, label: "30 min" },
+    { value: 45, label: "45 min" },
+    { value: 60, label: "60 min" },
+  ];
+
   const handleResearch = async () => {
     if (!query.trim() || !apiKey) {
       return;
     }
 
-    await research.startResearch(query, apiKey);
+    await research.startResearch(query, apiKey, timeoutMinutes);
     setQuery("");
     resultsEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -280,6 +288,18 @@ export function DeepResearchPanel({
               title="Thinking Level"
             >
               {thinkingOptions.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+
+            {/* Timeout selector */}
+            <select
+              value={timeoutMinutes}
+              onChange={(e) => setTimeoutMinutes(Number(e.target.value))}
+              className="text-xs px-2 py-1 rounded theme-surface theme-border border"
+              title="Research Timeout"
+            >
+              {timeoutOptions.map(opt => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}
             </select>
