@@ -321,7 +321,7 @@ export function ImageGenerator({
               : "Describe the image you want to create... (Ctrl+Enter)"
           }
           rows={3}
-          className="w-full min-h-[100px] resize-none"
+          className="w-full min-h-[100px] max-h-[300px] resize-y"
         />
 
         <div className="flex items-center justify-between">

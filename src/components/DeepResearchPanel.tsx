@@ -251,7 +251,7 @@ export function DeepResearchPanel({
           onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setQuery(e.target.value)}
           placeholder="Enter your research question... (e.g., 'What are the latest developments in quantum computing?')"
           rows={3}
-          className="w-full resize-none"
+          className="w-full min-h-[80px] max-h-[300px] resize-y"
         />
 
         <div className="flex items-center justify-between">
