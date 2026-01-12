@@ -305,7 +305,7 @@ export function ImageGenerator({
       </div>
 
       <div className="border-t theme-border p-4 space-y-3 relative z-10 theme-surface">
-        <div style={{ display: 'flex', flexDirection: 'column-reverse' }}>
+        <div style={{ transform: 'rotate(180deg)' }}>
           <Textarea
             value={prompt}
             onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setPrompt(e.target.value)}
@@ -323,6 +323,7 @@ export function ImageGenerator({
             }
             rows={3}
             className="w-full min-h-[100px] max-h-[300px] resize-y"
+            style={{ transform: 'rotate(180deg)' }}
           />
         </div>
 

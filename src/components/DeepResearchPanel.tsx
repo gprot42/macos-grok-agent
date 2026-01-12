@@ -246,13 +246,14 @@ export function DeepResearchPanel({
       </div>
 
       <div className="border-t theme-border p-4 space-y-3 theme-surface">
-        <div style={{ display: 'flex', flexDirection: 'column-reverse' }}>
+        <div style={{ transform: 'rotate(180deg)' }}>
           <Textarea
             value={query}
             onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setQuery(e.target.value)}
             placeholder="Enter your research question... (e.g., 'What are the latest developments in quantum computing?')"
             rows={3}
             className="w-full min-h-[80px] max-h-[300px] resize-y"
+            style={{ transform: 'rotate(180deg)' }}
           />
         </div>
 

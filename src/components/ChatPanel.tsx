@@ -350,7 +350,12 @@ export function ChatPanel({
           </div>
         )}
 
-        <div className="relative" style={{ display: 'flex', flexDirection: 'column-reverse' }}>
+        <div
+          className="relative"
+          style={{
+            transform: 'rotate(180deg)',
+          }}
+        >
           <Textarea
             value={prompt}
             onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setPrompt(e.target.value)}
@@ -358,12 +363,14 @@ export function ChatPanel({
             placeholder="Enter your prompt... (Ctrl+Enter to send)"
             rows={3}
             className="w-full min-h-[100px] max-h-[400px] pr-24 resize-y"
+            style={{ transform: 'rotate(180deg)' }}
           />
           {isLoading ? (
             <button
               onClick={onStopGeneration}
-              className="absolute right-3 bottom-3 z-20 p-3 rounded-xl bg-red-500 text-white hover:bg-red-600 transition-all shadow-lg pointer-events-auto"
+              className="absolute left-3 top-3 z-20 p-3 rounded-xl bg-red-500 text-white hover:bg-red-600 transition-all shadow-lg pointer-events-auto"
               title="Stop generation"
+              style={{ transform: 'rotate(180deg)' }}
             >
               <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                 <rect x="6" y="6" width="12" height="12" rx="2" />
@@ -373,8 +380,9 @@ export function ChatPanel({
             <button
               onClick={handleSend}
               disabled={!prompt.trim() && !attachedFile}
-              className="absolute right-3 bottom-3 z-20 p-3 rounded-xl bg-[var(--accent)] text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg pointer-events-auto"
+              className="absolute left-3 top-3 z-20 p-3 rounded-xl bg-[var(--accent)] text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg pointer-events-auto"
               title="Send (Ctrl+Enter)"
+              style={{ transform: 'rotate(180deg)' }}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
