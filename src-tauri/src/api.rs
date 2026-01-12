@@ -231,7 +231,7 @@ pub async fn deep_research(
     
     // Step 2: Poll for completion
     let poll_url = format!("{}/v1beta/interactions/{}", AI_STUDIO_ENDPOINT, interaction_id);
-    let max_attempts = 60; // 10 minutes max (10s intervals)
+    let max_attempts = 90; // 15 minutes max (10s intervals)
     
     for attempt in 0..max_attempts {
         tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
@@ -294,7 +294,7 @@ pub async fn deep_research(
         }
     }
     
-    Err("Research timed out after 10 minutes".to_string())
+    Err("Research timed out after 15 minutes".to_string())
 }
 
 fn build_url(

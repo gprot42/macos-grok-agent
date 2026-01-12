@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { invoke } from "@tauri-apps/api/core";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,26 @@ export function DeepResearchPanel({
   const [saveFormat, setSaveFormat] = useState<"md" | "txt">("md");
   const [thinkingLevel, setThinkingLevel] = useState("medium");
   const resultsEndRef = useRef<HTMLDivElement>(null);
+
+  // Real-time elapsed timer component
+  function ElapsedTimer({ startedAt }: { startedAt: number }) {
+    const [elapsed, setElapsed] = useState(Math.floor((Date.now() - startedAt) / 1000));
+
+    useEffect(() => {
+      const interval = setInterval(() => {
+        setElapsed(Math.floor((Date.now() - startedAt) / 1000));
+      }, 1000);
+      return () => clearInterval(interval);
+    }, [startedAt]);
+
+    const minutes = Math.floor(elapsed / 60);
+    const seconds = elapsed % 60;
+    return (
+      <span className="font-mono">
+        {String(minutes).padStart(2, "0")}:{String(seconds).padStart(2, "0")}
+      </span>
+    );
+  }
 
   const thinkingOptions = [
     { value: "low", label: "Low" },
@@ -86,10 +106,13 @@ export function DeepResearchPanel({
               <div className="animate-spin w-4 h-4 border-2 border-current border-t-transparent rounded-full"></div>
               <span className="font-medium">{research.runningTasks.length} research task(s) running</span>
             </div>
-            <div className="mt-2 space-y-1">
+            <div className="mt-2 space-y-2">
               {research.runningTasks.map(task => (
-                <div key={task.id} className="text-xs text-blue-600/80 dark:text-blue-400/80 truncate">
-                  • {task.query}
+                <div key={task.id} className="flex items-center justify-between text-sm text-blue-600/80 dark:text-blue-400/80">
+                  <span className="truncate flex-1 mr-3">• {task.query}</span>
+                  <span className="text-blue-500 dark:text-blue-300 font-medium">
+                    <ElapsedTimer startedAt={task.startedAt} />
+                  </span>
                 </div>
               ))}
             </div>
