@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 
 interface ImageGeneratorProps {
   apiKey: string;
-  onGenerateImage: (options: { prompt: string; apiKey: string; editImage?: string }) => Promise<string | undefined>;
+  onGenerateImage: (options: { prompt: string; apiKey: string; editImage?: string; editImageMimeType?: string }) => Promise<string | undefined>;
   generatedImages: string[];
   isLoading: boolean;
   error: string | null;
@@ -72,6 +72,7 @@ export function ImageGenerator({
       prompt,
       apiKey,
       editImage: sourceImage?.data,
+      editImageMimeType: sourceImage?.mimeType,
     });
     setPrompt("");
   };

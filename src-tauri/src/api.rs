@@ -120,6 +120,7 @@ pub async fn generate_image(
     prompt: String,
     api_key: String,
     edit_image: Option<String>,
+    edit_image_mime_type: Option<String>,
 ) -> Result<String, String> {
     let client = Client::new();
     let url = format!(
@@ -130,9 +131,11 @@ pub async fn generate_image(
     let mut parts = vec![json!({"text": prompt})];
 
     if let Some(image_data) = edit_image {
+        // Use provided MIME type, default to image/png if not specified
+        let mime_type = edit_image_mime_type.unwrap_or_else(|| "image/png".to_string());
         parts.push(json!({
             "inline_data": {
-                "mime_type": "image/png",
+                "mime_type": mime_type,
                 "data": image_data
             }
         }));
