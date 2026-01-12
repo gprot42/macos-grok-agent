@@ -155,21 +155,46 @@ else
 fi
 
 # Anthropic models require agreement to terms
-print_header "Anthropic Model Garden Setup"
+print_header "Anthropic Model Garden Setup (Manual Step Required)"
 
-echo "To use Claude models via Vertex AI Model Garden, you must:"
+echo -e "${YELLOW}Why is this step manual?${NC}"
 echo ""
-echo "  1. Visit the Google Cloud Console Model Garden:"
-echo -e "     ${BLUE}https://console.cloud.google.com/vertex-ai/publishers/anthropic/model-garden?project=$PROJECT_ID${NC}"
+echo "  Anthropic Claude models require accepting their Terms of Service."
+echo "  This is a legal agreement between your organization and Anthropic"
+echo "  that cannot be automated via CLI or API - it requires human consent"
+echo "  in the Google Cloud Console."
 echo ""
-echo "  2. Select each Claude model you want to use:"
+echo -e "${GREEN}Good news:${NC} This is a one-time setup per project!"
+echo "  Once enabled, Claude models remain available permanently."
+echo ""
+echo -e "${YELLOW}Steps to enable Claude models:${NC}"
+echo ""
+echo "  1. Visit the Anthropic Model Garden page"
+echo "  2. Click on each Claude model you want to use:"
 echo "     - Claude 4.5 Haiku"
 echo "     - Claude 4.5 Sonnet" 
 echo "     - Claude 4.5 Opus"
+echo "  3. Click 'Enable' and accept the Anthropic terms of service"
 echo ""
-echo "  3. Click 'Enable' and accept the terms of service"
+
+ANTHROPIC_URL="https://console.cloud.google.com/vertex-ai/publishers/anthropic/model-garden?project=$PROJECT_ID"
+
+# Offer to open browser
+echo -e "URL: ${BLUE}${ANTHROPIC_URL}${NC}"
 echo ""
-print_warning "Anthropic models require manual enablement in the Console"
+read -p "Open this URL in your browser now? (y/N) " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    if command -v open &> /dev/null; then
+        open "$ANTHROPIC_URL"
+        print_step "Opened in browser"
+    elif command -v xdg-open &> /dev/null; then
+        xdg-open "$ANTHROPIC_URL"
+        print_step "Opened in browser"
+    else
+        print_warning "Could not detect browser opener. Please visit the URL manually."
+    fi
+fi
 
 # Summary
 print_header "Setup Complete!"
@@ -180,11 +205,12 @@ echo "  Service Account: $SA_EMAIL"
 echo "  Key Location:    $KEY_PATH"
 echo ""
 echo "Next steps:"
-echo "  1. Enable Anthropic models in Model Garden (see URLs above)"
+echo "  1. Enable Anthropic models in Model Garden (if not done already)"
 echo "  2. Launch Cortex Agent and select 'Vertex AI' endpoint"
 echo ""
 echo "Console links:"
 echo -e "  Model Garden:  ${BLUE}https://console.cloud.google.com/vertex-ai/model-garden?project=$PROJECT_ID${NC}"
-echo -e "  Anthropic:     ${BLUE}https://console.cloud.google.com/vertex-ai/publishers/anthropic?project=$PROJECT_ID${NC}"
+echo -e "  Anthropic:     ${BLUE}${ANTHROPIC_URL}${NC}"
 echo -e "  IAM:           ${BLUE}https://console.cloud.google.com/iam-admin/iam?project=$PROJECT_ID${NC}"
 echo ""
+
