@@ -79,6 +79,12 @@ export interface ChatSession {
   createdAt: number;
 }
 
+export interface ResearchSession {
+  id: string;
+  name: string;
+  createdAt: number;
+}
+
 export interface TokenUsage {
   inputTokens: number;
   outputTokens: number;

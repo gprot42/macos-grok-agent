@@ -3,7 +3,7 @@ import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { invoke } from "@tauri-apps/api/core";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { ResearchTask } from "../hooks/useDeepResearch";
+import { ResearchTask } from "../hooks/useResearchSessions";
 
 interface DeepResearchPanelProps {
   apiKey: string;

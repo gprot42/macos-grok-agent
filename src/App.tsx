@@ -7,9 +7,10 @@ import {
   SettingsPanel,
   ProjectsPanel,
   DeepResearchPanel,
+  ResearchSessionTabs,
 } from "./components";
 import { useSettings, useChat } from "./hooks";
-import { useDeepResearch } from "./hooks/useDeepResearch";
+import { useResearchSessions } from "./hooks/useResearchSessions";
 import { MODELS } from "./models";
 import { EndpointType, ThemeMode, ChatSession } from "./types";
 
@@ -37,7 +38,7 @@ function App() {
     clearImages: _clearImages,
   } = useChat();
 
-  const deepResearch = useDeepResearch();
+  const researchSessions = useResearchSessions();
 
   const [activeTab, setActiveTab] = useState<"chat" | "image" | "research">("chat");
   const [showSettings, setShowSettings] = useState(false);
@@ -248,11 +249,21 @@ function App() {
             onDeleteImage={deleteImage}
           />
         ) : (
-          <DeepResearchPanel
-            apiKey={settings.apiKey}
-            activeProject={activeProject}
-            research={deepResearch}
-          />
+          <>
+            <ResearchSessionTabs
+              sessions={researchSessions.sessions}
+              activeSessionId={researchSessions.activeSessionId}
+              onSelectSession={researchSessions.setActiveSessionId}
+              onCreateSession={researchSessions.createSession}
+              onDeleteSession={researchSessions.deleteSession}
+              onRenameSession={researchSessions.renameSession}
+            />
+            <DeepResearchPanel
+              apiKey={settings.apiKey}
+              activeProject={activeProject}
+              research={researchSessions}
+            />
+          </>
         )}
       </main>
 
