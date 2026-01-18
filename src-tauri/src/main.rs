@@ -180,6 +180,27 @@ async fn run_vertex_setup(project_id: String, remove: bool) -> Result<String, St
     use std::process::Command;
     use std::env;
     
+    fn strip_ansi_codes(s: &str) -> String {
+        let mut result = String::new();
+        let mut chars = s.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c == '\x1b' {
+                if chars.peek() == Some(&'[') {
+                    chars.next();
+                    while let Some(&next) = chars.peek() {
+                        chars.next();
+                        if next.is_ascii_alphabetic() {
+                            break;
+                        }
+                    }
+                }
+            } else {
+                result.push(c);
+            }
+        }
+        result
+    }
+    
     let script_path = if cfg!(debug_assertions) {
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .parent()
@@ -209,8 +230,8 @@ async fn run_vertex_setup(project_id: String, remove: bool) -> Result<String, St
     
     let output = cmd.output().map_err(|e| format!("Failed to run script: {}", e))?;
     
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = strip_ansi_codes(&String::from_utf8_lossy(&output.stdout));
+    let stderr = strip_ansi_codes(&String::from_utf8_lossy(&output.stderr));
     
     if output.status.success() {
         Ok(format!("{}\n{}", stdout, stderr))

@@ -270,7 +270,7 @@ export function SettingsPanel({
                 }
               >
                 <p className="text-sm text-gray-600 dark:text-tokyo-muted">
-                  Run <code className="bg-gray-200 dark:bg-tokyo-border px-1.5 py-0.5 rounded text-xs">scripts/02-enable-vertex-models.sh</code> and follow instructions.
+                  Run <code className="bg-gray-200 dark:bg-tokyo-border px-1.5 py-0.5 rounded text-xs">scripts/02-enable-vertex-models.sh</code> and follow the instructions, or enable them through the <a href="https://console.cloud.google.com/vertex-ai/model-garden" target="_blank" rel="noopener" className="underline">Model Garden UI</a> directly.
                 </p>
               </SettingRow>
             </div>
