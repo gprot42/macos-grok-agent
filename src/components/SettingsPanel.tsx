@@ -20,12 +20,12 @@ function SettingRow({
   children: React.ReactNode;
 }) {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4 border-b border-gray-100 dark:border-tokyo-border last:border-b-0">
-      <div className="pr-4">
+    <div className="grid grid-cols-1 md:grid-cols-2 py-4 border-b border-gray-300 dark:border-gray-600 last:border-b-0">
+      <div className="pr-6 md:border-r border-gray-300 dark:border-gray-600">
         <h4 className="font-medium text-gray-800 dark:text-tokyo-text mb-1">{title}</h4>
         <div className="text-sm text-gray-500 dark:text-tokyo-muted">{description}</div>
       </div>
-      <div className="flex flex-col justify-center">{children}</div>
+      <div className="flex flex-col justify-center pl-0 md:pl-6 mt-4 md:mt-0">{children}</div>
     </div>
   );
 }
