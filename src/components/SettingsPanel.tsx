@@ -109,7 +109,7 @@ export function SettingsPanel({
 
         <div className="p-6 overflow-y-auto flex-1">
           <div className="mb-6">
-            <h3 className="text-xs font-semibold text-gray-400 dark:text-tokyo-muted uppercase tracking-wider mb-2">
+            <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-2">
               API Keys
             </h3>
             <div className="bg-gray-50 dark:bg-tokyo-bg rounded-lg p-4">
@@ -138,7 +138,7 @@ export function SettingsPanel({
           </div>
 
           <div className="mb-6">
-            <h3 className="text-xs font-semibold text-gray-400 dark:text-tokyo-muted uppercase tracking-wider mb-2">
+            <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-2">
               Vertex AI (Google Cloud)
             </h3>
             <div className="bg-gray-50 dark:bg-tokyo-bg rounded-lg p-4">
@@ -213,7 +213,7 @@ export function SettingsPanel({
           </div>
 
           <div className="mb-6">
-            <h3 className="text-xs font-semibold text-gray-400 dark:text-tokyo-muted uppercase tracking-wider mb-2">
+            <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-2">
               Deep Research
             </h3>
             <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
@@ -240,7 +240,7 @@ export function SettingsPanel({
           </div>
 
           <div className="mb-6">
-            <h3 className="text-xs font-semibold text-gray-400 dark:text-tokyo-muted uppercase tracking-wider mb-2">
+            <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-2">
               Display
             </h3>
             <div className="bg-gray-50 dark:bg-tokyo-bg rounded-lg p-4">
