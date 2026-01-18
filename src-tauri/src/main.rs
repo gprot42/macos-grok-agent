@@ -363,6 +363,24 @@ fn main() {
     tauri::Builder::default()
         .enable_macos_default_menu(false)
         .menu(|handle| {
+            // Create App submenu (macOS standard)
+            let app_menu = Submenu::with_items(
+                handle,
+                "Cortex Agent",
+                true,
+                &[
+                    &PredefinedMenuItem::about(handle, Some("About Cortex Agent"), None)?,
+                    &PredefinedMenuItem::separator(handle)?,
+                    &PredefinedMenuItem::services(handle, None)?,
+                    &PredefinedMenuItem::separator(handle)?,
+                    &PredefinedMenuItem::hide(handle, None)?,
+                    &PredefinedMenuItem::hide_others(handle, None)?,
+                    &PredefinedMenuItem::show_all(handle, None)?,
+                    &PredefinedMenuItem::separator(handle)?,
+                    &PredefinedMenuItem::quit(handle, None)?,
+                ],
+            )?;
+            
             // Create Edit submenu with standard actions
             let edit_menu = Submenu::with_items(
                 handle,
@@ -379,7 +397,20 @@ fn main() {
                 ],
             )?;
             
-            Menu::with_items(handle, &[&edit_menu])
+            // Create Window submenu
+            let window_menu = Submenu::with_items(
+                handle,
+                "Window",
+                true,
+                &[
+                    &PredefinedMenuItem::minimize(handle, None)?,
+                    &PredefinedMenuItem::maximize(handle, None)?,
+                    &PredefinedMenuItem::separator(handle)?,
+                    &PredefinedMenuItem::close_window(handle, None)?,
+                ],
+            )?;
+            
+            Menu::with_items(handle, &[&app_menu, &edit_menu, &window_menu])
         })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())

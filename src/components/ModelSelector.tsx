@@ -144,7 +144,9 @@ export function ModelSelector({
         onChange={(e) => onShowRawJsonChange(e.target.checked)}
       />
 
-      <div className="text-base theme-text">
+      <div className="border-l border-gray-300 dark:border-tokyo-border h-6 mx-2" />
+
+      <div className="text-base theme-text-muted italic">
         {model?.description}
       </div>
     </div>
