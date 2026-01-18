@@ -212,27 +212,40 @@ export function SettingsPanel({
                   <>
                     Vertex AI requires a <strong>GCP Project</strong> with billing enabled to access Claude and Gemini models via Google Cloud.
                     <p className="mt-2">The service account provides secure authentication without exposing your credentials.</p>
-                    {hasServiceAccount && saProjectId && (
-                      <div className="mt-2 flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-green-500" />
-                        <span className="text-green-600 dark:text-green-400 font-medium">
-                          Configured: {saProjectId}
-                        </span>
-                      </div>
-                    )}
                   </>
                 }
               >
                 <div className="space-y-3">
-                  <Input
-                    label="GCP Project ID"
-                    value={setupProjectId}
-                    onChange={(e) => setSetupProjectId(e.target.value)}
-                    placeholder="my-gcp-project"
-                    disabled={hasServiceAccount}
-                  />
-                  <div className="flex gap-2">
-                    {!hasServiceAccount ? (
+                  {hasServiceAccount && saProjectId ? (
+                    <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg p-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="w-3 h-3 rounded-full bg-green-500" />
+                        <span className="text-green-800 dark:text-green-200 font-semibold">
+                          Already Configured
+                        </span>
+                      </div>
+                      <p className="text-sm text-green-700 dark:text-green-300">
+                        Project: <strong>{saProjectId}</strong>
+                      </p>
+                      <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                        To reconfigure, remove the existing service account first.
+                      </p>
+                      <Button
+                        onClick={() => handleVertexSetup(true)}
+                        disabled={setupLoading}
+                        className="mt-3"
+                      >
+                        {setupLoading ? "Removing..." : "Remove Service Account"}
+                      </Button>
+                    </div>
+                  ) : (
+                    <>
+                      <Input
+                        label="GCP Project ID"
+                        value={setupProjectId}
+                        onChange={(e) => setSetupProjectId(e.target.value)}
+                        placeholder="my-gcp-project"
+                      />
                       <Button
                         variant="primary"
                         onClick={() => handleVertexSetup(false)}
@@ -240,15 +253,8 @@ export function SettingsPanel({
                       >
                         {setupLoading ? "Running..." : "Setup Service Account"}
                       </Button>
-                    ) : (
-                      <Button
-                        onClick={() => handleVertexSetup(true)}
-                        disabled={setupLoading}
-                      >
-                        {setupLoading ? "Removing..." : "Remove"}
-                      </Button>
-                    )}
-                  </div>
+                    </>
+                  )}
                   {setupResult && (
                     <div className={`p-2 rounded text-xs max-h-24 overflow-auto ${
                       setupResult.success
