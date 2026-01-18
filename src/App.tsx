@@ -124,6 +124,21 @@ function App() {
     updateSettings({ theme });
   };
 
+  const getApiKeyForEndpoint = (endpoint: EndpointType): string => {
+    switch (endpoint) {
+      case "ai_studio":
+        return settings.aiStudioKey || settings.apiKey;
+      case "openrouter":
+        return settings.openrouterKey || settings.apiKey;
+      case "xai":
+        return settings.xaiKey || settings.apiKey;
+      case "kilocode":
+        return settings.kilocodeKey || settings.apiKey;
+      default:
+        return settings.apiKey;
+    }
+  };
+
   const handleEndpointChange = (endpoint: EndpointType) => {
     setSelectedEndpoint(endpoint);
     if (endpoint === "ai_studio") {
@@ -220,7 +235,7 @@ function App() {
               error={error}
               model={currentModel}
               endpoint={selectedEndpoint}
-              apiKey={settings.apiKey}
+              apiKey={getApiKeyForEndpoint(selectedEndpoint)}
               projectId={settings.projectId}
               use1MContext={use1MContext}
               useMemory={useMemory}
@@ -240,7 +255,7 @@ function App() {
           </>
         ) : activeTab === "image" ? (
           <ImageGenerator
-            apiKey={settings.apiKey}
+            apiKey={settings.aiStudioKey || settings.apiKey}
             onGenerateImage={generateImage}
             generatedImages={generatedImages}
             isLoading={isLoading}
@@ -259,7 +274,7 @@ function App() {
               onRenameSession={researchSessions.renameSession}
             />
             <DeepResearchPanel
-              apiKey={settings.apiKey}
+              apiKey={settings.aiStudioKey || settings.apiKey}
               activeProject={activeProject}
               research={researchSessions}
             />

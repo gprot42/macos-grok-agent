@@ -47,6 +47,10 @@ export interface AppSettings {
   fontSize: number;
   fontFamily: string;
   apiKey: string;
+  aiStudioKey?: string;
+  openrouterKey?: string;
+  xaiKey?: string;
+  kilocodeKey?: string;
   projectId: string;
   activeProject?: string;
   showRawJson?: boolean;

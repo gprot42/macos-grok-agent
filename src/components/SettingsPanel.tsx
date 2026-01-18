@@ -37,6 +37,10 @@ export function SettingsPanel({
   onClose,
 }: SettingsPanelProps) {
   const [apiKey, setApiKey] = useState(settings.apiKey);
+  const [aiStudioKey, setAiStudioKey] = useState(settings.aiStudioKey || "");
+  const [openrouterKey, setOpenrouterKey] = useState(settings.openrouterKey || "");
+  const [xaiKey, setXaiKey] = useState(settings.xaiKey || "");
+  const [kilocodeKey, setKilocodeKey] = useState(settings.kilocodeKey || "");
   const [projectId, setProjectId] = useState(settings.projectId);
   const [hasServiceAccount, setHasServiceAccount] = useState(false);
   const [saProjectId, setSaProjectId] = useState<string | null>(null);
@@ -46,6 +50,10 @@ export function SettingsPanel({
 
   useEffect(() => {
     setApiKey(settings.apiKey);
+    setAiStudioKey(settings.aiStudioKey || "");
+    setOpenrouterKey(settings.openrouterKey || "");
+    setXaiKey(settings.xaiKey || "");
+    setKilocodeKey(settings.kilocodeKey || "");
     setProjectId(settings.projectId);
   }, [settings]);
 
@@ -58,8 +66,14 @@ export function SettingsPanel({
   }, []);
 
   const handleSave = () => {
-    onSaveApiKey(apiKey);
-    onUpdateSettings({ projectId });
+    onSaveApiKey(aiStudioKey || apiKey);
+    onUpdateSettings({ 
+      projectId,
+      aiStudioKey,
+      openrouterKey,
+      xaiKey,
+      kilocodeKey,
+    });
     onClose();
   };
 
@@ -114,26 +128,76 @@ export function SettingsPanel({
             </h3>
             <div className="bg-gray-50 dark:bg-tokyo-bg rounded-lg p-4">
               <SettingRow
-                title="API Key"
+                title="AI Studio"
                 description={
                   <>
-                    Required for <strong>AI Studio</strong>, <strong>OpenRouter</strong>, <strong>xAI</strong>, and <strong>Kilo Code</strong> endpoints.
-                    <ul className="mt-2 list-disc list-inside text-xs">
-                      <li><strong>AI Studio:</strong> Powers Gemini models, Image generation, and Deep Research</li>
-                      <li><strong>OpenRouter:</strong> Access to 100+ models with one key</li>
-                      <li><strong>xAI:</strong> Grok models with real-time X data</li>
-                    </ul>
-                    <p className="mt-2 text-xs italic">Encrypted and stored locally.</p>
+                    Required for <strong>Gemini models</strong>, <strong>Image generation</strong>, and <strong>Deep Research</strong>.
+                    <p className="mt-1 text-xs">Get your key from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" className="underline">aistudio.google.com</a></p>
                   </>
                 }
               >
                 <Input
                   type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="Enter your API key"
+                  value={aiStudioKey}
+                  onChange={(e) => setAiStudioKey(e.target.value)}
+                  placeholder="AI Studio API key"
                 />
               </SettingRow>
+
+              <SettingRow
+                title="OpenRouter"
+                description={
+                  <>
+                    Access <strong>100+ models</strong> (Claude, GPT-4, Llama, Gemini) with one key.
+                    <p className="mt-1 text-xs">Get your key from <a href="https://openrouter.ai/keys" target="_blank" rel="noopener" className="underline">openrouter.ai</a></p>
+                  </>
+                }
+              >
+                <Input
+                  type="password"
+                  value={openrouterKey}
+                  onChange={(e) => setOpenrouterKey(e.target.value)}
+                  placeholder="OpenRouter API key"
+                />
+              </SettingRow>
+
+              <SettingRow
+                title="xAI"
+                description={
+                  <>
+                    Required for <strong>Grok models</strong> with real-time X (Twitter) data access.
+                    <p className="mt-1 text-xs">Get your key from <a href="https://console.x.ai" target="_blank" rel="noopener" className="underline">console.x.ai</a></p>
+                  </>
+                }
+              >
+                <Input
+                  type="password"
+                  value={xaiKey}
+                  onChange={(e) => setXaiKey(e.target.value)}
+                  placeholder="xAI API key"
+                />
+              </SettingRow>
+
+              <SettingRow
+                title="Kilo Code"
+                description={
+                  <>
+                    Coding-optimized access to Claude, Gemini, and DeepSeek models.
+                    <p className="mt-1 text-xs">Get your key from <a href="https://kilocode.ai" target="_blank" rel="noopener" className="underline">kilocode.ai</a></p>
+                  </>
+                }
+              >
+                <Input
+                  type="password"
+                  value={kilocodeKey}
+                  onChange={(e) => setKilocodeKey(e.target.value)}
+                  placeholder="Kilo Code API key"
+                />
+              </SettingRow>
+
+              <p className="text-xs text-gray-400 dark:text-tokyo-muted mt-2 italic">
+                All keys are encrypted and stored locally on this device.
+              </p>
             </div>
           </div>
 
