@@ -211,8 +211,8 @@ function App() {
           <div className="flex items-center gap-3">
             <span className="text-2xl">🔬</span>
             <div>
-              <div className="font-medium theme-text">Gemini Deep Research</div>
-              <div className="text-xs theme-text-muted">Multi-step web research agent with source synthesis</div>
+              <div className="text-lg font-medium theme-text">Gemini Deep Research</div>
+              <div className="text-sm theme-text-muted">Multi-step web research agent with source synthesis</div>
             </div>
           </div>
         )}
@@ -344,7 +344,7 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
           <div className="space-y-4">
             <div>
               <h4 className="font-semibold text-gray-800 dark:text-tokyo-text mb-2">AI Models</h4>
-              <ul className="text-sm text-gray-600 dark:text-tokyo-muted space-y-1">
+              <ul className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
                 <li>• Claude 4 Opus, Sonnet, Haiku - Anthropic's latest models</li>
                 <li>• Gemini 2.5/3 Pro/Flash - Google's multimodal AI</li>
                 <li>• Gemini 3 Pro Deep Think - Extended reasoning (AI Studio)</li>
@@ -356,7 +356,7 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
 
             <div>
               <h4 className="font-semibold text-gray-800 dark:text-tokyo-text mb-2">Endpoints</h4>
-              <ul className="text-sm text-gray-600 dark:text-tokyo-muted space-y-1">
+              <ul className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
                 <li>• Vertex AI - Google Cloud enterprise endpoint</li>
                 <li>• AI Studio - Google's free API endpoint</li>
                 <li>• OpenRouter - Access 100+ models with one API key</li>
@@ -368,7 +368,7 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
 
             <div>
               <h4 className="font-semibold text-gray-800 dark:text-tokyo-text mb-2">Features</h4>
-              <ul className="text-sm text-gray-600 dark:text-tokyo-muted space-y-1">
+              <ul className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
                 <li>• Multiple prompt sessions with tabs (Ctrl+T new, Ctrl+W close)</li>
                 <li>• File attachments (text, images, PDFs)</li>
                 <li>• Token tracking with cost estimation</li>
@@ -382,7 +382,7 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
 
             <div>
               <h4 className="font-semibold text-gray-800 dark:text-tokyo-text mb-2">Model Options</h4>
-              <ul className="text-sm text-gray-600 dark:text-tokyo-muted space-y-1">
+              <ul className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
                 <li>• 1M Context - Extended context window for large documents</li>
                 <li>• Memory - Claude models remember across conversations</li>
                 <li>• Grounding - Web search for up-to-date information</li>
@@ -400,7 +400,7 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
 
             <div>
               <h4 className="font-semibold text-gray-800 dark:text-tokyo-text mb-2">Keyboard Shortcuts</h4>
-              <ul className="text-sm text-gray-600 dark:text-tokyo-muted space-y-1">
+              <ul className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
                 <li>• Ctrl/Cmd + Enter - Send message</li>
                 <li>• Ctrl/Cmd + T - New prompt session</li>
                 <li>• Ctrl/Cmd + W - Close current session</li>

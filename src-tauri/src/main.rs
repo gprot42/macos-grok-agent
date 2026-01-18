@@ -122,7 +122,7 @@ async fn deep_research(
     api_key: String,
     timeout_minutes: Option<u32>,
 ) -> Result<ChatResponse, String> {
-    api::deep_research(prompt, api_key, timeout_minutes.unwrap_or(15)).await
+    api::deep_research(prompt, api_key, timeout_minutes.unwrap_or(60)).await
 }
 
 #[tauri::command]

@@ -39,7 +39,7 @@ export function ResearchSessionTabs({
             {sessions.map((session) => (
                 <div
                     key={session.id}
-                    className={`group flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm cursor-pointer transition-colors ${activeSessionId === session.id
+                    className={`group flex items-center gap-2 px-3 py-1.5 rounded-lg text-base cursor-pointer transition-colors ${activeSessionId === session.id
                             ? "theme-accent-bg text-white"
                             : "theme-hover theme-text"
                         }`}

@@ -197,8 +197,8 @@ pub async fn save_output(content: &str, filename: &str) -> Result<String, String
 }
 
 pub async fn create_project(project_name: &str) -> Result<String, String> {
-    let documents = dirs::document_dir().ok_or("Could not find documents directory")?;
-    let projects_dir = documents.join("MEX Projects");
+    let home = dirs::home_dir().ok_or("Could not find home directory")?;
+    let projects_dir = home.join("Cortex Projects");
     fs::create_dir_all(&projects_dir).map_err(|e| format!("Failed to create projects dir: {}", e))?;
 
     let project_dir = projects_dir.join(project_name);
@@ -226,8 +226,8 @@ pub async fn save_to_project(project_path: &str, subfolder: &str, filename: &str
 }
 
 pub async fn list_projects() -> Result<Vec<String>, String> {
-    let documents = dirs::document_dir().ok_or("Could not find documents directory")?;
-    let projects_dir = documents.join("MEX Projects");
+    let home = dirs::home_dir().ok_or("Could not find home directory")?;
+    let projects_dir = home.join("Cortex Projects");
 
     if !projects_dir.exists() {
         return Ok(vec![]);
@@ -250,8 +250,8 @@ pub async fn list_projects() -> Result<Vec<String>, String> {
 }
 
 pub async fn get_project_path(project_name: &str) -> Result<String, String> {
-    let documents = dirs::document_dir().ok_or("Could not find documents directory")?;
-    let project_dir = documents.join("MEX Projects").join(project_name);
+    let home = dirs::home_dir().ok_or("Could not find home directory")?;
+    let project_dir = home.join("Cortex Projects").join(project_name);
 
     if !project_dir.exists() {
         return Err("Project not found".to_string());

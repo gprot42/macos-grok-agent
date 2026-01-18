@@ -131,7 +131,7 @@ export function ProjectsPanel({ activeProject, onSelectProject, onClose }: Proje
           </div>
 
           <div className="text-xs text-gray-500 dark:text-tokyo-muted">
-            Projects are saved in ~/Documents/MEX Projects/
+            Projects are saved in $HOME/Cortex Projects/
           </div>
         </div>
       </div>

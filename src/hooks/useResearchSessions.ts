@@ -6,7 +6,7 @@ export interface ResearchTask {
     id: string;
     sessionId: string;
     query: string;
-    status: "running" | "completed" | "failed";
+    status: "running" | "completed" | "failed" | "cancelled";
     result?: string;
     error?: string;
     startedAt: number;
@@ -127,12 +127,12 @@ export function useResearchSessions() {
             invoke<ChatResponse>("deep_research", {
                 prompt: query,
                 apiKey,
-                timeoutMinutes: timeoutMinutes || 15
+                timeoutMinutes: timeoutMinutes || 60
             })
                 .then((response) => {
                     setTasks((prev) =>
                         prev.map((t) =>
-                            t.id === taskId
+                            t.id === taskId && t.status === "running"
                                 ? {
                                     ...t,
                                     status: "completed" as const,
@@ -148,7 +148,7 @@ export function useResearchSessions() {
                         error instanceof Error ? error.message : String(error);
                     setTasks((prev) =>
                         prev.map((t) =>
-                            t.id === taskId
+                            t.id === taskId && t.status === "running"
                                 ? {
                                     ...t,
                                     status: "failed" as const,
@@ -164,6 +164,21 @@ export function useResearchSessions() {
         },
         [activeSessionId]
     );
+
+    const cancelTask = useCallback((taskId: string) => {
+        setTasks((prev) =>
+            prev.map((t) =>
+                t.id === taskId && t.status === "running"
+                    ? {
+                        ...t,
+                        status: "cancelled" as const,
+                        error: "Cancelled by user",
+                        completedAt: Date.now(),
+                    }
+                    : t
+            )
+        );
+    }, []);
 
     const dismissTask = useCallback((taskId: string) => {
         setTasks((prev) => prev.filter((t) => t.id !== taskId));
@@ -191,6 +206,7 @@ export function useResearchSessions() {
         runningTasks,
         completedTasks,
         startResearch,
+        cancelTask,
         dismissTask,
         clearCompleted,
     };

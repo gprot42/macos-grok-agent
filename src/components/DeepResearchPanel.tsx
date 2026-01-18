@@ -13,6 +13,7 @@ interface DeepResearchPanelProps {
     runningTasks: ResearchTask[];
     completedTasks: ResearchTask[];
     startResearch: (query: string, apiKey: string, timeoutMinutes?: number) => Promise<string>;
+    cancelTask: (taskId: string) => void;
     dismissTask: (taskId: string) => void;
     clearCompleted: () => void;
   };
@@ -28,7 +29,7 @@ export function DeepResearchPanel({
   const [savedIdx, setSavedIdx] = useState<string | null>(null);
   const [saveFormat, setSaveFormat] = useState<"md" | "txt">("md");
   const [thinkingLevel, setThinkingLevel] = useState("medium");
-  const [timeoutMinutes, setTimeoutMinutes] = useState(15);
+  const [timeoutMinutes, setTimeoutMinutes] = useState(60);
   const [textareaHeight, setTextareaHeight] = useState(80);
   const resultsEndRef = useRef<HTMLDivElement>(null);
   const dragStartY = useRef<number>(0);
@@ -119,11 +120,22 @@ export function DeepResearchPanel({
             </div>
             <div className="mt-2 space-y-2">
               {research.runningTasks.map(task => (
-                <div key={task.id} className="flex items-center justify-between text-sm text-blue-600/80 dark:text-blue-400/80">
+                <div key={task.id} className="flex items-center justify-between text-sm text-blue-700 dark:text-blue-300">
                   <span className="truncate flex-1 mr-3">• {task.query}</span>
-                  <span className="text-blue-500 dark:text-blue-300 font-medium">
-                    <ElapsedTimer startedAt={task.startedAt} />
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-amber-600 dark:text-amber-400 font-medium">
+                      <ElapsedTimer startedAt={task.startedAt} />
+                    </span>
+                    <button
+                      onClick={() => research.cancelTask(task.id)}
+                      className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-red-500 hover:text-red-600 transition-colors"
+                      title="Cancel research"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -136,7 +148,7 @@ export function DeepResearchPanel({
             <div className="text-8xl">🔬</div>
             <div className="text-center">
               <div className="text-2xl font-semibold">Gemini Deep Research</div>
-              <div className="text-lg mt-1">Multi-step web research with source synthesis</div>
+              <div className="text-xl mt-1">Multi-step web research with source synthesis</div>
               <div className="text-base mt-4 max-w-lg text-center leading-relaxed">
                 Enter a research question and the agent will search the web,
                 analyze multiple sources, and synthesize a comprehensive answer
@@ -157,6 +169,8 @@ export function DeepResearchPanel({
               <div className="flex items-center gap-2 px-4 py-3 border-b theme-border bg-gray-50 dark:bg-gray-800/50">
                 {task.status === "failed" ? (
                   <span className="text-lg">❌</span>
+                ) : task.status === "cancelled" ? (
+                  <span className="text-lg">🚫</span>
                 ) : (
                   <span className="text-lg">🔬</span>
                 )}
@@ -168,14 +182,14 @@ export function DeepResearchPanel({
 
               {/* Content */}
               <div className="p-4">
-                {task.status === "failed" && (
+                {(task.status === "failed" || task.status === "cancelled") && (
                   <div className="text-sm text-red-600 dark:text-red-400">
                     {task.error || "Research failed"}
                   </div>
                 )}
 
                 {task.status === "completed" && task.result && (
-                  <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed theme-text">
+                  <pre className="whitespace-pre-wrap font-sans text-base leading-relaxed theme-text">
                     {task.result}
                   </pre>
                 )}
@@ -300,7 +314,7 @@ export function DeepResearchPanel({
             <select
               value={saveFormat}
               onChange={(e) => setSaveFormat(e.target.value as "md" | "txt")}
-              className="text-xs px-2 py-1 rounded theme-surface theme-border border"
+              className="text-sm px-2 py-1 rounded theme-surface theme-border border"
               title="Save format"
             >
               <option value="md">Markdown (.md)</option>
@@ -311,7 +325,7 @@ export function DeepResearchPanel({
             <select
               value={thinkingLevel}
               onChange={(e) => setThinkingLevel(e.target.value)}
-              className="text-xs px-2 py-1 rounded theme-surface theme-border border"
+              className="text-sm px-2 py-1 rounded theme-surface theme-border border"
               title="Thinking Level"
             >
               {thinkingOptions.map(opt => (
@@ -323,7 +337,7 @@ export function DeepResearchPanel({
             <select
               value={timeoutMinutes}
               onChange={(e) => setTimeoutMinutes(Number(e.target.value))}
-              className="text-xs px-2 py-1 rounded theme-surface theme-border border"
+              className="text-sm px-2 py-1 rounded theme-surface theme-border border"
               title="Research Timeout"
             >
               {timeoutOptions.map(opt => (
@@ -331,16 +345,16 @@ export function DeepResearchPanel({
               ))}
             </select>
 
-            <div className="text-sm theme-text-muted">
+            <div className="text-base theme-text-muted">
               {query.length} chars
             </div>
             {!apiKey && (
-              <span className="text-sm text-amber-600 dark:text-amber-400">
+              <span className="text-base text-amber-600 dark:text-amber-400">
                 ⚠️ API key required
               </span>
             )}
             {apiKey && !query.trim() && (
-              <span className="text-sm text-gray-500 dark:text-gray-400">
+              <span className="text-base text-gray-500 dark:text-gray-400">
                 Enter a question
               </span>
             )}
