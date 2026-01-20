@@ -24,8 +24,6 @@ interface ChatPanelProps {
   lastTokenUsage: TokenUsage | null;
   totalTokens: { input: number; output: number };
   lastRawJson: string | null;
-  showRawJson: boolean;
-  onShowRawJsonChange: (show: boolean) => void;
   onSendMessage: (
     prompt: string,
     options: {
@@ -62,8 +60,6 @@ export function ChatPanel({
   lastTokenUsage,
   totalTokens,
   lastRawJson,
-  showRawJson,
-  onShowRawJsonChange,
   onSendMessage,
   onClearMessages,
   onStopGeneration,
@@ -257,7 +253,13 @@ export function ChatPanel({
             key={idx}
             className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
           >
-            <div className="group relative max-w-[80%]">
+            <div 
+              className="group max-w-[80%]"
+              onContextMenu={(e) => {
+                e.preventDefault();
+                handleSaveOutput(msg.content, idx, msg.role);
+              }}
+            >
               <div
                 className={`rounded-2xl px-4 py-3 ${msg.role === "user"
                   ? "text-white"
@@ -280,39 +282,39 @@ export function ChatPanel({
                     className="mt-2 rounded-lg max-w-full"
                   />
                 ))}
-              </div>
-
-              <div className={`absolute top-0 ${msg.role === "user" ? "left-0 -translate-x-full pr-2" : "right-0 translate-x-full pl-2"} opacity-0 group-hover:opacity-100 transition-opacity flex gap-1`}>
-                <button
-                  onClick={() => handleCopy(msg.content, idx)}
-                  className="p-1.5 rounded-lg theme-surface theme-hover theme-text-muted"
-                  title="Copy"
-                >
-                  {copiedIdx === idx ? (
-                    <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                  ) : (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                    </svg>
-                  )}
-                </button>
-                <button
-                  onClick={() => handleSaveOutput(msg.content, idx, msg.role)}
-                  className="p-1.5 rounded-lg theme-surface theme-hover theme-text-muted"
-                  title={activeProject ? `Save to ${activeProject}` : "Save to Downloads"}
-                >
-                  {savedIdx === idx ? (
-                    <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                  ) : (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-                    </svg>
-                  )}
-                </button>
+                
+                <div className={`flex gap-1 mt-2 pt-2 border-t ${msg.role === "user" ? "border-white/20" : "border-gray-200 dark:border-gray-700"} opacity-0 group-hover:opacity-100 transition-opacity`}>
+                  <button
+                    onClick={() => handleCopy(msg.content, idx)}
+                    className={`p-1 rounded ${msg.role === "user" ? "hover:bg-white/20 text-white/70 hover:text-white" : "hover:bg-gray-100 dark:hover:bg-gray-700 theme-text-muted"}`}
+                    title="Copy"
+                  >
+                    {copiedIdx === idx ? (
+                      <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => handleSaveOutput(msg.content, idx, msg.role)}
+                    className={`p-1 rounded ${msg.role === "user" ? "hover:bg-white/20 text-white/70 hover:text-white" : "hover:bg-gray-100 dark:hover:bg-gray-700 theme-text-muted"}`}
+                    title={activeProject ? `Save to ${activeProject}` : "Save to Downloads"}
+                  >
+                    {savedIdx === idx ? (
+                      <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -344,21 +346,12 @@ export function ChatPanel({
             <span>Session: {formatTokens(totalTokens.input)} in / {formatTokens(totalTokens.output)} out ({formatCost(calculateCost(totalTokens.input, totalTokens.output))})</span>
           </div>
           <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 text-xs cursor-pointer">
-              <input
-                type="checkbox"
-                checked={showRawJson}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => onShowRawJsonChange(e.target.checked)}
-                className="rounded border-gray-300"
-              />
-              Show Raw JSON
-            </label>
-            {showRawJson && lastRawJson && (
+            {lastRawJson && (
               <button
                 onClick={() => setShowJsonModal(true)}
-                className="theme-accent hover:underline"
+                className="px-3 py-1 text-xs font-medium rounded-md bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 transition-colors"
               >
-                View JSON
+                View Raw JSON
               </button>
             )}
           </div>

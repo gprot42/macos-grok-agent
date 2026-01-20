@@ -49,7 +49,7 @@ export function Header({
     <header className="bg-card border-b px-6 py-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-6">
-          <h1 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 bg-clip-text text-transparent">
+          <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 bg-clip-text text-transparent">
             Cortex Agent
           </h1>
 

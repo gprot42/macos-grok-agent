@@ -44,7 +44,6 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showProjects, setShowProjects] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
-  const [showRawJson, setShowRawJson] = useState(false);
   const [selectedModel, setSelectedModel] = useState("claude-opus-4-5");
   const [selectedEndpoint, setSelectedEndpoint] = useState<EndpointType>("vertex_ai");
   const [use1MContext, setUse1MContext] = useState(false);
@@ -97,10 +96,7 @@ function App() {
     if (settings.activeProject) {
       setActiveProject(settings.activeProject);
     }
-    if (settings.showRawJson !== undefined) {
-      setShowRawJson(settings.showRawJson);
-    }
-  }, [settings.activeProject, settings.showRawJson]);
+  }, [settings.activeProject]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -151,11 +147,6 @@ function App() {
     updateSettings({ activeProject: name || undefined });
   };
 
-  const handleShowRawJsonChange = (show: boolean) => {
-    setShowRawJson(show);
-    updateSettings({ showRawJson: show });
-  };
-
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center theme-bg">
@@ -189,7 +180,6 @@ function App() {
             useGrounding={useGrounding}
             thinkingLevel={thinkingLevel}
             customUrl={customUrl}
-            showRawJson={showRawJson}
             onModelChange={setSelectedModel}
             onEndpointChange={handleEndpointChange}
             onUse1MContextChange={setUse1MContext}
@@ -197,7 +187,6 @@ function App() {
             onUseGroundingChange={setUseGrounding}
             onThinkingLevelChange={setThinkingLevel}
             onCustomUrlChange={setCustomUrl}
-            onShowRawJsonChange={handleShowRawJsonChange}
           />
         ) : activeTab === "image" ? (
           <div className="flex items-center gap-3">
@@ -246,8 +235,6 @@ function App() {
               lastTokenUsage={lastTokenUsage}
               totalTokens={totalTokens}
               lastRawJson={lastRawJson}
-              showRawJson={showRawJson}
-              onShowRawJsonChange={handleShowRawJsonChange}
               onSendMessage={sendMessage}
               onClearMessages={clearMessages}
               onStopGeneration={stopGeneration}
