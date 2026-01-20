@@ -107,6 +107,7 @@ export function SettingsPanel({
           if (attempts >= maxAttempts) {
             clearInterval(pollInterval);
             setAuthLoading(false);
+            checkGcloudAuth();
           }
         }
       }, 3000);

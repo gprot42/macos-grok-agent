@@ -2,14 +2,12 @@ import { InputHTMLAttributes, forwardRef, useState } from "react";
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string;
-  showToggle?: boolean;
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ className = "", label, type = "text", showToggle = false, value, ...props }, ref) => {
+  ({ className = "", label, type = "text", value, ...props }, ref) => {
     const [showValue, setShowValue] = useState(false);
     const isPassword = type === "password";
-    const hasValue = value !== undefined && value !== "";
     
     return (
       <div className="flex flex-col gap-1">
@@ -23,10 +21,10 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             ref={ref}
             type={isPassword && showValue ? "text" : type}
             value={value}
-            className={`w-full px-3 py-2 bg-white dark:bg-tokyo-surface border border-gray-200 dark:border-tokyo-border rounded-lg text-gray-700 dark:text-tokyo-text text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${isPassword && hasValue ? "pr-10" : ""} ${className}`}
+            className={`w-full px-3 py-2 bg-white dark:bg-tokyo-surface border border-gray-200 dark:border-tokyo-border rounded-lg text-gray-700 dark:text-tokyo-text text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${isPassword ? "pr-10" : ""} ${className}`}
             {...props}
           />
-          {isPassword && hasValue && (
+          {isPassword && (
             <button
               type="button"
               onClick={() => setShowValue(!showValue)}

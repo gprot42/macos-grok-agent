@@ -13,6 +13,14 @@ pub struct AppSettings {
     pub font_size: u32,
     #[serde(rename = "apiKey")]
     pub api_key: String,
+    #[serde(rename = "aiStudioKey", default, skip_serializing_if = "Option::is_none")]
+    pub ai_studio_key: Option<String>,
+    #[serde(rename = "openrouterKey", default, skip_serializing_if = "Option::is_none")]
+    pub openrouter_key: Option<String>,
+    #[serde(rename = "xaiKey", default, skip_serializing_if = "Option::is_none")]
+    pub xai_key: Option<String>,
+    #[serde(rename = "kilocodeKey", default, skip_serializing_if = "Option::is_none")]
+    pub kilocode_key: Option<String>,
     #[serde(rename = "projectId")]
     pub project_id: String,
 }
@@ -23,6 +31,10 @@ impl Default for AppSettings {
             theme: "light".to_string(),
             font_size: 14,
             api_key: String::new(),
+            ai_studio_key: None,
+            openrouter_key: None,
+            xai_key: None,
+            kilocode_key: None,
             project_id: String::new(),
         }
     }
