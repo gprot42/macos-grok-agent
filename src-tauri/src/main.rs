@@ -279,24 +279,17 @@ fn get_scripts_path() -> Result<String, String> {
 fn check_gcloud_auth() -> Result<String, String> {
     use std::process::Command;
     
-    // Check if gcloud is installed
-    let gcloud_check = Command::new("which")
-        .arg("gcloud")
-        .output();
-    
-    if gcloud_check.is_err() || !gcloud_check.unwrap().status.success() {
-        return Err("gcloud CLI is not installed. Please install it from https://cloud.google.com/sdk/docs/install".to_string());
-    }
+    let gcloud_path = find_gcloud().ok_or("gcloud CLI is not installed. Please install it from https://cloud.google.com/sdk/docs/install")?;
     
     // Try to get an access token - this will fail if auth is expired
-    let output = Command::new("gcloud")
+    let output = Command::new(&gcloud_path)
         .args(["auth", "print-access-token"])
         .output()
         .map_err(|e| format!("Failed to check auth: {}", e))?;
     
     if output.status.success() {
         // Get the authenticated account
-        let account_output = Command::new("gcloud")
+        let account_output = Command::new(&gcloud_path)
             .args(["auth", "list", "--filter=status:ACTIVE", "--format=value(account)"])
             .output()
             .map_err(|e| format!("Failed to get account: {}", e))?;
@@ -313,6 +306,48 @@ fn check_gcloud_auth() -> Result<String, String> {
         let stderr = String::from_utf8_lossy(&output.stderr);
         Err(format!("Authentication required: {}", stderr.trim()))
     }
+}
+
+fn find_gcloud() -> Option<String> {
+    use std::path::Path;
+    use std::process::Command;
+    
+    let common_paths = [
+        "/usr/local/bin/gcloud",
+        "/opt/homebrew/bin/gcloud",
+        "/usr/bin/gcloud",
+        "/opt/google-cloud-sdk/bin/gcloud",
+    ];
+    
+    // Check common paths first
+    for path in common_paths {
+        if Path::new(path).exists() {
+            return Some(path.to_string());
+        }
+    }
+    
+    // Check user's home directory for gcloud SDK
+    if let Some(home) = dirs::home_dir() {
+        let home_sdk = home.join("google-cloud-sdk/bin/gcloud");
+        if home_sdk.exists() {
+            return Some(home_sdk.to_string_lossy().to_string());
+        }
+    }
+    
+    // Try to find via shell (gets user's PATH)
+    if let Ok(output) = Command::new("sh")
+        .args(["-l", "-c", "which gcloud"])
+        .output()
+    {
+        if output.status.success() {
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !path.is_empty() {
+                return Some(path);
+            }
+        }
+    }
+    
+    None
 }
 
 #[tauri::command]
@@ -371,9 +406,16 @@ fn open_gcloud_auth() -> Result<(), String> {
 
 fn main() {
     use tauri::menu::{Menu, Submenu, PredefinedMenuItem};
+    use tauri::Manager;
     
     tauri::Builder::default()
         .enable_macos_default_menu(false)
+        .setup(|app| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.maximize();
+            }
+            Ok(())
+        })
         .menu(|handle| {
             // Create App submenu (macOS standard)
             let app_menu = Submenu::with_items(
