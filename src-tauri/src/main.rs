@@ -411,8 +411,24 @@ fn main() {
     tauri::Builder::default()
         .enable_macos_default_menu(false)
         .setup(|app| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.maximize();
+            if let Some(win) = app.get_webview_window("main") {
+                // Clone for the spawned thread
+                let win_clone = win.clone();
+                
+                // Spawn a thread to handle maximization after window is fully ready
+                std::thread::spawn(move || {
+                    // Wait for window to be fully initialized
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                    
+                    // Try to maximize
+                    let _ = win_clone.maximize();
+                    
+                    // Double-check after another delay
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                    if !win_clone.is_maximized().unwrap_or(true) {
+                        let _ = win_clone.maximize();
+                    }
+                });
             }
             Ok(())
         })

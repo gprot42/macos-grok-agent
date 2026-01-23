@@ -29,8 +29,20 @@ export function DeepResearchPanel({
   const [copiedIdx, setCopiedIdx] = useState<string | null>(null);
   const [savedIdx, setSavedIdx] = useState<string | null>(null);
   const [saveFormat] = useState<"md" | "txt">("md");
-  const [timeoutMinutes] = useState(60);
+  const [timeoutMinutes, setTimeoutMinutes] = useState(60);
+  const [depthLevel, setDepthLevel] = useState<"low" | "medium" | "high">("medium");
   const resultsEndRef = useRef<HTMLDivElement>(null);
+
+  const depthConfig = {
+    low: { timeout: 30, label: "Quick (30 min)" },
+    medium: { timeout: 60, label: "Standard (60 min)" },
+    high: { timeout: 120, label: "Deep (120 min)" },
+  };
+
+  const handleDepthChange = (level: "low" | "medium" | "high") => {
+    setDepthLevel(level);
+    setTimeoutMinutes(depthConfig[level].timeout);
+  };
 
   // Real-time elapsed timer component
   function ElapsedTimer({ startedAt }: { startedAt: number }) {
@@ -255,35 +267,72 @@ export function DeepResearchPanel({
         <div ref={resultsEndRef} />
       </div>
 
-      <div className="border-t theme-border p-2 pb-4 theme-surface">
-        <div className="flex gap-2 items-center">
+      <div className="border-t theme-border p-3 theme-surface space-y-2">
+        <div className="flex gap-2 items-center flex-wrap">
+          <span className="text-xs theme-text-muted">Depth:</span>
+          <div className="flex gap-1">
+            {(["low", "medium", "high"] as const).map((level) => (
+              <button
+                key={level}
+                onClick={() => handleDepthChange(level)}
+                className={`px-2 py-1 text-xs rounded-md transition-colors ${
+                  depthLevel === level
+                    ? "bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 font-medium"
+                    : "theme-text-muted hover:bg-gray-100 dark:hover:bg-gray-800"
+                }`}
+              >
+                {level.charAt(0).toUpperCase() + level.slice(1)}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1 ml-2">
+            <span className="text-xs theme-text-muted">Timeout:</span>
+            <select
+              value={timeoutMinutes}
+              onChange={(e) => setTimeoutMinutes(Number(e.target.value))}
+              className="text-xs px-2 py-1 rounded-md border theme-border bg-white dark:bg-gray-800 theme-text"
+            >
+              <option value={15}>15 min</option>
+              <option value={30}>30 min</option>
+              <option value={45}>45 min</option>
+              <option value={60}>60 min</option>
+              <option value={90}>90 min</option>
+              <option value={120}>120 min</option>
+              <option value={180}>180 min</option>
+            </select>
+          </div>
+        </div>
+        <div className="flex gap-2 items-start">
           <Textarea
             value={query}
             onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setQuery(e.target.value)}
             placeholder="Enter your research question..."
-            className="flex-1 resize-none text-sm h-10 min-h-[40px] max-h-[40px]"
+            className="flex-1 resize-none text-sm min-h-[96px]"
+            rows={4}
           />
-          <Button
-            onClick={handleResearch}
-            disabled={!query.trim() || !apiKey}
-            size="sm"
-            className="h-10 px-3"
-          >
-            Go
-          </Button>
-          <Button onClick={handleResend} size="sm" variant="outline" className="h-10 px-2" disabled={!lastQuery || research.runningTasks.length > 0} title="Resend last query">
-            ↻
-          </Button>
-          <Button 
-            onClick={research.clearCompleted} 
-            size="sm" 
-            variant="outline" 
-            className="h-10 px-3"
-            disabled={research.completedTasks.length === 0}
-            title="Clear all results"
-          >
-            Clear
-          </Button>
+          <div className="flex flex-col gap-1">
+            <Button
+              onClick={handleResearch}
+              disabled={!query.trim() || !apiKey}
+              size="sm"
+              className="h-10 px-3"
+            >
+              Go
+            </Button>
+            <Button onClick={handleResend} size="sm" variant="outline" className="h-10 px-2" disabled={!lastQuery || research.runningTasks.length > 0} title="Resend last query">
+              ↻
+            </Button>
+            <Button 
+              onClick={research.clearCompleted} 
+              size="sm" 
+              variant="outline" 
+              className="h-10 px-3"
+              disabled={research.completedTasks.length === 0}
+              title="Clear all results"
+            >
+              Clear
+            </Button>
+          </div>
         </div>
       </div>
     </div>
