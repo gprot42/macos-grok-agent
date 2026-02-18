@@ -21,6 +21,10 @@ pub struct AppSettings {
     pub xai_key: Option<String>,
     #[serde(rename = "kilocodeKey", default, skip_serializing_if = "Option::is_none")]
     pub kilocode_key: Option<String>,
+    #[serde(rename = "customLogin", default, skip_serializing_if = "Option::is_none")]
+    pub custom_login: Option<String>,
+    #[serde(rename = "customPassword", default, skip_serializing_if = "Option::is_none")]
+    pub custom_password: Option<String>,
     #[serde(rename = "projectId")]
     pub project_id: String,
 }
@@ -35,6 +39,8 @@ impl Default for AppSettings {
             openrouter_key: None,
             xai_key: None,
             kilocode_key: None,
+            custom_login: None,
+            custom_password: None,
             project_id: String::new(),
         }
     }
@@ -96,6 +102,8 @@ async fn send_chat_message(
     thinking_level: Option<String>,
     include_thoughts: bool,
     custom_url: Option<String>,
+    custom_login: Option<String>,
+    custom_password: Option<String>,
     attached_file: Option<AttachedFile>,
 ) -> Result<ChatResponse, String> {
     api::send_chat_message(
@@ -113,6 +121,8 @@ async fn send_chat_message(
         thinking_level,
         include_thoughts,
         custom_url,
+        custom_login,
+        custom_password,
         attached_file,
     )
     .await

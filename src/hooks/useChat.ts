@@ -13,6 +13,8 @@ interface ChatOptions {
   thinkingLevel?: string;
   includeThoughts?: boolean;
   customUrl?: string;
+  customLogin?: string;
+  customPassword?: string;
 }
 
 interface GenerateImageOptions {
@@ -87,6 +89,8 @@ export function useChat() {
         thinkingLevel: options.thinkingLevel,
         includeThoughts: options.includeThoughts ?? true,
         customUrl: options.customUrl,
+        customLogin: options.customLogin,
+        customPassword: options.customPassword,
         attachedFile,
       });
 

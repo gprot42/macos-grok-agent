@@ -24,6 +24,8 @@ pub async fn send_chat_message(
     thinking_level: Option<String>,
     include_thoughts: bool,
     custom_url: Option<String>,
+    custom_login: Option<String>,
+    custom_password: Option<String>,
     attached_file: Option<AttachedFile>,
 ) -> Result<ChatResponse, String> {
     let client = Client::new();
@@ -77,6 +79,24 @@ pub async fn send_chat_message(
         }
         "xai" | "kilocode" => {
             request = request.header("Authorization", format!("Bearer {}", api_key));
+        }
+        "custom" => {
+            // Custom endpoint authentication: support both Basic auth (login:password) and Bearer token
+            if let (Some(login), Some(password)) = (&custom_login, &custom_password) {
+                if !login.is_empty() && !password.is_empty() {
+                    // Use Basic authentication
+                    use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+                    let credentials = BASE64.encode(format!("{}:{}", login, password));
+                    request = request.header("Authorization", format!("Basic {}", credentials));
+                } else if !password.is_empty() {
+                    // Use Bearer token if only password is provided
+                    request = request.header("Authorization", format!("Bearer {}", password));
+                }
+            } else if let Some(ref password) = custom_password {
+                if !password.is_empty() {
+                    request = request.header("Authorization", format!("Bearer {}", password));
+                }
+            }
         }
         _ => {}
     }

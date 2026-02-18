@@ -44,7 +44,7 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showProjects, setShowProjects] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
-  const [selectedModel, setSelectedModel] = useState("claude-opus-4-5");
+  const [selectedModel, setSelectedModel] = useState("claude-opus-4-6");
   const [selectedEndpoint, setSelectedEndpoint] = useState<EndpointType>("vertex_ai");
   const [use1MContext, setUse1MContext] = useState(false);
   const [useMemory, setUseMemory] = useState(false);
@@ -130,6 +130,8 @@ function App() {
         return settings.xaiKey || settings.apiKey;
       case "kilocode":
         return settings.kilocodeKey || settings.apiKey;
+      case "custom":
+        return settings.customPassword || settings.apiKey;
       default:
         return settings.apiKey;
     }
@@ -180,6 +182,8 @@ function App() {
             useGrounding={useGrounding}
             thinkingLevel={thinkingLevel}
             customUrl={customUrl}
+            customLogin={settings.customLogin || ""}
+            customPassword={settings.customPassword || ""}
             onModelChange={setSelectedModel}
             onEndpointChange={handleEndpointChange}
             onUse1MContextChange={setUse1MContext}
@@ -187,6 +191,8 @@ function App() {
             onUseGroundingChange={setUseGrounding}
             onThinkingLevelChange={setThinkingLevel}
             onCustomUrlChange={setCustomUrl}
+            onCustomLoginChange={(login) => updateSettings({ customLogin: login })}
+            onCustomPasswordChange={(password) => updateSettings({ customPassword: password })}
           />
         ) : activeTab === "image" ? (
           <div className="flex items-center gap-3">
@@ -235,6 +241,9 @@ function App() {
               lastTokenUsage={lastTokenUsage}
               totalTokens={totalTokens}
               lastRawJson={lastRawJson}
+              customUrl={customUrl}
+              customLogin={settings.customLogin}
+              customPassword={settings.customPassword}
               onSendMessage={sendMessage}
               onClearMessages={clearMessages}
               onStopGeneration={stopGeneration}

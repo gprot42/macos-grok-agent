@@ -51,6 +51,8 @@ export interface AppSettings {
   openrouterKey?: string;
   xaiKey?: string;
   kilocodeKey?: string;
+  customLogin?: string;
+  customPassword?: string;
   projectId: string;
   activeProject?: string;
   showRawJson?: boolean;

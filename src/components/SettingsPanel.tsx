@@ -53,6 +53,8 @@ export function SettingsPanel({
   const [openrouterKey, setOpenrouterKey] = useState(settings.openrouterKey || "");
   const [xaiKey, setXaiKey] = useState(settings.xaiKey || "");
   const [kilocodeKey, setKilocodeKey] = useState(settings.kilocodeKey || "");
+  const [customLogin, setCustomLogin] = useState(settings.customLogin || "");
+  const [customPassword, setCustomPassword] = useState(settings.customPassword || "");
   const [projectId, setProjectId] = useState(settings.projectId);
   const [hasServiceAccount, setHasServiceAccount] = useState(false);
   const [saProjectId, setSaProjectId] = useState<string | null>(null);
@@ -68,6 +70,8 @@ export function SettingsPanel({
     setOpenrouterKey(settings.openrouterKey || "");
     setXaiKey(settings.xaiKey || "");
     setKilocodeKey(settings.kilocodeKey || "");
+    setCustomLogin(settings.customLogin || "");
+    setCustomPassword(settings.customPassword || "");
     setProjectId(settings.projectId);
   }, [settings]);
 
@@ -125,6 +129,8 @@ export function SettingsPanel({
       openrouterKey,
       xaiKey,
       kilocodeKey,
+      customLogin,
+      customPassword,
     });
     onClose();
   };
@@ -253,6 +259,30 @@ export function SettingsPanel({
                   onChange={(e) => setKilocodeKey(e.target.value)}
                   placeholder="Kilo Code API key"
                 />
+              </SettingRow>
+
+              <SettingRow
+                title="Custom Endpoint"
+                description={
+                  <>
+                    Login and password for custom OpenAI-compatible API endpoints.
+                    <p className="mt-1 text-xs">Configure the URL in the model selector when using Custom endpoint.</p>
+                  </>
+                }
+              >
+                <div className="space-y-2">
+                  <Input
+                    value={customLogin}
+                    onChange={(e) => setCustomLogin(e.target.value)}
+                    placeholder="Login / Username"
+                  />
+                  <Input
+                    type="password"
+                    value={customPassword}
+                    onChange={(e) => setCustomPassword(e.target.value)}
+                    placeholder="Password / API Key"
+                  />
+                </div>
               </SettingRow>
 
               <p className="text-xs text-gray-400 dark:text-tokyo-muted mt-2 italic">

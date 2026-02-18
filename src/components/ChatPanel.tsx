@@ -24,6 +24,9 @@ interface ChatPanelProps {
   lastTokenUsage: TokenUsage | null;
   totalTokens: { input: number; output: number };
   lastRawJson: string | null;
+  customUrl?: string;
+  customLogin?: string;
+  customPassword?: string;
   onSendMessage: (
     prompt: string,
     options: {
@@ -36,6 +39,9 @@ interface ChatPanelProps {
       useGrounding?: boolean;
       thinkingLevel?: string;
       includeThoughts?: boolean;
+      customUrl?: string;
+      customLogin?: string;
+      customPassword?: string;
     },
     attachedFile?: { path: string; data: string; mimeType: string }
   ) => Promise<string | undefined>;
@@ -60,6 +66,9 @@ export function ChatPanel({
   lastTokenUsage,
   totalTokens,
   lastRawJson,
+  customUrl,
+  customLogin,
+  customPassword,
   onSendMessage,
   onClearMessages,
   onStopGeneration,
@@ -102,6 +111,9 @@ export function ChatPanel({
           useGrounding,
           thinkingLevel,
           includeThoughts,
+          customUrl,
+          customLogin,
+          customPassword,
         },
         fileData
       );
