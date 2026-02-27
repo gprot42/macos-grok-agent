@@ -141,11 +141,13 @@ pub async fn generate_image(
     api_key: String,
     edit_image: Option<String>,
     edit_image_mime_type: Option<String>,
+    model_id: Option<String>,
 ) -> Result<String, String> {
     let client = Client::new();
+    let model = model_id.unwrap_or_else(|| "gemini-3-pro-image-preview".to_string());
     let url = format!(
-        "{}/v1beta/models/gemini-3-pro-image-preview:generateContent",
-        AI_STUDIO_ENDPOINT
+        "{}/v1beta/models/{}:generateContent",
+        AI_STUDIO_ENDPOINT, model
     );
 
     let mut parts = vec![json!({"text": prompt})];

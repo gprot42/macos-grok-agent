@@ -22,6 +22,7 @@ interface GenerateImageOptions {
   apiKey: string;
   editImage?: string;
   editImageMimeType?: string;
+  modelId?: string;
 }
 
 interface ChatResponse {
@@ -142,6 +143,7 @@ export function useChat() {
         apiKey: options.apiKey,
         editImage: options.editImage,
         editImageMimeType: options.editImageMimeType,
+        modelId: options.modelId,
       });
 
       if (cancelledRef.current) {

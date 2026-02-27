@@ -7,12 +7,17 @@ import { Textarea } from "@/components/ui/textarea";
 
 interface ImageGeneratorProps {
   apiKey: string;
-  onGenerateImage: (options: { prompt: string; apiKey: string; editImage?: string; editImageMimeType?: string }) => Promise<string | undefined>;
+  onGenerateImage: (options: { prompt: string; apiKey: string; editImage?: string; editImageMimeType?: string; modelId?: string }) => Promise<string | undefined>;
   generatedImages: string[];
   isLoading: boolean;
   error: string | null;
   activeProject: string | null;
   onDeleteImage: (index: number) => void;
+  onClearImages: () => void;
+  imageModelId?: string;
+  imageModelName?: string;
+  altModelId?: string;
+  altModelName?: string;
 }
 
 export function ImageGenerator({
@@ -23,9 +28,15 @@ export function ImageGenerator({
   error,
   activeProject,
   onDeleteImage,
+  onClearImages,
+  imageModelId,
+  imageModelName,
+  altModelId,
+  altModelName,
 }: ImageGeneratorProps) {
   const [prompt, setPrompt] = useState("");
   const [lastPrompt, setLastPrompt] = useState("");
+  const [imagePrompts, setImagePrompts] = useState<string[]>([]);
   const [sourceImage, setSourceImage] = useState<{
     data: string;
     name: string;
@@ -69,13 +80,23 @@ export function ImageGenerator({
 
   const handleGenerate = async () => {
     if (!prompt.trim()) return;
-    setLastPrompt(prompt);
-    await onGenerateImage({
-      prompt,
+    const usedPrompt = prompt;
+    setLastPrompt(usedPrompt);
+    const result = await onGenerateImage({
+      prompt: usedPrompt,
       apiKey,
       editImage: sourceImage?.data,
       editImageMimeType: sourceImage?.mimeType,
+      modelId: imageModelId,
     });
+    if (result) {
+      setImagePrompts(prev => [...prev, usedPrompt]);
+      setSourceImage({
+        data: result,
+        name: `generated-${generatedImages.length + 1}`,
+        mimeType: "image/png",
+      });
+    }
     setPrompt("");
   };
 
@@ -188,18 +209,37 @@ export function ImageGenerator({
     setSourceImage({
       data: imageBase64,
       name: `generated-${index + 1}`,
-      mimeType: "image/png", // Generated images are always PNG
+      mimeType: "image/png",
     });
+  };
+
+  const handleRedrawWithAlt = async (index: number) => {
+    const originalPrompt = imagePrompts[index];
+    if (!originalPrompt || !altModelId) return;
+    const result = await onGenerateImage({
+      prompt: originalPrompt,
+      apiKey,
+      modelId: altModelId,
+    });
+    if (result) {
+      setImagePrompts(prev => [...prev, originalPrompt]);
+    }
+  };
+
+  const handleClear = () => {
+    onClearImages();
+    setImagePrompts([]);
+    setSourceImage(null);
   };
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <div className="flex-1 overflow-y-auto p-4 scrollbar-thin relative z-0">
-        {generatedImages.length === 0 && !isLoading && !sourceImage && (
+        {generatedImages.length === 0 && !isLoading && (
           <div className="flex flex-col items-center justify-center h-full text-gray-400 dark:text-tokyo-muted gap-6">
             <div className="text-8xl">🍌</div>
             <div className="text-center">
-              <div className="text-2xl font-semibold">Nano Banana Pro</div>
+              <div className="text-2xl font-semibold">{imageModelName || "Nano Banana Pro"}</div>
               <div className="text-lg mt-1">Generate and edit images with AI</div>
               <div className="text-base mt-4 max-w-lg text-center leading-relaxed text-gray-500">
                 Load an image to edit, or describe what you want to create
@@ -208,43 +248,18 @@ export function ImageGenerator({
           </div>
         )}
 
-        {sourceImage && (
-          <div className="mb-4">
-            <div className="text-sm font-medium text-gray-700 dark:text-tokyo-text mb-2">
-              Source Image (will be edited)
-            </div>
-            <div className="relative inline-block">
-              <img
-                src={`data:${sourceImage.mimeType};base64,${sourceImage.data}`}
-                alt="Source"
-                className="max-h-48 rounded-lg border-2 border-indigo-500 shadow-lg"
-              />
-              <button
-                onClick={() => setSourceImage(null)}
-                className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full text-sm hover:bg-red-600 flex items-center justify-center"
-              >
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-              <div className="absolute bottom-2 left-2 bg-indigo-500 text-white text-xs px-2 py-1 rounded">
-                {sourceImage.name}
-              </div>
-            </div>
-          </div>
-        )}
-
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {generatedImages.map((img, idx) => {
-            // Calculate file size from base64
             const fileSizeKB = Math.round((img.length * 3) / 4 / 1024);
+            const isSource = sourceImage?.data === img;
 
             return (
-              <div key={idx} className="relative group">
+              <div key={idx} className={`relative group ${isSource ? "ring-2 ring-indigo-500 rounded-lg" : ""}`}>
                 <img
                   src={`data:image/png;base64,${img}`}
                   alt={`Generated ${idx + 1}`}
-                  className="w-full rounded-lg shadow-lg"
+                  className="w-full rounded-lg shadow-lg cursor-pointer"
+                  onClick={() => handleUseAsSource(img, idx)}
                   onLoad={(e) => {
                     const target = e.target as HTMLImageElement;
                     const sizeEl = document.getElementById(`img-size-${idx}`);
@@ -253,45 +268,53 @@ export function ImageGenerator({
                     }
                   }}
                 />
-                {/* Stats overlay - always visible at top-left */}
                 <div className="absolute top-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded flex gap-2">
                   <span id={`img-size-${idx}`}>Loading...</span>
                   <span>•</span>
                   <span>{fileSizeKB}KB</span>
                 </div>
-                {/* Controls overlay - on hover */}
-                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center gap-2">
-                  <select
-                    value={imageFormat}
-                    onChange={(e) => setImageFormat(e.target.value as "png" | "jpg" | "webp")}
-                    className="px-2 py-1 text-xs rounded bg-white dark:bg-gray-800 text-gray-800 dark:text-white"
-                    title="Image format"
-                  >
-                    <option value="png">PNG</option>
-                    <option value="jpg">JPG</option>
-                    <option value="webp">WebP</option>
-                  </select>
-                  <Button
-                    size="sm"
-                    onClick={() => handleSaveImage(img, idx)}
-                  >
-                    {savedIdx === idx ? "Saved!" : "Save"}
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={() => handleUseAsSource(img, idx)}
-                  >
-                    Edit
-                  </Button>
-                  <button
-                    onClick={() => onDeleteImage(idx)}
-                    className="p-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors"
-                    title="Delete image"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </button>
+                {isSource && (
+                  <div className="absolute top-2 right-2 bg-indigo-500 text-white text-xs px-2 py-1 rounded">
+                    Editing
+                  </div>
+                )}
+                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex flex-col items-center justify-center gap-2">
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={imageFormat}
+                      onChange={(e) => setImageFormat(e.target.value as "png" | "jpg" | "webp")}
+                      className="px-2 py-1 text-xs rounded bg-white dark:bg-gray-800 text-gray-800 dark:text-white"
+                      title="Image format"
+                    >
+                      <option value="png">PNG</option>
+                      <option value="jpg">JPG</option>
+                      <option value="webp">WebP</option>
+                    </select>
+                    <Button
+                      size="sm"
+                      onClick={() => handleSaveImage(img, idx)}
+                    >
+                      {savedIdx === idx ? "Saved!" : "Save"}
+                    </Button>
+                    <button
+                      onClick={() => onDeleteImage(idx)}
+                      className="p-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors"
+                      title="Delete image"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
+                  {imagePrompts[idx] && altModelName && (
+                    <Button
+                      size="sm"
+                      onClick={() => handleRedrawWithAlt(idx)}
+                      disabled={isLoading}
+                    >
+                      Redraw with {altModelName}
+                    </Button>
+                  )}
                 </div>
               </div>
             );
@@ -368,11 +391,9 @@ export function ImageGenerator({
             <Button onClick={handleLoadImage} size="sm">
               Load Image
             </Button>
-            {sourceImage && (
-              <span className="text-xs text-indigo-600 dark:text-indigo-400">
-                Editing: {sourceImage.name}
-              </span>
-            )}
+            <Button onClick={handleClear} size="sm" disabled={generatedImages.length === 0 && !sourceImage}>
+              Clear
+            </Button>
             {activeProject && (
               <span className="text-xs text-indigo-500 dark:text-indigo-400">
                 Saving to: {activeProject}

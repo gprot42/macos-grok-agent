@@ -134,8 +134,9 @@ async fn generate_image(
     api_key: String,
     edit_image: Option<String>,
     edit_image_mime_type: Option<String>,
+    model_id: Option<String>,
 ) -> Result<String, String> {
-    api::generate_image(prompt, api_key, edit_image, edit_image_mime_type).await
+    api::generate_image(prompt, api_key, edit_image, edit_image_mime_type, model_id).await
 }
 
 #[tauri::command]

@@ -296,6 +296,10 @@ export function SettingsPanel({
               Vertex AI (Google Cloud)
             </h3>
             <div className="bg-gray-50 dark:bg-tokyo-bg rounded-lg p-4">
+              <div className="mb-4 text-sm text-gray-600 dark:text-tokyo-muted leading-relaxed">
+                Vertex AI uses your <strong>Google Cloud project</strong> with a service account for authentication (no API key needed).
+                This unlocks <strong>Claude models</strong> (Haiku, Sonnet, Opus) and <strong>Gemini models</strong> (Pro, Flash) via Google Cloud's enterprise endpoint with higher rate limits and SLA guarantees. Requires a GCP project with billing enabled.
+              </div>
               <SettingRow
                 title="Google Cloud Authentication"
                 description={

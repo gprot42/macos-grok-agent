@@ -45,6 +45,7 @@ function App() {
   const [showProjects, setShowProjects] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [selectedModel, setSelectedModel] = useState("claude-opus-4-6");
+  const [selectedImageModel, setSelectedImageModel] = useState<"nano-banana-pro" | "nano-banana-2">("nano-banana-pro");
   const [selectedEndpoint, setSelectedEndpoint] = useState<EndpointType>("vertex_ai");
   const [use1MContext, setUse1MContext] = useState(false);
   const [useMemory, setUseMemory] = useState(false);
@@ -195,11 +196,32 @@ function App() {
             onCustomPasswordChange={(password) => updateSettings({ customPassword: password })}
           />
         ) : activeTab === "image" ? (
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
             <span className="text-2xl">🍌</span>
-            <div>
-              <div className="font-medium theme-text">Nano Banana Pro</div>
-              <div className="text-xs theme-text-muted">Gemini 3 Pro Image - AI image generation and editing</div>
+            <div className="inline-flex rounded-lg border theme-border p-0.5 gap-0.5">
+              <button
+                onClick={() => setSelectedImageModel("nano-banana-pro")}
+                className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
+                  selectedImageModel === "nano-banana-pro"
+                    ? "bg-yellow-400 text-yellow-950 shadow-sm ring-1 ring-yellow-500/30"
+                    : "theme-text-muted hover:theme-text"
+                }`}
+              >
+                Pro
+              </button>
+              <button
+                onClick={() => setSelectedImageModel("nano-banana-2")}
+                className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
+                  selectedImageModel === "nano-banana-2"
+                    ? "bg-orange-400 text-orange-950 shadow-sm ring-1 ring-orange-500/30"
+                    : "theme-text-muted hover:theme-text"
+                }`}
+              >
+                v2
+              </button>
+            </div>
+            <div className="text-xs theme-text-muted italic">
+              {MODELS[selectedImageModel]?.description}
             </div>
           </div>
         ) : (
@@ -258,6 +280,11 @@ function App() {
             error={error}
             activeProject={activeProject}
             onDeleteImage={deleteImage}
+            onClearImages={_clearImages}
+            imageModelId={MODELS[selectedImageModel]?.aiStudioModelId}
+            imageModelName={MODELS[selectedImageModel]?.displayName}
+            altModelId={MODELS[selectedImageModel === "nano-banana-pro" ? "nano-banana-2" : "nano-banana-pro"]?.aiStudioModelId}
+            altModelName={MODELS[selectedImageModel === "nano-banana-pro" ? "nano-banana-2" : "nano-banana-pro"]?.displayName}
           />
         ) : (
           <>
@@ -347,7 +374,7 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
                 <li>• Gemini 3 Pro Deep Think - Extended reasoning (AI Studio)</li>
                 <li>• Grok 4.1/3/3 Fast/3 Mini - xAI's real-time models</li>
                 <li>• GPT-4o, Llama 405B, DeepSeek R1 - via OpenRouter</li>
-                <li>• Nano Banana Pro - Image generation and editing</li>
+                <li>• Nano Banana Pro / Nano Banana 2 - Image generation and editing</li>
               </ul>
             </div>
 
