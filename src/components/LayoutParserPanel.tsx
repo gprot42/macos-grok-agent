@@ -1,8 +1,8 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { Badge } from "@/components/ui/badge";
-import { Upload, FileText, Search, Database, Copy, Check, Download, X, Loader2 } from "lucide-react";
+import { Upload, FileText, Search, Database, Copy, Check, Download, X, Loader2, Trash2 } from "lucide-react";
 
 type ParserMode = "ocr" | "rag" | "structured";
 
@@ -182,14 +182,16 @@ Be precise. Extract every data point. Use null for missing fields. Ensure valid 
 export function LayoutParserPanel({ apiKey, activeProject }: LayoutParserPanelProps) {
   const [mode, setMode] = useState<ParserMode>("ocr");
   const [results, setResults] = useState<ParseResult[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [runningTasks, setRunningTasks] = useState<{ id: string; filename: string; mode: ParserMode }[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [savedId, setSavedId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileSelect = async (file: File) => {
+  const isLoading = runningTasks.length > 0;
+
+  const handleFileSelect = useCallback(async (file: File) => {
     if (!apiKey) {
       setError("API key required. Set your AI Studio key in Settings.");
       return;
@@ -208,8 +210,11 @@ export function LayoutParserPanel({ apiKey, activeProject }: LayoutParserPanelPr
       return;
     }
 
-    setIsLoading(true);
     setError(null);
+
+    const taskId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const currentMode = mode;
+    setRunningTasks((prev) => [...prev, { id: taskId, filename: file.name, mode: currentMode }]);
 
     try {
       const arrayBuffer = await file.arrayBuffer();
@@ -222,27 +227,25 @@ export function LayoutParserPanel({ apiKey, activeProject }: LayoutParserPanelPr
 
       const result = await invoke<string>("layout_parse", {
         fileData: base64,
-        mimeType: file.type,
-        mode,
+        mimeType: file.type || "application/pdf",
+        mode: currentMode,
         apiKey,
-        systemPrompt: MODE_CONFIG[mode].prompt,
+        systemPrompt: MODE_CONFIG[currentMode].prompt,
       });
 
-      const parseResult: ParseResult = {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        mode,
+      setResults((prev) => [{
+        id: taskId,
+        mode: currentMode,
         filename: file.name,
         result,
         timestamp: Date.now(),
-      };
-
-      setResults((prev) => [parseResult, ...prev]);
+      }, ...prev]);
     } catch (e) {
       setError(String(e));
     } finally {
-      setIsLoading(false);
+      setRunningTasks((prev) => prev.filter((t) => t.id !== taskId));
     }
-  };
+  }, [apiKey, mode]);
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -294,19 +297,19 @@ export function LayoutParserPanel({ apiKey, activeProject }: LayoutParserPanelPr
   return (
     <div className="flex flex-col flex-1 min-h-0">
       <div className="flex-1 overflow-y-auto p-4 scrollbar-thin min-h-0">
-        {isLoading && (
-          <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl">
+        {runningTasks.map((task) => (
+          <div key={task.id} className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl">
             <div className="flex items-center gap-3 text-blue-600 dark:text-blue-400">
               <Loader2 className="h-5 w-5 animate-spin" />
               <div>
-                <div className="font-medium">Parsing document...</div>
+                <div className="font-medium">Parsing {task.filename}...</div>
                 <div className="text-sm opacity-75">
-                  Mode: {MODE_CONFIG[mode].label} — This may take a moment for large documents
+                  Mode: {MODE_CONFIG[task.mode].label} — This may take a moment for large documents
                 </div>
               </div>
             </div>
           </div>
-        )}
+        ))}
 
         {results.length === 0 && !isLoading && (
           <div className="flex flex-col items-center justify-center h-full theme-text-muted gap-8">
@@ -414,6 +417,16 @@ export function LayoutParserPanel({ apiKey, activeProject }: LayoutParserPanelPr
               </button>
             ))}
           </div>
+          <div className="flex-1" />
+          {(results.length > 0 || runningTasks.length > 0) && (
+            <button
+              onClick={() => { setResults([]); setError(null); }}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 text-red-500 transition-colors"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Clear All
+            </button>
+          )}
         </div>
 
         <div

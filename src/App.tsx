@@ -311,12 +311,13 @@ function App() {
               research={researchSessions}
             />
           </>
-        ) : (
+        ) : null}
+        <div className={activeTab === "parser" ? "flex flex-col flex-1 min-h-0" : "hidden"}>
           <LayoutParserPanel
             apiKey={settings.aiStudioKey || settings.apiKey}
             activeProject={activeProject}
           />
-        )}
+        </div>
       </main>
 
       {showSettings && (
