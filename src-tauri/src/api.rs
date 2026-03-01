@@ -323,6 +323,91 @@ pub async fn deep_research(
     Err(format!("Research timed out after {} minutes", timeout_minutes))
 }
 
+pub async fn layout_parse(
+    file_data: String,
+    mime_type: String,
+    mode: String,
+    api_key: String,
+    system_prompt: String,
+) -> Result<String, String> {
+    let client = Client::new();
+
+    let model = "gemini-2.5-flash";
+    let url = format!(
+        "{}/v1beta/models/{}:generateContent",
+        AI_STUDIO_ENDPOINT, model
+    );
+
+    let payload = json!({
+        "systemInstruction": {
+            "parts": [{"text": system_prompt}]
+        },
+        "contents": [{
+            "parts": [
+                {
+                    "inline_data": {
+                        "mime_type": mime_type,
+                        "data": file_data
+                    }
+                },
+                {
+                    "text": match mode.as_str() {
+                        "ocr" => "Parse this document completely. Extract all text, layout elements, headings, tables, figures, headers, and footers with full structural awareness.",
+                        "rag" => "Create context-aware chunks from this document optimized for search and RAG retrieval. Each chunk must include ancestral headings and be self-contained.",
+                        "structured" => "Extract all structured data from this document into a clean JSON format. Include tables, key-value pairs, figures, sections, and any financial or form data.",
+                        _ => "Parse this document and extract its content."
+                    }
+                }
+            ]
+        }],
+        "generationConfig": {
+            "maxOutputTokens": 65536
+        }
+    });
+
+    let response = client
+        .post(&url)
+        .header("x-goog-api-key", &api_key)
+        .header("Content-Type", "application/json")
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("API error {}: {}", status, body));
+    }
+
+    let body: Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse response: {}", e))?;
+
+    if let Some(candidates) = body.get("candidates").and_then(|c| c.as_array()) {
+        if let Some(first) = candidates.first() {
+            if let Some(parts) = first
+                .get("content")
+                .and_then(|c| c.get("parts"))
+                .and_then(|p| p.as_array())
+            {
+                let mut result = String::new();
+                for part in parts {
+                    if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
+                        result.push_str(text);
+                    }
+                }
+                if !result.is_empty() {
+                    return Ok(result);
+                }
+            }
+        }
+    }
+
+    Err("No content in response".to_string())
+}
+
 fn build_url(
     endpoint: &str,
     publisher: &str,

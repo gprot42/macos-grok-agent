@@ -8,8 +8,8 @@ import { Settings, FolderOpen, Info, Menu, Sun, Moon, Palette } from "lucide-rea
 interface HeaderProps {
   theme: ThemeMode;
   onThemeChange: (theme: ThemeMode) => void;
-  activeTab: "chat" | "image" | "research";
-  onTabChange: (tab: "chat" | "image" | "research") => void;
+  activeTab: "chat" | "image" | "research" | "parser";
+  onTabChange: (tab: "chat" | "image" | "research" | "parser") => void;
   onShowSettings: () => void;
   onShowProjects: () => void;
   onShowAbout: () => void;
@@ -60,8 +60,8 @@ export function Header({
             </Badge>
           )}
 
-          <Tabs value={activeTab} onValueChange={(v) => onTabChange(v as "chat" | "image" | "research")}>
-            <TabsList className="grid grid-cols-3 w-[320px]">
+          <Tabs value={activeTab} onValueChange={(v) => onTabChange(v as "chat" | "image" | "research" | "parser")}>
+            <TabsList className="grid grid-cols-4 w-[420px]">
               <TabsTrigger value="chat" className="gap-1.5">
                 💬 Prompt
               </TabsTrigger>
@@ -70,6 +70,9 @@ export function Header({
               </TabsTrigger>
               <TabsTrigger value="research" className="gap-1.5">
                 🔬 Research
+              </TabsTrigger>
+              <TabsTrigger value="parser" className="gap-1.5">
+                📄 Parser
               </TabsTrigger>
             </TabsList>
           </Tabs>

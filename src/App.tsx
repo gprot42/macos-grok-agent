@@ -8,6 +8,7 @@ import {
   ProjectsPanel,
   DeepResearchPanel,
   ResearchSessionTabs,
+  LayoutParserPanel,
 } from "./components";
 import { useSettings, useChat } from "./hooks";
 import { useResearchSessions } from "./hooks/useResearchSessions";
@@ -40,7 +41,7 @@ function App() {
 
   const researchSessions = useResearchSessions();
 
-  const [activeTab, setActiveTab] = useState<"chat" | "image" | "research">("chat");
+  const [activeTab, setActiveTab] = useState<"chat" | "image" | "research" | "parser">("chat");
   const [showSettings, setShowSettings] = useState(false);
   const [showProjects, setShowProjects] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
@@ -224,12 +225,20 @@ function App() {
               {MODELS[selectedImageModel]?.description}
             </div>
           </div>
-        ) : (
+        ) : activeTab === "research" ? (
           <div className="flex items-center gap-3">
             <span className="text-2xl">🔬</span>
             <div>
               <div className="text-lg font-medium theme-text">Gemini Deep Research</div>
               <div className="text-sm theme-text-muted">Multi-step web research agent with source synthesis</div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">📄</span>
+            <div>
+              <div className="text-lg font-medium theme-text">Gemini Layout Parser</div>
+              <div className="text-sm theme-text-muted">Document OCR, RAG chunking, and structured data extraction</div>
             </div>
           </div>
         )}
@@ -286,7 +295,7 @@ function App() {
             altModelId={MODELS[selectedImageModel === "nano-banana-pro" ? "nano-banana-2" : "nano-banana-pro"]?.aiStudioModelId}
             altModelName={MODELS[selectedImageModel === "nano-banana-pro" ? "nano-banana-2" : "nano-banana-pro"]?.displayName}
           />
-        ) : (
+        ) : activeTab === "research" ? (
           <>
             <ResearchSessionTabs
               sessions={researchSessions.sessions}
@@ -302,6 +311,11 @@ function App() {
               research={researchSessions}
             />
           </>
+        ) : (
+          <LayoutParserPanel
+            apiKey={settings.aiStudioKey || settings.apiKey}
+            activeProject={activeProject}
+          />
         )}
       </main>
 

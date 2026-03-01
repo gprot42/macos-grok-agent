@@ -140,6 +140,17 @@ async fn generate_image(
 }
 
 #[tauri::command]
+async fn layout_parse(
+    file_data: String,
+    mime_type: String,
+    mode: String,
+    api_key: String,
+    system_prompt: String,
+) -> Result<String, String> {
+    api::layout_parse(file_data, mime_type, mode, api_key, system_prompt).await
+}
+
+#[tauri::command]
 async fn deep_research(
     prompt: String,
     api_key: String,
@@ -506,6 +517,7 @@ fn main() {
             send_chat_message,
             generate_image,
             deep_research,
+            layout_parse,
             save_image,
             save_output,
             create_project,

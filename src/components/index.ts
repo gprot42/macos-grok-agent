@@ -11,3 +11,4 @@ export { SettingsPanel } from "./SettingsPanel";
 export { ProjectsPanel } from "./ProjectsPanel";
 export { DeepResearchPanel } from "./DeepResearchPanel";
 export { ResearchSessionTabs } from "./ResearchSessionTabs";
+export { LayoutParserPanel } from "./LayoutParserPanel";
