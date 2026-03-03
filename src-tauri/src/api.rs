@@ -1455,6 +1455,28 @@ pub async fn coding_agent_chat(
             eprintln!("[CodingAgent] Google response: parts={}, finishReason={}", parts.len(), finish_reason);
             let _ = app_handle.emit("coding-agent-debug", json!({"msg": format!("Google response: parts={}, finishReason={}", parts.len(), finish_reason), "iteration": iteration}));
 
+            if (finish_reason == "RECITATION" || finish_reason == "SAFETY") && parts.is_empty() {
+                eprintln!("[CodingAgent] Blocked by {} filter, retrying with simplified prompt", finish_reason);
+                let _ = app_handle.emit("coding-agent-text", json!({"text": format!("(Response blocked by {} filter — retrying...)", finish_reason), "iteration": iteration}));
+                let last_idx = conversation.len() - 1;
+                if let Some(last_msg) = conversation.get_mut(last_idx) {
+                    if let Some(parts_arr) = last_msg.get("parts").and_then(|p| p.as_array()) {
+                        let simplified: Vec<Value> = parts_arr.iter().map(|p| {
+                            if let Some(fr) = p.get("functionResponse") {
+                                let name = fr.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                                let result = fr.get("response").and_then(|r| r.get("result")).and_then(|r| r.as_str()).unwrap_or("");
+                                let truncated = if result.len() > 500 { &result[..500] } else { result };
+                                json!({"functionResponse": {"name": name, "response": {"result": truncated, "is_error": false}}})
+                            } else {
+                                p.clone()
+                            }
+                        }).collect();
+                        *last_msg = json!({"role": "user", "parts": simplified});
+                    }
+                }
+                continue;
+            }
+
             let mut text_parts = Vec::new();
             let mut function_calls = Vec::new();
 
