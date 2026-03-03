@@ -9,6 +9,7 @@ import {
   DeepResearchPanel,
   ResearchSessionTabs,
   LayoutParserPanel,
+  CodingAgentPanel,
 } from "./components";
 import { useSettings, useChat } from "./hooks";
 import { useResearchSessions } from "./hooks/useResearchSessions";
@@ -41,7 +42,7 @@ function App() {
 
   const researchSessions = useResearchSessions();
 
-  const [activeTab, setActiveTab] = useState<"chat" | "image" | "research" | "parser">("chat");
+  const [activeTab, setActiveTab] = useState<"chat" | "image" | "research" | "parser" | "code">("chat");
   const [showSettings, setShowSettings] = useState(false);
   const [showProjects, setShowProjects] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
@@ -233,12 +234,20 @@ function App() {
               <div className="text-sm theme-text-muted">Multi-step web research agent with source synthesis</div>
             </div>
           </div>
-        ) : (
+        ) : activeTab === "parser" ? (
           <div className="flex items-center gap-3">
             <span className="text-2xl">📄</span>
             <div>
               <div className="text-lg font-medium theme-text">Gemini Layout Parser</div>
               <div className="text-sm theme-text-muted">Document OCR, RAG chunking, and structured data extraction</div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🖥️</span>
+            <div>
+              <div className="text-lg font-medium theme-text">Coding Agent</div>
+              <div className="text-sm theme-text">Build & modify code with AI tool use — reads, writes, runs commands, and iterates</div>
             </div>
           </div>
         )}
@@ -315,6 +324,15 @@ function App() {
         <div className={activeTab === "parser" ? "flex flex-col flex-1 min-h-0" : "hidden"}>
           <LayoutParserPanel
             apiKey={settings.aiStudioKey || settings.apiKey}
+            activeProject={activeProject}
+          />
+        </div>
+        <div className={activeTab === "code" ? "flex flex-col flex-1 min-h-0" : "hidden"}>
+          <CodingAgentPanel
+            apiKey={settings.apiKey}
+            projectId={settings.projectId}
+            selectedModel={currentModel}
+            selectedEndpoint={selectedEndpoint}
             activeProject={activeProject}
           />
         </div>

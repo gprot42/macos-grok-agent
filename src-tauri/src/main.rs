@@ -2,6 +2,7 @@
 
 mod api;
 mod auth;
+mod codegen;
 mod storage;
 
 use serde::{Deserialize, Serialize};
@@ -157,6 +158,31 @@ async fn deep_research(
     timeout_minutes: Option<u32>,
 ) -> Result<ChatResponse, String> {
     api::deep_research(prompt, api_key, timeout_minutes.unwrap_or(60)).await
+}
+
+#[tauri::command]
+async fn speech_to_text(
+    audio_data: String,
+    mime_type: String,
+    language_code: String,
+    api_key: String,
+    project_id: String,
+) -> Result<String, String> {
+    api::speech_to_text(audio_data, mime_type, language_code, api_key, project_id).await
+}
+
+#[tauri::command]
+async fn coding_agent_chat(
+    app_handle: tauri::AppHandle,
+    messages: Vec<serde_json::Value>,
+    model_id: String,
+    publisher: String,
+    endpoint: String,
+    api_key: String,
+    project_id: String,
+    working_dir: String,
+) -> Result<serde_json::Value, String> {
+    api::coding_agent_chat(messages, model_id, publisher, endpoint, api_key, project_id, working_dir, app_handle).await
 }
 
 #[tauri::command]
@@ -427,7 +453,7 @@ fn open_gcloud_auth() -> Result<(), String> {
 }
 
 fn main() {
-    use tauri::menu::{Menu, Submenu, PredefinedMenuItem};
+    use tauri::menu::{Menu, MenuItem, Submenu, PredefinedMenuItem};
     use tauri::Manager;
     
     tauri::Builder::default()
@@ -501,8 +527,17 @@ fn main() {
                     &PredefinedMenuItem::close_window(handle, None)?,
                 ],
             )?;
+
+            // Create View submenu with DevTools
+            let devtools_item = MenuItem::with_id(handle, "toggle_devtools", "Toggle Developer Tools", true, Some("CmdOrCtrl+Shift+I"))?;
+            let view_menu = Submenu::with_items(
+                handle,
+                "View",
+                true,
+                &[&devtools_item],
+            )?;
             
-            Menu::with_items(handle, &[&app_menu, &edit_menu, &window_menu])
+            Menu::with_items(handle, &[&app_menu, &edit_menu, &view_menu, &window_menu])
         })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -518,6 +553,8 @@ fn main() {
             generate_image,
             deep_research,
             layout_parse,
+            speech_to_text,
+            coding_agent_chat,
             save_image,
             save_output,
             create_project,
@@ -533,6 +570,17 @@ fn main() {
             check_gcloud_auth,
             open_gcloud_auth,
         ])
+        .on_menu_event(|app, event| {
+            if event.id().as_ref() == "toggle_devtools" {
+                if let Some(win) = app.get_webview_window("main") {
+                    if win.is_devtools_open() {
+                        win.close_devtools();
+                    } else {
+                        win.open_devtools();
+                    }
+                }
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

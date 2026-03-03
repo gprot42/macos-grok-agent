@@ -1,7 +1,8 @@
-use crate::{AttachedFile, ChatResponse, Message};
+use crate::{codegen, AttachedFile, ChatResponse, Message};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use reqwest::Client;
 use serde_json::{json, Value};
+use tauri::{AppHandle, Emitter};
 
 const VERTEX_AI_ENDPOINT: &str = "https://aiplatform.googleapis.com";
 const AI_STUDIO_ENDPOINT: &str = "https://generativelanguage.googleapis.com";
@@ -406,6 +407,118 @@ pub async fn layout_parse(
     }
 
     Err("No content in response".to_string())
+}
+
+pub async fn speech_to_text(
+    audio_data: String,
+    mime_type: String,
+    language_code: String,
+    api_key: String,
+    _project_id: String,
+) -> Result<String, String> {
+    let client = Client::new();
+
+    let model = "gemini-2.5-flash";
+    let url = format!(
+        "{}/v1beta/models/{}:generateContent",
+        AI_STUDIO_ENDPOINT, model
+    );
+
+    let lang_label = match language_code.as_str() {
+        "en-US" => "English (US)",
+        "en-GB" => "English (UK)",
+        "ja-JP" => "Japanese",
+        "zh-CN" => "Chinese (Simplified)",
+        "zh-TW" => "Chinese (Traditional)",
+        "ko-KR" => "Korean",
+        "es-ES" => "Spanish",
+        "fr-FR" => "French",
+        "de-DE" => "German",
+        "pt-BR" => "Portuguese (Brazil)",
+        "it-IT" => "Italian",
+        "hi-IN" => "Hindi",
+        "ar-SA" => "Arabic",
+        "ru-RU" => "Russian",
+        "th-TH" => "Thai",
+        "vi-VN" => "Vietnamese",
+        _ => &language_code,
+    };
+
+    let payload = json!({
+        "systemInstruction": {
+            "parts": [{"text": format!(
+                "You are a verbatim speech transcription tool. Your ONLY job is to listen to the audio and write down EXACTLY what was said, word for word, in {}. \
+                Rules: \
+                1. Output ONLY the exact words spoken. Nothing else. \
+                2. Do NOT interpret, summarize, continue, or elaborate. \
+                3. Do NOT add any labels, timestamps, commentary, or markdown. \
+                4. If the audio is silent or unintelligible, output: [inaudible] \
+                5. Preserve natural sentence punctuation.",
+                lang_label
+            )}]
+        },
+        "contents": [{
+            "parts": [
+                {
+                    "inline_data": {
+                        "mime_type": mime_type,
+                        "data": audio_data
+                    }
+                },
+                {
+                    "text": "Transcribe this audio verbatim."
+                }
+            ]
+        }],
+        "generationConfig": {
+            "temperature": 0.0,
+            "topP": 1.0,
+            "topK": 1,
+            "maxOutputTokens": 65536
+        }
+    });
+
+    let response = client
+        .post(&url)
+        .header("x-goog-api-key", &api_key)
+        .header("Content-Type", "application/json")
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("API error {}: {}", status, body));
+    }
+
+    let body: Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse response: {}", e))?;
+
+    if let Some(candidates) = body.get("candidates").and_then(|c| c.as_array()) {
+        if let Some(first) = candidates.first() {
+            if let Some(parts) = first
+                .get("content")
+                .and_then(|c| c.get("parts"))
+                .and_then(|p| p.as_array())
+            {
+                let mut result = String::new();
+                for part in parts {
+                    if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
+                        result.push_str(text);
+                    }
+                }
+                if !result.is_empty() {
+                    return Ok(result);
+                }
+            }
+        }
+    }
+
+    Err("No transcript in response. The audio may be too short, silent, or in an unsupported format.".to_string())
 }
 
 fn build_url(
@@ -1037,3 +1150,356 @@ fn parse_openai_response(body: &str, raw_json: String, input_estimate: u32) -> R
         output_tokens,
     })
 }
+
+// --- Coding Agent ---
+
+const CODING_AGENT_SYSTEM_PROMPT: &str = r#"You are an expert coding agent that builds and modifies software by using tools. You MUST use the provided tools to complete tasks — NEVER just describe what to do, actually do it by calling the tools.
+
+Available tools:
+- write_file: Create or overwrite files (auto-creates parent directories)
+- read_file: Read file contents
+- edit_file: Targeted find-and-replace edits on existing files
+- run_command: Execute shell commands (install deps, build, test, etc.)
+- list_directory: View the file tree of a directory
+
+CRITICAL RULES:
+1. ALWAYS call tools to perform actions. Do not just explain code — write it using write_file.
+2. When asked to create something, immediately call write_file to create the files.
+3. After creating files, use run_command to verify they work (e.g., run the script, build the project).
+4. If a command fails, read the error and fix it by calling edit_file or write_file again.
+5. Continue calling tools until the task is fully complete.
+6. For new projects, start by creating the main files with write_file."#;
+
+pub async fn coding_agent_chat(
+    messages: Vec<Value>,
+    model_id: String,
+    publisher: String,
+    endpoint: String,
+    api_key: String,
+    project_id: String,
+    working_dir: String,
+    app_handle: AppHandle,
+) -> Result<Value, String> {
+    let client = Client::new();
+    let tools = codegen::agent_tools_schema();
+    let max_iterations = 10;
+
+    // Normalize conversation format per publisher
+    let mut conversation: Vec<Value> = if publisher == "google" {
+        messages.iter().map(|m| {
+            json!({
+                "role": if m["role"] == "user" { "user" } else { "model" },
+                "parts": [{"text": m["content"].as_str().unwrap_or("")}]
+            })
+        }).collect()
+    } else {
+        messages
+    };
+
+    eprintln!("[CodingAgent] Starting — model={}, publisher={}, endpoint={}, working_dir={}", model_id, publisher, endpoint, working_dir);
+    let _ = app_handle.emit("coding-agent-debug", json!({"msg": format!("Starting agent: model={}, endpoint={}, working_dir={}", model_id, endpoint, working_dir)}));
+
+    // Only auto-create if directory doesn't already exist — user-selected dirs must exist
+    let wd_path = std::path::Path::new(&working_dir);
+    if !wd_path.exists() {
+        let err = format!("Working directory does not exist: {}. Please create it or select a different directory.", working_dir);
+        eprintln!("[CodingAgent] ERROR: {}", err);
+        return Err(err);
+    }
+
+    for iteration in 0..max_iterations {
+        let agent_model_id = if publisher == "anthropic" {
+            model_id.replace("streamRawPredict", "rawPredict")
+        } else {
+            model_id.replace("streamGenerateContent", "generateContent")
+        };
+        // For Google on Vertex, use the global endpoint with non-streaming generateContent
+        let url = if publisher == "google" && endpoint == "vertex_ai" {
+            let mid_str = agent_model_id.as_str();
+            let parts: Vec<&str> = mid_str.split(':').collect();
+            let model_path = parts.first().copied().unwrap_or(mid_str);
+            format!(
+                "{}/v1/projects/{}/locations/global/publishers/google/models/{}:generateContent",
+                VERTEX_AI_ENDPOINT, project_id, model_path
+            )
+        } else {
+            build_url(&endpoint, &publisher, &agent_model_id, None, &project_id, None)?
+        };
+        eprintln!("[CodingAgent] Iteration {} — POST {}", iteration, url);
+        let _ = app_handle.emit("coding-agent-debug", json!({"msg": format!("Iteration {} — calling API: {}", iteration, url), "iteration": iteration}));
+
+        let payload = if publisher == "anthropic" {
+            let mut p = json!({
+                "anthropic_version": "vertex-2023-10-16",
+                "system": CODING_AGENT_SYSTEM_PROMPT,
+                "messages": conversation,
+                "max_tokens": 64000,
+                "tools": tools,
+                "stream": false
+            });
+            p["thinking"] = json!({
+                "type": "enabled",
+                "budget_tokens": 32768
+            });
+            p
+        } else {
+            json!({
+                "system_instruction": { "parts": [{"text": CODING_AGENT_SYSTEM_PROMPT}] },
+                "contents": conversation,
+                "tools": [{ "function_declarations": tools.iter().map(|t| {
+                    let mut params = t["input_schema"].clone();
+                    params.as_object_mut().map(|o| o.remove("additionalProperties"));
+                    json!({ "name": t["name"], "description": t["description"], "parameters": params })
+                }).collect::<Vec<_>>() }],
+                "tool_config": { "function_calling_config": { "mode": "AUTO" } },
+                "generationConfig": { "maxOutputTokens": 64000, "temperature": 0.0 }
+            })
+        };
+
+        let mut request = client.post(&url).json(&payload);
+        match endpoint.as_str() {
+            "ai_studio" => { request = request.header("x-goog-api-key", &api_key); }
+            "vertex_ai" => {
+                let token = if crate::auth::has_service_account_key() {
+                    crate::auth::get_access_token().await?
+                } else {
+                    return Err("Vertex AI requires a service account.".to_string());
+                };
+                request = request.header("Authorization", format!("Bearer {}", token));
+            }
+            "openrouter" | "xai" | "kilocode" => {
+                request = request.header("Authorization", format!("Bearer {}", api_key));
+            }
+            _ => {}
+        }
+        if publisher == "anthropic" {
+            request = request.header("anthropic-beta", "interleaved-thinking-2025-05-14");
+        }
+        request = request.timeout(std::time::Duration::from_secs(120));
+
+        let _ = app_handle.emit("coding-agent-text", json!({"text": format!("Calling {} (iteration {})...", if publisher == "google" { "Gemini" } else { "Claude" }, iteration + 1), "iteration": iteration}));
+
+        let response = request.send().await.map_err(|e| {
+            let err = format!("Request failed (timeout or network error): {}", e);
+            eprintln!("[CodingAgent] {}", err);
+            let _ = app_handle.emit("coding-agent-debug", json!({"msg": err, "iteration": iteration}));
+            err
+        })?;
+        let status = response.status();
+        eprintln!("[CodingAgent] Response status: {}", status);
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            let err = format!("API error {}: {}", status, body);
+            eprintln!("[CodingAgent] ERROR: {}", err);
+            let _ = app_handle.emit("coding-agent-debug", json!({"msg": err, "iteration": iteration}));
+            return Err(format!("API error {}: {}", status, body));
+        }
+
+        let raw_body = response.text().await.map_err(|e| format!("Failed to read response body: {}", e))?;
+        eprintln!("[CodingAgent] Raw response length: {} bytes", raw_body.len());
+        eprintln!("[CodingAgent] Response preview: {}", &raw_body[..raw_body.len().min(500)]);
+        let _ = app_handle.emit("coding-agent-debug", json!({"msg": format!("Response: {} bytes", raw_body.len()), "iteration": iteration}));
+
+        let body: Value = if publisher == "google" {
+            // generateContent returns a single JSON object; streamGenerateContent returns an array
+            let parsed: Value = serde_json::from_str(&raw_body)
+                .map_err(|e| format!("Failed to parse response: {}", e))?;
+            if parsed.is_array() {
+                // Merge streamed chunks into one response
+                let chunks = parsed.as_array().unwrap();
+                let mut all_parts: Vec<Value> = Vec::new();
+                let mut finish_reason = String::new();
+                for chunk in chunks {
+                    if let Some(candidates) = chunk.get("candidates").and_then(|c| c.as_array()) {
+                        if let Some(first) = candidates.first() {
+                            if let Some(parts) = first.get("content").and_then(|c| c.get("parts")).and_then(|p| p.as_array()) {
+                                all_parts.extend(parts.iter().cloned());
+                            }
+                            if let Some(fr) = first.get("finishReason").and_then(|f| f.as_str()) {
+                                finish_reason = fr.to_string();
+                            }
+                        }
+                    }
+                }
+                json!({"candidates": [{"content": {"parts": all_parts}, "finishReason": finish_reason}]})
+            } else {
+                parsed
+            }
+        } else {
+            serde_json::from_str(&raw_body).map_err(|e| format!("Failed to parse response: {}", e))?
+        };
+
+        if publisher == "anthropic" {
+            let content = body.get("content").and_then(|c| c.as_array()).cloned().unwrap_or_default();
+            let stop_reason = body.get("stop_reason").and_then(|s| s.as_str()).unwrap_or("");
+            eprintln!("[CodingAgent] stop_reason={}, content_blocks={}", stop_reason, content.len());
+            let _ = app_handle.emit("coding-agent-debug", json!({"msg": format!("Response: stop_reason={}, content_blocks={}", stop_reason, content.len()), "iteration": iteration}));
+
+            let mut text_parts = Vec::new();
+            let mut tool_uses = Vec::new();
+
+            for block in &content {
+                let block_type = block.get("type").and_then(|t| t.as_str()).unwrap_or("unknown");
+                eprintln!("[CodingAgent]   block type={}", block_type);
+                match block_type {
+                    "text" => {
+                        if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
+                            text_parts.push(text.to_string());
+                            let _ = app_handle.emit("coding-agent-text", json!({"text": text, "iteration": iteration}));
+                        }
+                    }
+                    "thinking" => {
+                        if let Some(text) = block.get("thinking").and_then(|t| t.as_str()) {
+                            let _ = app_handle.emit("coding-agent-thinking", json!({"text": text, "iteration": iteration}));
+                        }
+                    }
+                    "tool_use" => { tool_uses.push(block.clone()); }
+                    _ => {}
+                }
+            }
+
+            if tool_uses.is_empty() {
+                eprintln!("[CodingAgent] No tool calls — completing (stop_reason={})", stop_reason);
+                let _ = app_handle.emit("coding-agent-debug", json!({"msg": format!("No tool calls, completing. stop_reason={}", stop_reason), "iteration": iteration}));
+                let _ = app_handle.emit("coding-agent-complete", json!({"iteration": iteration, "stop_reason": stop_reason}));
+                return Ok(json!({"text": text_parts.join("\n"), "iterations": iteration + 1, "stop_reason": stop_reason}));
+            }
+
+            eprintln!("[CodingAgent] {} tool call(s) to execute", tool_uses.len());
+            conversation.push(json!({"role": "assistant", "content": content}));
+            let mut tool_results: Vec<Value> = Vec::new();
+
+            for tool_use in &tool_uses {
+                let tool_name = tool_use.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                let tool_id = tool_use.get("id").and_then(|i| i.as_str()).unwrap_or("");
+                let input = tool_use.get("input").cloned().unwrap_or(json!({}));
+
+                eprintln!("[CodingAgent] Executing tool={}, id={}, input={}", tool_name, tool_id, input);
+                let _ = app_handle.emit("coding-agent-debug", json!({"msg": format!("Executing: {} — {}", tool_name, input), "iteration": iteration}));
+                let _ = app_handle.emit("coding-agent-tool-call", json!({"tool": tool_name, "input": input, "tool_use_id": tool_id, "iteration": iteration}));
+                let result = execute_tool(&working_dir, tool_name, &input).await;
+                let (content_val, is_error) = match &result {
+                    Ok(val) => {
+                        eprintln!("[CodingAgent] Tool {} OK: {}...", tool_name, &val[..val.len().min(200)]);
+                        (val.clone(), false)
+                    }
+                    Err(e) => {
+                        eprintln!("[CodingAgent] Tool {} ERROR: {}", tool_name, e);
+                        (e.clone(), true)
+                    }
+                };
+                let _ = app_handle.emit("coding-agent-debug", json!({"msg": format!("Tool result: {} — error={} — {}", tool_name, is_error, &content_val[..content_val.len().min(300)]), "iteration": iteration}));
+                let _ = app_handle.emit("coding-agent-tool-result", json!({"tool": tool_name, "result": content_val, "is_error": is_error, "tool_use_id": tool_id, "iteration": iteration}));
+                tool_results.push(json!({"type": "tool_result", "tool_use_id": tool_id, "content": content_val, "is_error": is_error}));
+            }
+            conversation.push(json!({"role": "user", "content": tool_results}));
+        } else {
+            // Google Gemini tool-use handling
+            let candidates = body.get("candidates").and_then(|c| c.as_array()).cloned().unwrap_or_default();
+            let first = candidates.first().cloned().unwrap_or(json!({}));
+            let parts = first.get("content").and_then(|c| c.get("parts")).and_then(|p| p.as_array()).cloned().unwrap_or_default();
+            let finish_reason = first.get("finishReason").and_then(|f| f.as_str()).unwrap_or("");
+
+            eprintln!("[CodingAgent] Google response: parts={}, finishReason={}", parts.len(), finish_reason);
+            let _ = app_handle.emit("coding-agent-debug", json!({"msg": format!("Google response: parts={}, finishReason={}", parts.len(), finish_reason), "iteration": iteration}));
+
+            let mut text_parts = Vec::new();
+            let mut function_calls = Vec::new();
+
+            for part in &parts {
+                if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
+                    eprintln!("[CodingAgent]   text part: {}...", &text[..text.len().min(100)]);
+                    text_parts.push(text.to_string());
+                    let _ = app_handle.emit("coding-agent-text", json!({"text": text, "iteration": iteration}));
+                }
+                if let Some(fc) = part.get("functionCall") {
+                    eprintln!("[CodingAgent]   functionCall: {}", fc);
+                    function_calls.push(fc.clone());
+                }
+            }
+
+            if function_calls.is_empty() {
+                eprintln!("[CodingAgent] Google: no function calls, completing");
+                let _ = app_handle.emit("coding-agent-complete", json!({"iteration": iteration, "stop_reason": finish_reason}));
+                return Ok(json!({"text": text_parts.join("\n"), "iterations": iteration + 1, "stop_reason": finish_reason}));
+            }
+
+            // Add model response to conversation
+            conversation.push(json!({
+                "role": "model",
+                "parts": parts
+            }));
+
+            // Execute function calls and build responses
+            let mut response_parts: Vec<Value> = Vec::new();
+            for fc in &function_calls {
+                let fn_name = fc.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                let fn_args = fc.get("args").cloned().unwrap_or(json!({}));
+
+                eprintln!("[CodingAgent] Google executing tool={}, args={}", fn_name, fn_args);
+                let _ = app_handle.emit("coding-agent-debug", json!({"msg": format!("Executing: {} — {}", fn_name, fn_args), "iteration": iteration}));
+                let _ = app_handle.emit("coding-agent-tool-call", json!({"tool": fn_name, "input": fn_args, "tool_use_id": fn_name, "iteration": iteration}));
+
+                let result = execute_tool(&working_dir, fn_name, &fn_args).await;
+                let (content_val, is_error) = match &result {
+                    Ok(val) => {
+                        eprintln!("[CodingAgent] Google tool {} OK: {}...", fn_name, &val[..val.len().min(200)]);
+                        (val.clone(), false)
+                    }
+                    Err(e) => {
+                        eprintln!("[CodingAgent] Google tool {} ERROR: {}", fn_name, e);
+                        (e.clone(), true)
+                    }
+                };
+                let _ = app_handle.emit("coding-agent-tool-result", json!({"tool": fn_name, "result": content_val, "is_error": is_error, "tool_use_id": fn_name, "iteration": iteration}));
+
+                response_parts.push(json!({
+                    "functionResponse": {
+                        "name": fn_name,
+                        "response": { "result": content_val, "is_error": is_error }
+                    }
+                }));
+            }
+
+            conversation.push(json!({
+                "role": "user",
+                "parts": response_parts
+            }));
+        }
+    }
+    let _ = app_handle.emit("coding-agent-complete", json!({"iteration": max_iterations, "stop_reason": "max_iterations"}));
+    Ok(json!({"text": "Agent completed (reached iteration limit)", "iterations": max_iterations, "stop_reason": "max_iterations"}))
+}
+
+async fn execute_tool(working_dir: &str, tool_name: &str, input: &Value) -> Result<String, String> {
+    match tool_name {
+        "read_file" => {
+            let path = input.get("path").and_then(|p| p.as_str()).unwrap_or("");
+            codegen::exec_read_file(working_dir, path).await
+        }
+        "write_file" => {
+            let path = input.get("path").and_then(|p| p.as_str()).unwrap_or("");
+            let content = input.get("content").and_then(|c| c.as_str()).unwrap_or("");
+            codegen::exec_write_file(working_dir, path, content).await
+        }
+        "edit_file" => {
+            let path = input.get("path").and_then(|p| p.as_str()).unwrap_or("");
+            let old_text = input.get("old_text").and_then(|t| t.as_str()).unwrap_or("");
+            let new_text = input.get("new_text").and_then(|t| t.as_str()).unwrap_or("");
+            codegen::exec_edit_file(working_dir, path, old_text, new_text).await
+        }
+        "run_command" => {
+            let command = input.get("command").and_then(|c| c.as_str()).unwrap_or("");
+            let result = codegen::exec_run_command(working_dir, command).await?;
+            Ok(json!({"exit_code": result.exit_code, "stdout": result.stdout, "stderr": result.stderr}).to_string())
+        }
+        "list_directory" => {
+            let path = input.get("path").and_then(|p| p.as_str()).unwrap_or(".");
+            let depth = input.get("max_depth").and_then(|d| d.as_u64()).unwrap_or(3) as u32;
+            codegen::exec_list_directory(working_dir, path, depth).await
+        }
+        _ => Err(format!("Unknown tool: {}", tool_name)),
+    }
+}
+
+
