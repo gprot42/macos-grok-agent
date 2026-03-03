@@ -570,10 +570,9 @@ fn main() {
             check_gcloud_auth,
             open_gcloud_auth,
         ])
-        .on_menu_event(|app, event| {
+        .on_menu_event(|_app, event| {
             if event.id().as_ref() == "toggle_devtools" {
-                #[cfg(debug_assertions)]
-                if let Some(win) = app.get_webview_window("main") {
+                if let Some(win) = _app.get_webview_window("main") {
                     if win.is_devtools_open() {
                         win.close_devtools();
                     } else {

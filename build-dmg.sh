@@ -3,7 +3,8 @@ set -e
 
 APP_NAME="Cortex Agent"
 VERSION=$(grep '"version"' package.json | head -1 | sed 's/.*"version": "\([^"]*\)".*/\1/')
-DMG_NAME="Cortex-Agent-${VERSION}"
+ARCH=$(uname -m)
+DMG_NAME="Cortex-Agent_${VERSION}_${ARCH}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO="dazdaz/app-cortex-agent"
 
@@ -130,7 +131,7 @@ PYEOF
     fi
 fi
 
-cargo tauri build --bundles dmg
+cargo tauri build --bundles dmg || echo "Warning: Tauri DMG bundling failed, will create DMG manually"
 
 cd "$SCRIPT_DIR"
 
@@ -138,44 +139,56 @@ echo ""
 echo "[5/5] Locating DMG..."
 echo "------------------------------------------------"
 
-DMG_PATH=$(find src-tauri/target/release/bundle/dmg -name "*.dmg" 2>/dev/null | head -1)
+FINAL_DMG="${SCRIPT_DIR}/${DMG_NAME}.dmg"
+APP_BUNDLE="src-tauri/target/release/bundle/macos/${APP_NAME}.app"
 
-if [ -n "$DMG_PATH" ]; then
-    ARCH=$(uname -m)
-    FINAL_DMG="${SCRIPT_DIR}/${DMG_NAME}-${ARCH}.dmg"
+DMG_PATH=$(find src-tauri/target/release/bundle/dmg -name "*.dmg" -not -name "rw.*" 2>/dev/null | head -1)
+
+if [ -z "$DMG_PATH" ] && [ -d "$APP_BUNDLE" ]; then
+    echo "Creating DMG manually from .app bundle..."
+    mkdir -p src-tauri/target/release/bundle/dmg
+    hdiutil create -volname "${APP_NAME}" -srcfolder "$APP_BUNDLE" -ov -format UDZO "$FINAL_DMG"
+elif [ -n "$DMG_PATH" ]; then
     cp "$DMG_PATH" "$FINAL_DMG"
+else
+    echo "Error: Neither DMG nor .app bundle found in build output"
+    echo "Check src-tauri/target/release/bundle/ for build artifacts"
+    exit 1
+fi
+
+rm -f src-tauri/target/release/bundle/macos/rw.*.dmg 2>/dev/null || true
+
+echo ""
+echo "================================================"
+echo "  Build Complete!"
+echo "================================================"
+echo ""
+echo "DMG Location: $FINAL_DMG"
+echo "Size: $(du -h "$FINAL_DMG" | cut -f1)"
+echo ""
+echo "The .dmg contains a self-contained .app bundle"
+echo "with all frameworks and libraries embedded."
+echo ""
+
+if [ "$CREATE_RELEASE" = true ]; then
+    echo ""
+    echo "[6/6] Creating GitHub Release..."
+    echo "------------------------------------------------"
     
-    echo ""
-    echo "================================================"
-    echo "  Build Complete!"
-    echo "================================================"
-    echo ""
-    echo "DMG Location: $FINAL_DMG"
-    echo "Size: $(du -h "$FINAL_DMG" | cut -f1)"
-    echo ""
-    echo "The .dmg contains a self-contained .app bundle"
-    echo "with all frameworks and libraries embedded."
-    echo ""
-    
-    if [ "$CREATE_RELEASE" = true ]; then
-        echo ""
-        echo "[6/6] Creating GitHub Release..."
-        echo "------------------------------------------------"
-        
-        TAG="v${VERSION}"
-        RELEASE_TITLE="${APP_NAME} ${TAG}"
-        RELEASE_NOTES="## ${APP_NAME} ${TAG}
+    TAG="v${VERSION}"
+    RELEASE_TITLE="${APP_NAME} ${TAG}"
+    RELEASE_NOTES="## ${APP_NAME} ${TAG}
 
 ### Downloads
-- **macOS (${ARCH})**: ${DMG_NAME}-${ARCH}.dmg
+- **macOS (${ARCH})**: ${DMG_NAME}.dmg
 
 ### What's New
-- Initial release of Cortex Agent
-- Support for Claude 4, Gemini 2.5, and image generation
+- Vibe Coding Agent with multi-model support
+- Support for Claude 4.6, Gemini 3.1/2.5, and image generation
+- Safety guards for file operations
 - Multiple prompt sessions with tabs
 - Token tracking with cost estimation
-- Project management for organizing outputs
-- Three themes: Light, Tokyo Night, Dark
+- DevTools accessible from View menu
 
 ### Installation
 1. Download the DMG file for your architecture
@@ -184,31 +197,26 @@ if [ -n "$DMG_PATH" ]; then
 
 Built with Tauri, React, and Rust. No external dependencies required."
 
-        echo "Creating release ${TAG}..."
-        
-        if gh release view "$TAG" --repo "$REPO" &> /dev/null; then
-            echo "Release ${TAG} already exists, uploading asset..."
-            gh release upload "$TAG" "$FINAL_DMG" --repo "$REPO" --clobber
-        else
-            gh release create "$TAG" "$FINAL_DMG" \
-                --repo "$REPO" \
-                --title "$RELEASE_TITLE" \
-                --notes "$RELEASE_NOTES"
-        fi
-        
-        echo ""
-        echo "GitHub Release created: https://github.com/${REPO}/releases/tag/${TAG}"
+    echo "Creating release ${TAG}..."
+    
+    if gh release view "$TAG" --repo "$REPO" &> /dev/null; then
+        echo "Release ${TAG} already exists, uploading asset..."
+        gh release upload "$TAG" "$FINAL_DMG" --repo "$REPO" --clobber
     else
-        if command -v open &> /dev/null; then
-            read -p "Open DMG? [y/N] " -n 1 -r
-            echo
-            if [[ $REPLY =~ ^[Yy]$ ]]; then
-                open "$FINAL_DMG"
-            fi
+        gh release create "$TAG" "$FINAL_DMG" \
+            --repo "$REPO" \
+            --title "$RELEASE_TITLE" \
+            --notes "$RELEASE_NOTES"
+    fi
+    
+    echo ""
+    echo "GitHub Release created: https://github.com/${REPO}/releases/tag/${TAG}"
+else
+    if command -v open &> /dev/null; then
+        read -p "Open DMG? [y/N] " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            open "$FINAL_DMG"
         fi
     fi
-else
-    echo "Error: DMG not found in build output"
-    echo "Check src-tauri/target/release/bundle/ for build artifacts"
-    exit 1
 fi
