@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import {
-  Code2, Square, FolderOpen, FolderPlus, Terminal, FileText,
+  Code2, Square, FolderOpen, Terminal, FileText,
   FilePen, FolderTree, ChevronDown, ChevronRight,
   Loader2, AlertCircle, CheckCircle2, Send,
 } from "lucide-react";
@@ -48,6 +48,7 @@ const CODING_CAPABLE_IDS = new Set([
   "claude-sonnet-4",
   "gemini-3-1-pro",
   "gemini-3-1-pro-customtools",
+  "gemini-3-1-flash-lite",
   "gemini-3-flash-preview",
   "gemini-2-5-pro",
   "gemini-2-5-flash",
@@ -234,23 +235,6 @@ export function CodingAgentPanel({
       const dir = window.prompt("Enter working directory path:", workingDir);
       if (dir) setWorkingDir(dir);
     }
-  };
-
-  const createSubDirectory = async () => {
-    const name = window.prompt("New folder name:", "");
-    if (!name?.trim()) return;
-    const newDir = `${workingDir}/${name.trim()}`;
-    try {
-      const { mkdir } = await import("@tauri-apps/plugin-fs");
-      await mkdir(newDir, { recursive: true });
-    } catch {
-      try {
-        await invoke("run_shell", { command: `mkdir -p "${newDir}"` });
-      } catch {
-        // best-effort
-      }
-    }
-    setWorkingDir(newDir);
   };
 
   const renderMessage = (msg: AgentMessage) => {
@@ -459,14 +443,6 @@ export function CodingAgentPanel({
             <FolderOpen className="h-3.5 w-3.5 flex-shrink-0" />
             <span className="font-medium">Output:</span>
             {workingDir.split("/").slice(-2).join("/")}
-          </button>
-
-          <button
-            onClick={createSubDirectory}
-            className="flex items-center gap-1 px-2 py-1.5 rounded-lg border theme-border theme-surface theme-text-muted hover:text-green-600 hover:border-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors text-xs"
-            title="Create new subfolder in output directory"
-          >
-            <FolderPlus className="h-3.5 w-3.5" />
           </button>
 
           <div className="flex-1" />
