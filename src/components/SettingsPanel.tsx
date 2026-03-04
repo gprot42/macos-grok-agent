@@ -465,6 +465,33 @@ export function SettingsPanel({
 
           <div className="mb-6">
             <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-2">
+              Vibe Coding
+            </h3>
+            <div className="bg-gray-50 dark:bg-tokyo-bg rounded-lg p-4">
+              <SettingRow
+                title="Agent Timeout"
+                description="Maximum seconds to wait for each LLM response in both Code and Plan modes. Increase for complex or deep-thinking queries."
+              >
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min="60"
+                    max="1800"
+                    step="60"
+                    value={settings.agentTimeout || 900}
+                    onChange={(e) => onUpdateSettings({ agentTimeout: parseInt(e.target.value) })}
+                    className="flex-1"
+                  />
+                  <span className="text-sm font-medium text-gray-700 dark:text-tokyo-text w-16 text-right">
+                    {settings.agentTimeout || 900}s
+                  </span>
+                </div>
+              </SettingRow>
+            </div>
+          </div>
+
+          <div className="mb-6">
+            <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-2">
               Display
             </h3>
             <div className="bg-gray-50 dark:bg-tokyo-bg rounded-lg p-4">

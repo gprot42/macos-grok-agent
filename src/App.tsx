@@ -334,6 +334,7 @@ function App() {
             selectedModel={currentModel}
             selectedEndpoint={selectedEndpoint}
             activeProject={activeProject}
+            agentTimeout={settings.agentTimeout}
           />
         </div>
       </main>

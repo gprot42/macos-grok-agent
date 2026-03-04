@@ -31,6 +31,8 @@ pub struct AppSettings {
     pub custom_password: Option<String>,
     #[serde(rename = "projectId")]
     pub project_id: String,
+    #[serde(rename = "agentTimeout", default, skip_serializing_if = "Option::is_none")]
+    pub agent_timeout: Option<u64>,
 }
 
 impl Default for AppSettings {
@@ -46,6 +48,7 @@ impl Default for AppSettings {
             custom_login: None,
             custom_password: None,
             project_id: String::new(),
+            agent_timeout: None,
         }
     }
 }
@@ -184,10 +187,11 @@ async fn coding_agent_chat(
     api_key: String,
     project_id: String,
     working_dir: String,
+    agent_timeout: Option<u64>,
 ) -> Result<serde_json::Value, String> {
     let cancel_flag = app_handle.state::<Arc<AtomicBool>>().inner().clone();
     cancel_flag.store(false, Ordering::SeqCst);
-    api::coding_agent_chat(messages, model_id, publisher, endpoint, api_key, project_id, working_dir, app_handle, cancel_flag).await
+    api::coding_agent_chat(messages, model_id, publisher, endpoint, api_key, project_id, working_dir, agent_timeout, app_handle, cancel_flag).await
 }
 
 #[tauri::command]

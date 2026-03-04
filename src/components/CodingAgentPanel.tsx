@@ -32,6 +32,7 @@ interface CodingAgentPanelProps {
   selectedModel: ModelConfig;
   selectedEndpoint: EndpointType;
   activeProject: string | null;
+  agentTimeout?: number;
 }
 
 const TOOL_ICONS: Record<string, typeof Code2> = {
@@ -61,6 +62,7 @@ export function CodingAgentPanel({
   projectId,
   selectedEndpoint,
   activeProject,
+  agentTimeout,
 }: CodingAgentPanelProps) {
   const [prompt, setPrompt] = useState("");
   const [mode, setMode] = useState<"code" | "plan">("code");
@@ -185,6 +187,7 @@ export function CodingAgentPanel({
         apiKey,
         projectId,
         workingDir,
+        agentTimeout: agentTimeout || null,
       });
     } catch (e) {
       addMessage({ type: "error", content: String(e) });
@@ -194,7 +197,7 @@ export function CodingAgentPanel({
       cleanupListeners();
       setRunning(false);
     }
-  }, [prompt, running, conversationHistory, model, mode, selectedEndpoint, apiKey, projectId, workingDir, addMessage, setupListeners, cleanupListeners]);
+  }, [prompt, running, conversationHistory, model, mode, selectedEndpoint, apiKey, projectId, workingDir, agentTimeout, addMessage, setupListeners, cleanupListeners]);
 
   const handleStop = useCallback(async () => {
     try {

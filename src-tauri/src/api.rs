@@ -1212,6 +1212,7 @@ pub async fn coding_agent_chat(
     api_key: String,
     project_id: String,
     working_dir: String,
+    agent_timeout: Option<u64>,
     app_handle: AppHandle,
     cancel_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<Value, String> {
@@ -1334,7 +1335,8 @@ pub async fn coding_agent_chat(
         if publisher == "anthropic" {
             request = request.header("anthropic-beta", "interleaved-thinking-2025-05-14");
         }
-        request = request.timeout(std::time::Duration::from_secs(120));
+        let timeout_secs = agent_timeout.unwrap_or(900);
+        request = request.timeout(std::time::Duration::from_secs(timeout_secs));
 
         let _ = app_handle.emit("coding-agent-text", json!({"text": format!("Calling {} (iteration {})...", if publisher == "google" { "Gemini" } else { "Claude" }, iteration + 1), "iteration": iteration}));
 

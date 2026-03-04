@@ -56,6 +56,7 @@ export interface AppSettings {
   projectId: string;
   activeProject?: string;
   showRawJson?: boolean;
+  agentTimeout?: number;
   customColors?: {
     accentColor?: string;
     userMessageBg?: string;
