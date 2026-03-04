@@ -50,8 +50,6 @@ const CODING_CAPABLE_IDS = new Set([
   "gemini-3-1-pro-customtools",
   "gemini-3-1-flash-lite",
   "gemini-3-flash-preview",
-  "gemini-2-5-pro",
-  "gemini-2-5-flash",
 ]);
 
 const CODING_MODELS = Object.values(MODELS).filter(
@@ -65,6 +63,7 @@ export function CodingAgentPanel({
   activeProject,
 }: CodingAgentPanelProps) {
   const [prompt, setPrompt] = useState("");
+  const [mode, setMode] = useState<"code" | "plan">("code");
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [conversationHistory, setConversationHistory] = useState<Record<string, unknown>[]>([]);
   const [running, setRunning] = useState(false);
@@ -161,11 +160,14 @@ export function CodingAgentPanel({
     if (!prompt.trim() || running) return;
 
     const userPrompt = prompt.trim();
+    const effectivePrompt = mode === "plan"
+      ? `[PLAN MODE] Do NOT write or edit any files. Do NOT run any commands. Only analyze the request and provide a detailed step-by-step implementation plan, including which files to create/modify and what changes to make.\n\n${userPrompt}`
+      : userPrompt;
     setPrompt("");
     addMessage({ type: "user", content: userPrompt });
     setRunning(true);
 
-    const newHistory = [...conversationHistory, { role: "user", content: userPrompt }];
+    const newHistory = [...conversationHistory, { role: "user", content: effectivePrompt }];
     setConversationHistory(newHistory);
 
     await setupListeners();
@@ -192,7 +194,7 @@ export function CodingAgentPanel({
       cleanupListeners();
       setRunning(false);
     }
-  }, [prompt, running, conversationHistory, model, selectedEndpoint, apiKey, projectId, workingDir, addMessage, setupListeners, cleanupListeners]);
+  }, [prompt, running, conversationHistory, model, mode, selectedEndpoint, apiKey, projectId, workingDir, addMessage, setupListeners, cleanupListeners]);
 
   const handleStop = useCallback(async () => {
     try {
@@ -434,6 +436,29 @@ export function CodingAgentPanel({
               );
             })}
           </select>
+
+          <div className="flex items-center rounded-lg border theme-border overflow-hidden">
+            <button
+              onClick={() => setMode("code")}
+              className={`px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                mode === "code"
+                  ? "bg-blue-500 text-white"
+                  : "theme-surface theme-text-muted hover:theme-text"
+              }`}
+            >
+              Code
+            </button>
+            <button
+              onClick={() => setMode("plan")}
+              className={`px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                mode === "plan"
+                  ? "bg-amber-500 text-white"
+                  : "theme-surface theme-text-muted hover:theme-text"
+              }`}
+            >
+              Plan
+            </button>
+          </div>
 
           <button
             onClick={pickDirectory}
