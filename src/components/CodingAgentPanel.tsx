@@ -163,7 +163,7 @@ export function CodingAgentPanel({
 
     const userPrompt = prompt.trim();
     const effectivePrompt = mode === "plan"
-      ? `[PLAN MODE] Do NOT write or edit any files. Do NOT run any commands. Only analyze the request and provide a detailed step-by-step implementation plan, including which files to create/modify and what changes to make.\n\n${userPrompt}`
+      ? `[PLAN MODE] First, create a detailed step-by-step implementation plan. Then execute the plan by creating and writing all necessary files to disk so the user can explore and modify them.\n\n${userPrompt}`
       : userPrompt;
     setPrompt("");
     addMessage({ type: "user", content: userPrompt });
