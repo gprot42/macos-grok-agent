@@ -163,7 +163,7 @@ export function CodingAgentPanel({
 
     const userPrompt = prompt.trim();
     const effectivePrompt = mode === "plan"
-      ? `[PLAN MODE] Create a detailed implementation plan, then write ALL source files to disk (every component, config, style, and utility file — not just package.json). Do NOT run any commands — no installs, no builds, no dev servers. Stop completely after all files are written.\n\n${userPrompt}`
+      ? `[PLAN MODE — PLANNING ONLY] Your job is to create a project plan, NOT to implement it. Write the following files to disk:\n1. PLAN.md — detailed architecture, tech stack, folder structure, and step-by-step implementation roadmap\n2. package.json (or equivalent config) with all dependencies\n3. Any config/scaffold files (tsconfig, vite config, tailwind config, etc.)\n\nDo NOT write any application source code (no components, pages, utilities, or styles). Do NOT run any commands. STOP immediately after writing the plan and config files. The user will switch to Code mode to implement.\n\n${userPrompt}`
       : userPrompt;
     setPrompt("");
     addMessage({ type: "user", content: userPrompt });
