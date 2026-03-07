@@ -1,6 +1,6 @@
 [package]
 name = "cortex-agent"
-version = "0.0.10"
+version = "0.0.11"
 description = "Cortex Agent - AI Assistant"
 authors = ["Cortex Team"]
 license = "MIT"

@@ -8,8 +8,8 @@ import { Settings, FolderOpen, Info, Menu, Sun, Moon, Palette } from "lucide-rea
 interface HeaderProps {
   theme: ThemeMode;
   onThemeChange: (theme: ThemeMode) => void;
-  activeTab: "chat" | "image" | "research" | "parser" | "code";
-  onTabChange: (tab: "chat" | "image" | "research" | "parser" | "code") => void;
+  activeTab: "chat" | "image" | "research" | "parser" | "code" | "rag";
+  onTabChange: (tab: "chat" | "image" | "research" | "parser" | "code" | "rag") => void;
   onShowSettings: () => void;
   onShowProjects: () => void;
   onShowAbout: () => void;
@@ -60,8 +60,8 @@ export function Header({
             </Badge>
           )}
 
-          <Tabs value={activeTab} onValueChange={(v) => onTabChange(v as "chat" | "image" | "research" | "parser" | "code")}>
-            <TabsList className="grid grid-cols-5 w-[530px]">
+          <Tabs value={activeTab} onValueChange={(v) => onTabChange(v as "chat" | "image" | "research" | "parser" | "code" | "rag")}>
+            <TabsList className="grid grid-cols-6 w-[640px]">
               <TabsTrigger value="chat" className="gap-1.5">
                 💬 Prompt
               </TabsTrigger>
@@ -76,6 +76,9 @@ export function Header({
               </TabsTrigger>
               <TabsTrigger value="code" className="gap-1.5">
                 🖥️ Code
+              </TabsTrigger>
+              <TabsTrigger value="rag" className="gap-1.5">
+                🧠 RAG
               </TabsTrigger>
             </TabsList>
           </Tabs>

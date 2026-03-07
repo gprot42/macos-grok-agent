@@ -409,6 +409,133 @@ pub async fn layout_parse(
     Err("No content in response".to_string())
 }
 
+// --- File Search RAG ---
+
+pub async fn rag_create_store(api_key: String, display_name: String) -> Result<Value, String> {
+    let client = Client::new();
+    let url = format!("{}/v1beta/fileSearchStores?key={}", AI_STUDIO_ENDPOINT, api_key);
+    let resp = client
+        .post(&url)
+        .json(&json!({ "displayName": display_name }))
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+    if !resp.status().is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("API error: {}", body));
+    }
+    resp.json::<Value>().await.map_err(|e| format!("Parse error: {}", e))
+}
+
+pub async fn rag_list_stores(api_key: String) -> Result<Value, String> {
+    let client = Client::new();
+    let url = format!("{}/v1beta/fileSearchStores?key={}", AI_STUDIO_ENDPOINT, api_key);
+    let resp = client.get(&url).send().await.map_err(|e| format!("Request failed: {}", e))?;
+    if !resp.status().is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("API error: {}", body));
+    }
+    resp.json::<Value>().await.map_err(|e| format!("Parse error: {}", e))
+}
+
+pub async fn rag_delete_store(api_key: String, store_name: String) -> Result<Value, String> {
+    let client = Client::new();
+    let url = format!("{}/v1beta/{}?key={}&force=true", AI_STUDIO_ENDPOINT, store_name, api_key);
+    let resp = client.delete(&url).send().await.map_err(|e| format!("Request failed: {}", e))?;
+    if !resp.status().is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("API error: {}", body));
+    }
+    resp.json::<Value>().await.map_err(|e| format!("Parse error: {}", e))
+}
+
+pub async fn rag_upload_file(api_key: String, store_name: String, file_data: String, mime_type: String, display_name: String) -> Result<Value, String> {
+    let client = Client::new();
+
+    let upload_url = format!("{}/upload/v1beta/files?key={}", AI_STUDIO_ENDPOINT, api_key);
+    let decoded = BASE64.decode(&file_data).map_err(|e| format!("Base64 decode error: {}", e))?;
+    let resp = client
+        .post(&upload_url)
+        .header("X-Goog-Upload-Protocol", "raw")
+        .header("Content-Type", &mime_type)
+        .header("X-Goog-Upload-Header-Content-Type", &mime_type)
+        .body(decoded)
+        .send()
+        .await
+        .map_err(|e| format!("Upload failed: {}", e))?;
+    if !resp.status().is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("Upload error: {}", body));
+    }
+    let upload_result: Value = resp.json().await.map_err(|e| format!("Parse error: {}", e))?;
+    let file_name = upload_result["file"]["name"].as_str().ok_or("Missing file name in upload response")?;
+
+    let import_url = format!("{}/v1beta/{}:importFile?key={}", AI_STUDIO_ENDPOINT, store_name, api_key);
+    let import_resp = client
+        .post(&import_url)
+        .json(&json!({ "fileName": file_name, "displayName": display_name }))
+        .send()
+        .await
+        .map_err(|e| format!("Import failed: {}", e))?;
+    if !import_resp.status().is_success() {
+        let body = import_resp.text().await.unwrap_or_default();
+        return Err(format!("Import error: {}", body));
+    }
+    import_resp.json::<Value>().await.map_err(|e| format!("Parse error: {}", e))
+}
+
+pub async fn rag_list_files(api_key: String, store_name: String) -> Result<Value, String> {
+    let client = Client::new();
+    let url = format!("{}/v1beta/{}/files?key={}", AI_STUDIO_ENDPOINT, store_name, api_key);
+    let resp = client.get(&url).send().await.map_err(|e| format!("Request failed: {}", e))?;
+    if !resp.status().is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("API error: {}", body));
+    }
+    resp.json::<Value>().await.map_err(|e| format!("Parse error: {}", e))
+}
+
+pub async fn rag_query(api_key: String, store_names: Vec<String>, query: String, model: String) -> Result<Value, String> {
+    let client = Client::new();
+    let model_id = if model.is_empty() { "gemini-3-flash-preview" } else { &model };
+    let url = format!("{}/v1beta/models/{}:generateContent?key={}", AI_STUDIO_ENDPOINT, model_id, api_key);
+
+    let payload = json!({
+        "contents": [{ "parts": [{ "text": query }] }],
+        "tools": [{
+            "fileSearch": {
+                "fileSearchStoreNames": store_names
+            }
+        }],
+        "generationConfig": { "maxOutputTokens": 65536 }
+    });
+
+    let resp = client
+        .post(&url)
+        .json(&payload)
+        .timeout(std::time::Duration::from_secs(300))
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+    if !resp.status().is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("API error: {}", body));
+    }
+    let body: Value = resp.json().await.map_err(|e| format!("Parse error: {}", e))?;
+
+    let text = body["candidates"][0]["content"]["parts"][0]["text"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+
+    let grounding = body["candidates"][0]
+        .get("groundingMetadata")
+        .cloned()
+        .unwrap_or(json!(null));
+
+    Ok(json!({ "text": text, "groundingMetadata": grounding }))
+}
+
 pub async fn speech_to_text(
     audio_data: String,
     mime_type: String,

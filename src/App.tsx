@@ -11,6 +11,7 @@ import {
   LayoutParserPanel,
   CodingAgentPanel,
 } from "./components";
+import { KnowledgeBasePanel } from "./components/KnowledgeBasePanel";
 import { useSettings, useChat } from "./hooks";
 import { useResearchSessions } from "./hooks/useResearchSessions";
 import { MODELS } from "./models";
@@ -42,7 +43,7 @@ function App() {
 
   const researchSessions = useResearchSessions();
 
-  const [activeTab, setActiveTab] = useState<"chat" | "image" | "research" | "parser" | "code">("chat");
+  const [activeTab, setActiveTab] = useState<"chat" | "image" | "research" | "parser" | "code" | "rag">("chat");
   const [showSettings, setShowSettings] = useState(false);
   const [showProjects, setShowProjects] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
@@ -242,6 +243,14 @@ function App() {
               <div className="text-sm theme-text-muted">Document OCR, RAG chunking, and structured data extraction</div>
             </div>
           </div>
+        ) : activeTab === "rag" ? (
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🧠</span>
+            <div>
+              <div className="text-lg font-medium theme-text">Knowledge Base (RAG)</div>
+              <div className="text-sm theme-text-muted">Upload documents, build knowledge bases, and query with Gemini File Search</div>
+            </div>
+          </div>
         ) : (
           <div className="flex items-center gap-3">
             <span className="text-2xl">🖥️</span>
@@ -335,6 +344,11 @@ function App() {
             selectedEndpoint={selectedEndpoint}
             activeProject={activeProject}
             agentTimeout={settings.agentTimeout}
+          />
+        </div>
+        <div className={activeTab === "rag" ? "flex flex-col flex-1 min-h-0" : "hidden"}>
+          <KnowledgeBasePanel
+            apiKey={settings.aiStudioKey || settings.apiKey}
           />
         </div>
       </main>

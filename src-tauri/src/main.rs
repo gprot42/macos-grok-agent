@@ -167,6 +167,36 @@ async fn deep_research(
 }
 
 #[tauri::command]
+async fn rag_create_store(api_key: String, display_name: String) -> Result<serde_json::Value, String> {
+    api::rag_create_store(api_key, display_name).await
+}
+
+#[tauri::command]
+async fn rag_list_stores(api_key: String) -> Result<serde_json::Value, String> {
+    api::rag_list_stores(api_key).await
+}
+
+#[tauri::command]
+async fn rag_delete_store(api_key: String, store_name: String) -> Result<serde_json::Value, String> {
+    api::rag_delete_store(api_key, store_name).await
+}
+
+#[tauri::command]
+async fn rag_upload_file(api_key: String, store_name: String, file_data: String, mime_type: String, display_name: String) -> Result<serde_json::Value, String> {
+    api::rag_upload_file(api_key, store_name, file_data, mime_type, display_name).await
+}
+
+#[tauri::command]
+async fn rag_list_files(api_key: String, store_name: String) -> Result<serde_json::Value, String> {
+    api::rag_list_files(api_key, store_name).await
+}
+
+#[tauri::command]
+async fn rag_query(api_key: String, store_names: Vec<String>, query: String, model: String) -> Result<serde_json::Value, String> {
+    api::rag_query(api_key, store_names, query, model).await
+}
+
+#[tauri::command]
 async fn speech_to_text(
     audio_data: String,
     mime_type: String,
@@ -572,6 +602,12 @@ fn main() {
             deep_research,
             layout_parse,
             speech_to_text,
+            rag_create_store,
+            rag_list_stores,
+            rag_delete_store,
+            rag_upload_file,
+            rag_list_files,
+            rag_query,
             coding_agent_chat,
             coding_agent_stop,
             save_image,
