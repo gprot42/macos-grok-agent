@@ -65,6 +65,9 @@ export function Header({
               <TabsTrigger value="chat" className="gap-1.5">
                 💬 Prompt
               </TabsTrigger>
+              <TabsTrigger value="rag" className="gap-1.5">
+                🧠 RAG
+              </TabsTrigger>
               <TabsTrigger value="image" className="gap-1.5">
                 🖼️ Image
               </TabsTrigger>
@@ -76,9 +79,6 @@ export function Header({
               </TabsTrigger>
               <TabsTrigger value="code" className="gap-1.5">
                 🖥️ Code
-              </TabsTrigger>
-              <TabsTrigger value="rag" className="gap-1.5">
-                🧠 RAG
               </TabsTrigger>
             </TabsList>
           </Tabs>
