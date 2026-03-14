@@ -39,6 +39,7 @@ export function KnowledgeBasePanel({ apiKey }: KnowledgeBasePanelProps) {
   const [embedText2, setEmbedText2] = useState("");
   const [similarity, setSimilarity] = useState<number | null>(null);
   const [embedding, setEmbedding] = useState(false);
+  const [embeddingsEnabled, setEmbeddingsEnabled] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const resultRef = useRef<HTMLDivElement>(null);
 
@@ -380,58 +381,74 @@ export function KnowledgeBasePanel({ apiKey }: KnowledgeBasePanelProps) {
                     )}
 
                     <div className="border-t theme-border pt-4">
-                      <div className="flex items-center gap-2 text-xs font-medium theme-text-muted uppercase tracking-wider mb-1">
-                        Embed & Compare (Gemini 2 Embeddings)
-                        <a
-                          href="https://ai.google.dev/gemini-api/docs/embeddings"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-0.5 normal-case tracking-normal hover:text-blue-500 transition-colors"
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2 text-xs font-medium theme-text-muted uppercase tracking-wider">
+                          Embed & Compare (Gemini 2 Embeddings)
+                          <a
+                            href="https://ai.google.dev/gemini-api/docs/embeddings"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-0.5 normal-case tracking-normal hover:text-blue-500 transition-colors"
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                            Docs
+                          </a>
+                        </div>
+                        <button
+                          onClick={() => setEmbeddingsEnabled(!embeddingsEnabled)}
+                          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                            embeddingsEnabled ? "bg-purple-500" : "bg-gray-300 dark:bg-gray-600"
+                          }`}
                         >
-                          <ExternalLink className="h-3 w-3" />
-                          Docs
-                        </a>
+                          <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                            embeddingsEnabled ? "translate-x-4.5" : "translate-x-0.5"
+                          }`} />
+                        </button>
                       </div>
                       <div className="text-xs theme-text-muted mb-2">
-                        Test if two phrases mean the same thing — useful for detecting duplicate content, validating search queries match expected results, or checking if translations preserve meaning. Score: 1.0 = identical meaning, 0.0 = unrelated.
+                        {embeddingsEnabled
+                          ? "Test if two phrases mean the same thing — useful for detecting duplicate content, validating search queries match expected results, or checking if translations preserve meaning. Score: 1.0 = identical meaning, 0.0 = unrelated."
+                          : "Disabled to save on API costs. Toggle on to use Gemini 2 Embeddings for semantic text comparison."}
                       </div>
-                      <div className="space-y-2">
-                        <input
-                          type="text"
-                          value={embedText1}
-                          onChange={(e) => setEmbedText1(e.target.value)}
-                          placeholder="e.g. How do I deploy a Kubernetes pod?"
-                          className="w-full px-3 py-1.5 rounded-lg border theme-border theme-surface theme-text text-sm"
-                        />
-                        <input
-                          type="text"
-                          value={embedText2}
-                          onChange={(e) => setEmbedText2(e.target.value)}
-                          onKeyDown={(e) => e.key === "Enter" && handleCompare()}
-                          placeholder="e.g. Steps to run a container in Kubernetes"
-                          className="w-full px-3 py-1.5 rounded-lg border theme-border theme-surface theme-text text-sm"
-                        />
-                        <div className="flex items-center gap-3">
-                          <button
-                            onClick={handleCompare}
-                            disabled={embedding || !embedText1.trim() || !embedText2.trim()}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-500 text-white text-sm font-medium hover:bg-purple-600 disabled:opacity-50 transition-colors"
-                          >
-                            {embedding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
-                            Compare
-                          </button>
-                          {similarity !== null && (
-                            <div className="flex items-center gap-2 text-sm">
-                              <span className="theme-text-muted">Cosine similarity:</span>
-                              <span className={`font-mono font-bold ${
-                                similarity > 0.8 ? "text-green-500" : similarity > 0.5 ? "text-yellow-500" : "text-red-500"
-                              }`}>
-                                {similarity}
-                              </span>
-                            </div>
-                          )}
+                      {embeddingsEnabled && (
+                        <div className="space-y-2">
+                          <input
+                            type="text"
+                            value={embedText1}
+                            onChange={(e) => setEmbedText1(e.target.value)}
+                            placeholder="e.g. How do I deploy a Kubernetes pod?"
+                            className="w-full px-3 py-1.5 rounded-lg border theme-border theme-surface theme-text text-sm"
+                          />
+                          <input
+                            type="text"
+                            value={embedText2}
+                            onChange={(e) => setEmbedText2(e.target.value)}
+                            onKeyDown={(e) => e.key === "Enter" && handleCompare()}
+                            placeholder="e.g. Steps to run a container in Kubernetes"
+                            className="w-full px-3 py-1.5 rounded-lg border theme-border theme-surface theme-text text-sm"
+                          />
+                          <div className="flex items-center gap-3">
+                            <button
+                              onClick={handleCompare}
+                              disabled={embedding || !embedText1.trim() || !embedText2.trim()}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-500 text-white text-sm font-medium hover:bg-purple-600 disabled:opacity-50 transition-colors"
+                            >
+                              {embedding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
+                              Compare
+                            </button>
+                            {similarity !== null && (
+                              <div className="flex items-center gap-2 text-sm">
+                                <span className="theme-text-muted">Cosine similarity:</span>
+                                <span className={`font-mono font-bold ${
+                                  similarity > 0.8 ? "text-green-500" : similarity > 0.5 ? "text-yellow-500" : "text-red-500"
+                                }`}>
+                                  {similarity}
+                                </span>
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </div>
                   </div>
                 )}
