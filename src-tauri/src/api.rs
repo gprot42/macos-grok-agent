@@ -495,6 +495,17 @@ pub async fn rag_list_files(api_key: String, store_name: String) -> Result<Value
     resp.json::<Value>().await.map_err(|e| format!("Parse error: {}", e))
 }
 
+pub async fn rag_delete_file(api_key: String, file_name: String) -> Result<Value, String> {
+    let client = Client::new();
+    let url = format!("{}/v1beta/{}?key={}", AI_STUDIO_ENDPOINT, file_name, api_key);
+    let resp = client.delete(&url).send().await.map_err(|e| format!("Request failed: {}", e))?;
+    if !resp.status().is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("API error: {}", body));
+    }
+    Ok(json!({"deleted": true}))
+}
+
 pub async fn rag_query(api_key: String, store_names: Vec<String>, query: String, model: String) -> Result<Value, String> {
     let client = Client::new();
     let model_id = if model.is_empty() { "gemini-3-flash-preview" } else { &model };
@@ -534,6 +545,60 @@ pub async fn rag_query(api_key: String, store_names: Vec<String>, query: String,
         .unwrap_or(json!(null));
 
     Ok(json!({ "text": text, "groundingMetadata": grounding }))
+}
+
+pub async fn rag_embed_content(api_key: String, text: String, task_type: Option<String>) -> Result<Value, String> {
+    let client = Client::new();
+    let url = format!("{}/v1beta/models/gemini-embedding-exp-03-07:embedContent?key={}", AI_STUDIO_ENDPOINT, api_key);
+    let mut payload = json!({
+        "content": { "parts": [{ "text": text }] }
+    });
+    if let Some(tt) = task_type {
+        payload["taskType"] = json!(tt);
+    }
+    let resp = client
+        .post(&url)
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+    if !resp.status().is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("API error: {}", body));
+    }
+    let body: Value = resp.json().await.map_err(|e| format!("Parse error: {}", e))?;
+    let values = body["embedding"]["values"].clone();
+    Ok(json!({ "values": values, "dimensions": values.as_array().map(|a| a.len()).unwrap_or(0) }))
+}
+
+pub async fn rag_embed_batch(api_key: String, texts: Vec<String>, task_type: Option<String>) -> Result<Value, String> {
+    let client = Client::new();
+    let url = format!("{}/v1beta/models/gemini-embedding-exp-03-07:batchEmbedContents?key={}", AI_STUDIO_ENDPOINT, api_key);
+    let requests: Vec<Value> = texts.iter().map(|t| {
+        let mut req = json!({
+            "model": "models/gemini-embedding-exp-03-07",
+            "content": { "parts": [{ "text": t }] }
+        });
+        if let Some(ref tt) = task_type {
+            req["taskType"] = json!(tt);
+        }
+        req
+    }).collect();
+    let resp = client
+        .post(&url)
+        .json(&json!({ "requests": requests }))
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+    if !resp.status().is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("API error: {}", body));
+    }
+    let body: Value = resp.json().await.map_err(|e| format!("Parse error: {}", e))?;
+    let embeddings = body["embeddings"].as_array()
+        .map(|arr| arr.iter().map(|e| e["values"].clone()).collect::<Vec<_>>())
+        .unwrap_or_default();
+    Ok(json!({ "embeddings": embeddings, "count": embeddings.len() }))
 }
 
 pub async fn speech_to_text(

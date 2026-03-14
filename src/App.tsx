@@ -16,6 +16,19 @@ import { useSettings, useChat } from "./hooks";
 import { useResearchSessions } from "./hooks/useResearchSessions";
 import { MODELS } from "./models";
 import { EndpointType, ThemeMode, ChatSession } from "./types";
+import { ExternalLink } from "lucide-react";
+
+const DocLink = ({ url, label }: { url: string; label?: string }) => (
+  <a
+    href={url}
+    target="_blank"
+    rel="noopener noreferrer"
+    className="inline-flex items-center gap-1 text-xs theme-text-muted hover:text-blue-500 transition-colors"
+  >
+    <ExternalLink className="h-3 w-3" />
+    {label || "Docs"}
+  </a>
+);
 
 function App() {
   const { settings, updateSettings, saveApiKey, loading } = useSettings();
@@ -178,6 +191,7 @@ function App() {
 
       <div className="theme-surface border-b theme-border px-6 py-3">
         {activeTab === "chat" ? (
+          <>
           <ModelSelector
             selectedModel={selectedModel}
             selectedEndpoint={selectedEndpoint}
@@ -198,6 +212,8 @@ function App() {
             onCustomLoginChange={(login) => updateSettings({ customLogin: login })}
             onCustomPasswordChange={(password) => updateSettings({ customPassword: password })}
           />
+          <DocLink url="https://ai.google.dev/gemini-api/docs" />
+          </>
         ) : activeTab === "image" ? (
           <div className="flex items-center gap-4">
             <span className="text-2xl">🍌</span>
@@ -226,6 +242,7 @@ function App() {
             <div className="text-xs theme-text-muted italic">
               {MODELS[selectedImageModel]?.description}
             </div>
+            <DocLink url="https://ai.google.dev/gemini-api/docs/image-generation" />
           </div>
         ) : activeTab === "research" ? (
           <div className="flex items-center gap-3">
@@ -233,6 +250,7 @@ function App() {
             <div>
               <div className="text-lg font-medium theme-text">Gemini Deep Research</div>
               <div className="text-sm theme-text-muted">Multi-step web research agent with source synthesis</div>
+              <DocLink url="https://ai.google.dev/gemini-api/docs/deep-research" />
             </div>
           </div>
         ) : activeTab === "parser" ? (
@@ -241,6 +259,7 @@ function App() {
             <div>
               <div className="text-lg font-medium theme-text">Gemini Layout Parser</div>
               <div className="text-sm theme-text-muted">Document OCR, RAG chunking, and structured data extraction</div>
+              <DocLink url="https://ai.google.dev/gemini-api/docs/document-processing" />
             </div>
           </div>
         ) : activeTab === "rag" ? (
@@ -248,7 +267,8 @@ function App() {
             <span className="text-2xl">🧠</span>
             <div>
               <div className="text-lg font-medium theme-text">Knowledge Base (RAG)</div>
-              <div className="text-sm theme-text-muted">Upload documents, build knowledge bases, and query with Gemini File Search</div>
+              <div className="text-sm theme-text-muted">Gemini File Search with Gemini 2 Embeddings. Index text, PDFs, images, audio, and video. Indexes survive the 48h raw file expiry but can be manually removed.</div>
+              <DocLink url="https://ai.google.dev/gemini-api/docs/file-search" />
             </div>
           </div>
         ) : (
@@ -257,6 +277,7 @@ function App() {
             <div>
               <div className="text-lg font-medium theme-text">Vibe Coding Agent</div>
               <div className="text-sm theme-text">Build & modify code with AI tool use — reads, writes, runs commands, and iterates</div>
+              <DocLink url="https://ai.google.dev/gemini-api/docs/code-execution" />
             </div>
           </div>
         )}

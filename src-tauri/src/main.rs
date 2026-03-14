@@ -192,8 +192,23 @@ async fn rag_list_files(api_key: String, store_name: String) -> Result<serde_jso
 }
 
 #[tauri::command]
+async fn rag_delete_file(api_key: String, file_name: String) -> Result<serde_json::Value, String> {
+    api::rag_delete_file(api_key, file_name).await
+}
+
+#[tauri::command]
 async fn rag_query(api_key: String, store_names: Vec<String>, query: String, model: String) -> Result<serde_json::Value, String> {
     api::rag_query(api_key, store_names, query, model).await
+}
+
+#[tauri::command]
+async fn rag_embed_content(api_key: String, text: String, task_type: Option<String>) -> Result<serde_json::Value, String> {
+    api::rag_embed_content(api_key, text, task_type).await
+}
+
+#[tauri::command]
+async fn rag_embed_batch(api_key: String, texts: Vec<String>, task_type: Option<String>) -> Result<serde_json::Value, String> {
+    api::rag_embed_batch(api_key, texts, task_type).await
 }
 
 #[tauri::command]
@@ -607,7 +622,10 @@ fn main() {
             rag_delete_store,
             rag_upload_file,
             rag_list_files,
+            rag_delete_file,
             rag_query,
+            rag_embed_content,
+            rag_embed_batch,
             coding_agent_chat,
             coding_agent_stop,
             save_image,
