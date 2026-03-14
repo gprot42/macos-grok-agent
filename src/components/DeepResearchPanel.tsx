@@ -28,7 +28,6 @@ export function DeepResearchPanel({
   const [lastQuery, setLastQuery] = useState("");
   const [copiedIdx, setCopiedIdx] = useState<string | null>(null);
   const [savedIdx, setSavedIdx] = useState<string | null>(null);
-  const [saveFormat] = useState<"md" | "txt">("md");
   const [timeoutMinutes, setTimeoutMinutes] = useState(60);
   const [depthLevel, setDepthLevel] = useState<"low" | "medium" | "high">("medium");
   const resultsEndRef = useRef<HTMLDivElement>(null);
@@ -96,7 +95,7 @@ export function DeepResearchPanel({
   const handleSave = async (content: string, taskId: string) => {
     try {
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-      const ext = saveFormat;
+      const ext = "md";
       const filename = `research-${timestamp}.${ext}`;
 
       if (activeProject) {
@@ -111,6 +110,17 @@ export function DeepResearchPanel({
     } catch (e) {
       console.error("Failed to save:", e);
     }
+  };
+
+  const handleSavePdf = (content: string, query: string) => {
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) return;
+    printWindow.document.write(`<!DOCTYPE html><html><head><title>Research: ${query}</title>
+      <style>body{font-family:system-ui,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;line-height:1.7;color:#1a1a1a}
+      h1{font-size:1.4em;border-bottom:1px solid #ddd;padding-bottom:8px}pre{white-space:pre-wrap;font-family:inherit;font-size:14px}</style>
+      </head><body><h1>${query}</h1><pre>${content.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre>
+      <script>window.onafterprint=()=>window.close();window.print();<\/script></body></html>`);
+    printWindow.document.close();
   };
 
   return (
@@ -243,9 +253,18 @@ export function DeepResearchPanel({
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
                           </svg>
-                          Save .{saveFormat}
+                          Save Markdown
                         </>
                       )}
+                    </button>
+                    <button
+                      onClick={() => handleSavePdf(task.result!, task.query)}
+                      className="flex items-center gap-1 px-3 py-1.5 text-xs rounded-lg theme-hover theme-text-muted hover:theme-text"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                      </svg>
+                      Save PDF
                     </button>
                   </>
                 )}
@@ -285,12 +304,12 @@ export function DeepResearchPanel({
               </button>
             ))}
           </div>
-          <div className="flex items-center gap-1 ml-2">
-            <span className="text-xs theme-text-muted">Timeout:</span>
+          <div className="flex items-center gap-1.5 ml-3">
+            <span className="text-xs font-medium theme-text">Timeout:</span>
             <select
               value={timeoutMinutes}
               onChange={(e) => setTimeoutMinutes(Number(e.target.value))}
-              className="text-xs px-2 py-1 rounded-md border theme-border bg-white dark:bg-gray-800 theme-text"
+              className="text-sm px-2.5 py-1 rounded-md border theme-border bg-white dark:bg-gray-800 text-black dark:text-white font-medium"
             >
               <option value={15}>15 min</option>
               <option value={30}>30 min</option>
