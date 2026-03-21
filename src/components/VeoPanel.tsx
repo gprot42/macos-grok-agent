@@ -96,18 +96,23 @@ export function VeoPanel({ apiKey, projectId, activeProject }: VeoPanelProps) {
     <div className="flex flex-col flex-1 min-h-0">
       <div className="flex-1 overflow-y-auto p-4 scrollbar-thin min-h-0">
         {videos.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full theme-text-muted text-sm gap-2">
-            <span className="text-3xl">🎬</span>
-            <span>Generate videos with Veo 3.1</span>
-            <a
-              href="https://ai.google.dev/gemini-api/docs/video"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-xs text-blue-500 hover:text-blue-600"
-            >
-              <ExternalLink className="h-3 w-3" />
-              Google Docs
-            </a>
+          <div className="flex flex-col items-center justify-center h-full text-gray-400 dark:text-tokyo-muted gap-6">
+            <div className="text-8xl">🎬</div>
+            <div className="text-center">
+              <div className="text-2xl font-semibold">Veo 3.1</div>
+              <div className="text-lg mt-1">Generate videos from text prompts</div>
+              <div className="text-base mt-4 max-w-lg text-center leading-relaxed text-gray-500">
+                <a
+                  href="https://ai.google.dev/gemini-api/docs/video"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-blue-500 hover:text-blue-600"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Google Docs
+                </a>
+              </div>
+            </div>
           </div>
         ) : (
           <div className="space-y-4">
