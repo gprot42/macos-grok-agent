@@ -888,7 +888,6 @@ fn build_anthropic_payload(
     let mut payload = json!({
         "anthropic_version": "vertex-2023-10-16",
         "messages": messages,
-        "max_tokens": 64000,
         "stream": true
     });
 
@@ -901,11 +900,16 @@ fn build_anthropic_payload(
                 "high" => 65536,
                 _ => 16384,
             };
+            payload["max_tokens"] = json!(std::cmp::max(64000, budget_tokens + 1));
             payload["thinking"] = json!({
                 "type": "enabled",
                 "budget_tokens": budget_tokens
             });
+        } else {
+            payload["max_tokens"] = json!(64000);
         }
+    } else {
+        payload["max_tokens"] = json!(64000);
     }
 
     if use_memory {
