@@ -12,6 +12,7 @@ import {
   CodingAgentPanel,
   VeoPanel,
 } from "./components";
+import { GeminiLivePanel } from "./components/GeminiLivePanel";
 import { KnowledgeBasePanel } from "./components/KnowledgeBasePanel";
 import { useSettings, useChat } from "./hooks";
 import { useResearchSessions } from "./hooks/useResearchSessions";
@@ -57,7 +58,7 @@ function App() {
 
   const researchSessions = useResearchSessions();
 
-  const [activeTab, setActiveTab] = useState<"chat" | "image" | "research" | "parser" | "code" | "video" | "rag">("chat");
+  const [activeTab, setActiveTab] = useState<"chat" | "image" | "research" | "parser" | "code" | "video" | "rag" | "live">("chat");
   const [showSettings, setShowSettings] = useState(false);
   const [showProjects, setShowProjects] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
@@ -281,6 +282,15 @@ function App() {
               <DocLink url="https://ai.google.dev/gemini-api/docs/video" />
             </div>
           </div>
+        ) : activeTab === "live" ? (
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🎙️</span>
+            <div>
+              <div className="text-lg font-medium theme-text">Gemini Live</div>
+              <div className="text-sm theme-text-muted">Real-time voice conversation using <span className="font-mono text-xs">gemini-3.1-flash-live-preview</span></div>
+              <DocLink url="https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-live-preview" />
+            </div>
+          </div>
         ) : (
           <div className="flex items-center gap-3">
             <span className="text-2xl">🖥️</span>
@@ -386,6 +396,11 @@ function App() {
         </div>
         <div className={activeTab === "rag" ? "flex flex-col flex-1 min-h-0" : "hidden"}>
           <KnowledgeBasePanel
+            apiKey={settings.aiStudioKey || settings.apiKey}
+          />
+        </div>
+        <div className={activeTab === "live" ? "flex flex-col flex-1 min-h-0" : "hidden"}>
+          <GeminiLivePanel
             apiKey={settings.aiStudioKey || settings.apiKey}
           />
         </div>

@@ -26,7 +26,6 @@ export function VeoPanel({ apiKey, projectId, activeProject }: VeoPanelProps) {
   const [videos, setVideos] = useState<GeneratedVideo[]>([]);
   const [loading, setLoading] = useState(false);
   const [aspectRatio, setAspectRatio] = useState<"16:9" | "9:16">("16:9");
-  const [duration, setDuration] = useState<"5" | "8">("5");
   const resultsEndRef = useRef<HTMLDivElement>(null);
 
   const handleGenerate = async () => {
@@ -42,7 +41,6 @@ export function VeoPanel({ apiKey, projectId, activeProject }: VeoPanelProps) {
         projectId,
         prompt: prompt.trim(),
         aspectRatio,
-        durationSeconds: parseInt(duration),
       });
 
       setVideos((prev) =>
@@ -185,24 +183,6 @@ export function VeoPanel({ apiKey, projectId, activeProject }: VeoPanelProps) {
                   }`}
                 >
                   {ratio}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs font-medium theme-text">Duration:</span>
-            <div className="flex gap-1">
-              {(["5", "8"] as const).map((d) => (
-                <button
-                  key={d}
-                  onClick={() => setDuration(d)}
-                  className={`px-2 py-1 text-xs rounded-md transition-colors ${
-                    duration === d
-                      ? "bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 font-medium"
-                      : "theme-text-muted hover:bg-gray-100 dark:hover:bg-gray-800"
-                  }`}
-                >
-                  {d}s
                 </button>
               ))}
             </div>

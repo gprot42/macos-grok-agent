@@ -1841,11 +1841,9 @@ pub async fn veo_generate_video(
     _project_id: String,
     prompt: String,
     aspect_ratio: Option<String>,
-    duration_seconds: Option<u32>,
 ) -> Result<Value, String> {
     let client = Client::new();
     let ratio = aspect_ratio.unwrap_or_else(|| "16:9".to_string());
-    let duration = duration_seconds.unwrap_or(5);
 
     let url = format!(
         "{}/v1beta/models/veo-3.1-generate-preview:predictLongRunning?key={}",
@@ -1858,7 +1856,6 @@ pub async fn veo_generate_video(
         }],
         "parameters": {
             "aspectRatio": ratio,
-            "durationSeconds": duration,
             "sampleCount": 1
         }
     });
@@ -1921,6 +1918,7 @@ pub async fn veo_generate_video(
                                 if let Some(uri) = video.get("uri").and_then(|u| u.as_str()) {
                                     let video_resp = client
                                         .get(uri)
+                                        .header("x-goog-api-key", &api_key)
                                         .send()
                                         .await
                                         .map_err(|e| format!("Download failed: {}", e))?;
