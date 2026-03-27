@@ -136,18 +136,9 @@ export function GeminiLivePanel({ apiKey }: GeminiLivePanelProps) {
           const data = JSON.parse(raw);
 
           if (data.setupComplete !== undefined) {
-            console.log("[GeminiLive] Setup complete");
             setConnected(true);
             setConnecting(false);
             return;
-          }
-
-          // Log all non-audio messages
-          const logStr = JSON.stringify(data);
-          if (!logStr.includes('"inlineData"')) {
-            console.log("[GeminiLive] Server:", logStr.slice(0, 400));
-          } else {
-            console.log("[GeminiLive] Server: [audio chunk]");
           }
 
           if (data.serverContent) {
@@ -217,12 +208,10 @@ export function GeminiLivePanel({ apiKey }: GeminiLivePanelProps) {
 
     await startPlaybackPipeline();
 
-    console.log("[GeminiLive] Opening WebSocket...");
     const ws = new WebSocket(`${WS_URL}?key=${apiKey}`);
     wsRef.current = ws;
 
     ws.onopen = () => {
-      console.log("[GeminiLive] WebSocket open, sending setup...");
       ws.send(
         JSON.stringify({
           setup: {
@@ -245,7 +234,6 @@ export function GeminiLivePanel({ apiKey }: GeminiLivePanelProps) {
     ws.onmessage = handleWsMessage;
 
     ws.onclose = (e) => {
-      console.log("[GeminiLive] WebSocket closed:", e.code, e.reason);
       setConnected(false);
       setConnecting(false);
       setMicActive(false);
@@ -283,7 +271,6 @@ export function GeminiLivePanel({ apiKey }: GeminiLivePanelProps) {
   };
 
   const toggleMic = useCallback(async () => {
-    console.log("[GeminiLive] toggleMic called, micActive:", micActive);
     if (micActive) {
       stopMic();
       setMicActive(false);
@@ -300,13 +287,11 @@ export function GeminiLivePanel({ apiKey }: GeminiLivePanelProps) {
       const ctx = new AudioContext();
       micCtxRef.current = ctx;
       const nativeSR = ctx.sampleRate;
-      console.log("[GeminiLive] Mic AudioContext sample rate:", nativeSR);
 
       const source = ctx.createMediaStreamSource(stream);
       const processor = ctx.createScriptProcessor(4096, 1, 1);
       micProcessorRef.current = processor;
 
-      let sendCount = 0;
       processor.onaudioprocess = (e) => {
         if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
 
@@ -330,17 +315,11 @@ export function GeminiLivePanel({ apiKey }: GeminiLivePanelProps) {
             },
           })
         );
-
-        sendCount++;
-        if (sendCount % 20 === 1) {
-          console.log(`[GeminiLive] Sent audio chunk #${sendCount}, samples=${outputLen}`);
-        }
       };
 
       source.connect(processor);
       processor.connect(ctx.destination);
       setMicActive(true);
-      console.log("[GeminiLive] Mic enabled");
     } catch (err) {
       console.error("Mic access failed:", err);
       setConnectionError("Microphone access denied");
