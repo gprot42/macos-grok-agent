@@ -83,7 +83,7 @@ const EXAMPLES = [
 ];
 
 export function GeminiTTSPanel({ apiKey }: GeminiTTSPanelProps) {
-  const [model, setModel] = useState(MODELS[0].id);
+  const [model, setModel] = useState(MODELS[0].id as string);
   const [voice, setVoice] = useState("Kore");
   const [text, setText] = useState("");
   const [multiSpeaker, setMultiSpeaker] = useState(false);

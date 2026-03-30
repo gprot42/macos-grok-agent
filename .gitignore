@@ -2,6 +2,10 @@
 node_modules/
 .pnpm-store/
 
+# Lock files - keep only pnpm-lock.yaml
+bun.lock
+package-lock.json
+
 # Build outputs
 dist/
 target/
@@ -10,6 +14,13 @@ target/
 *.app
 *.exe
 *.msi
+
+# Build scripts
+build-dmg.sh
+run.sh
+
+# Tauri generated schemas
+src-tauri/gen/
 
 # Logs and temp files
 *.log
