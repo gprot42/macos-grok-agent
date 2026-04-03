@@ -93,6 +93,7 @@ export const MODELS: Record<string, ModelConfig> = {
     defaultGrounding: true,
     supportsDeepThinking: true,
     defaultThinkingLevel: "none",
+    supportsServiceTier: true,
     endpointSupport: ["vertex_ai", "ai_studio"],
   },
   "gemini-3-pro-deep-think": {
@@ -110,6 +111,7 @@ export const MODELS: Record<string, ModelConfig> = {
     supportsGrounding: true,
     supportsDeepThinking: true,
     defaultThinkingLevel: "high",
+    supportsServiceTier: true,
     endpointSupport: ["ai_studio"],
   },
   "gemini-3-1-pro": {
@@ -128,6 +130,7 @@ export const MODELS: Record<string, ModelConfig> = {
     defaultGrounding: true,
     supportsDeepThinking: true,
     defaultThinkingLevel: "none",
+    supportsServiceTier: true,
     endpointSupport: ["vertex_ai", "ai_studio"],
   },
   "gemini-3-1-pro-customtools": {
@@ -144,6 +147,7 @@ export const MODELS: Record<string, ModelConfig> = {
     pricing: { input: 0.0025, output: 0.015 },
     supportsGrounding: true,
     defaultGrounding: true,
+    supportsServiceTier: true,
     endpointSupport: ["vertex_ai", "ai_studio"],
   },
   "gemini-3-1-flash-lite": {
@@ -160,6 +164,7 @@ export const MODELS: Record<string, ModelConfig> = {
     pricing: { input: 0.0001, output: 0.0005 },
     supportsGrounding: true,
     defaultGrounding: true,
+    supportsServiceTier: true,
     endpointSupport: ["vertex_ai", "ai_studio"],
   },
   "gemini-3-flash-preview": {
@@ -176,6 +181,7 @@ export const MODELS: Record<string, ModelConfig> = {
     pricing: { input: 0.0003, output: 0.0012 },
     supportsGrounding: true,
     defaultGrounding: true,
+    supportsServiceTier: true,
     endpointSupport: ["vertex_ai", "ai_studio"],
   },
   "nano-banana-pro": {

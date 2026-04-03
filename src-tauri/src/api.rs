@@ -28,6 +28,7 @@ pub async fn send_chat_message(
     custom_login: Option<String>,
     custom_password: Option<String>,
     attached_file: Option<AttachedFile>,
+    service_tier: Option<String>,
 ) -> Result<ChatResponse, String> {
     let client = Client::new();
 
@@ -52,6 +53,7 @@ pub async fn send_chat_message(
         attached_file.as_ref(),
         &endpoint,
         &model_id,
+        service_tier.as_deref(),
     )?;
 
     let mut request = client.post(&url).json(&payload);
@@ -793,6 +795,7 @@ fn build_payload(
     attached_file: Option<&AttachedFile>,
     endpoint: &str,
     model_id: &str,
+    service_tier: Option<&str>,
 ) -> Result<Value, String> {
     match publisher {
         "anthropic" => build_anthropic_payload(
@@ -812,6 +815,7 @@ fn build_payload(
             attached_file,
             endpoint,
             model_id,
+            service_tier,
         ),
         "openrouter" | "xai" | "kilocode" => build_openai_payload(
             prompt,
@@ -931,6 +935,7 @@ fn build_google_payload(
     attached_file: Option<&AttachedFile>,
     endpoint: &str,
     model_id: &str,
+    service_tier: Option<&str>,
 ) -> Result<Value, String> {
     let mut contents: Vec<Value> = history
         .iter()
@@ -1001,6 +1006,12 @@ fn build_google_payload(
             json!({"google_search": {}})
         };
         payload["tools"] = json!([grounding_tool]);
+    }
+
+    if let Some(tier) = service_tier {
+        if tier != "standard" && !tier.is_empty() {
+            payload["service_tier"] = json!(tier.to_uppercase());
+        }
     }
 
     Ok(payload)
@@ -1841,13 +1852,19 @@ pub async fn veo_generate_video(
     _project_id: String,
     prompt: String,
     aspect_ratio: Option<String>,
+    model: Option<String>,
 ) -> Result<Value, String> {
     let client = Client::new();
     let ratio = aspect_ratio.unwrap_or_else(|| "16:9".to_string());
 
+    let model_name = match model.as_deref() {
+        Some("veo-3.1-lite") => "veo-3.1-lite-generate-preview",
+        _ => "veo-3.1-generate-preview",
+    };
+
     let url = format!(
-        "{}/v1beta/models/veo-3.1-generate-preview:predictLongRunning?key={}",
-        AI_STUDIO_ENDPOINT, api_key
+        "{}/v1beta/models/{}:predictLongRunning?key={}",
+        AI_STUDIO_ENDPOINT, model_name, api_key
     );
 
     let payload = json!({

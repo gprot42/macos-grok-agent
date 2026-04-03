@@ -27,6 +27,7 @@ interface ChatPanelProps {
   customUrl?: string;
   customLogin?: string;
   customPassword?: string;
+  serviceTier?: string;
   onSendMessage: (
     prompt: string,
     options: {
@@ -42,6 +43,7 @@ interface ChatPanelProps {
       customUrl?: string;
       customLogin?: string;
       customPassword?: string;
+      serviceTier?: string;
     },
     attachedFile?: { path: string; data: string; mimeType: string }
   ) => Promise<string | undefined>;
@@ -69,6 +71,7 @@ export function ChatPanel({
   customUrl,
   customLogin,
   customPassword,
+  serviceTier,
   onSendMessage,
   onClearMessages,
   onStopGeneration,
@@ -119,6 +122,7 @@ export function ChatPanel({
           customUrl,
           customLogin,
           customPassword,
+          serviceTier,
         },
         fileData
       );

@@ -72,6 +72,7 @@ function App() {
   const [thinkingLevel, setThinkingLevel] = useState("high");
   const [activeProject, setActiveProject] = useState<string | null>(null);
   const [customUrl, setCustomUrl] = useState("");
+  const [serviceTier, setServiceTier] = useState("standard");
 
   useEffect(() => {
     const model = MODELS[selectedModel];
@@ -205,6 +206,7 @@ function App() {
             customUrl={customUrl}
             customLogin={settings.customLogin || ""}
             customPassword={settings.customPassword || ""}
+            serviceTier={serviceTier}
             onModelChange={setSelectedModel}
             onEndpointChange={handleEndpointChange}
             onUse1MContextChange={setUse1MContext}
@@ -214,6 +216,7 @@ function App() {
             onCustomUrlChange={setCustomUrl}
             onCustomLoginChange={(login) => updateSettings({ customLogin: login })}
             onCustomPasswordChange={(password) => updateSettings({ customPassword: password })}
+            onServiceTierChange={setServiceTier}
           />
           <DocLink url="https://ai.google.dev/gemini-api/docs" />
           </>
@@ -242,7 +245,7 @@ function App() {
                 v2
               </button>
             </div>
-            <div className="text-xs theme-text-muted italic">
+            <div className="text-sm theme-text italic">
               {MODELS[selectedImageModel]?.description}
             </div>
             <DocLink url="https://ai.google.dev/gemini-api/docs/image-generation" />
@@ -252,7 +255,7 @@ function App() {
             <span className="text-2xl">🔬</span>
             <div>
               <div className="text-lg font-medium theme-text">Gemini Deep Research</div>
-              <div className="text-sm theme-text-muted">Multi-step web research agent with source synthesis</div>
+              <div className="text-sm theme-text">Multi-step web research agent with source synthesis</div>
               <DocLink url="https://ai.google.dev/gemini-api/docs/deep-research" />
             </div>
           </div>
@@ -261,7 +264,7 @@ function App() {
             <span className="text-2xl">📄</span>
             <div>
               <div className="text-lg font-medium theme-text">Gemini Layout Parser</div>
-              <div className="text-sm theme-text-muted">Document OCR, RAG chunking, and structured data extraction</div>
+              <div className="text-sm theme-text">Document OCR, RAG chunking, and structured data extraction</div>
               <DocLink url="https://ai.google.dev/gemini-api/docs/document-processing" />
             </div>
           </div>
@@ -270,7 +273,7 @@ function App() {
             <span className="text-2xl">🧠</span>
             <div>
               <div className="text-lg font-medium theme-text">Knowledge Base (RAG)</div>
-              <div className="text-sm theme-text-muted">Gemini File Search with Gemini 2 Embeddings. Index text, PDFs, images, audio, and video. Indexes survive the 48h raw file expiry but can be manually removed.</div>
+              <div className="text-sm theme-text">Gemini File Search with Gemini 2 Embeddings. Index text, PDFs, images, audio, and video. Indexes survive the 48h raw file expiry but can be manually removed.</div>
               <DocLink url="https://ai.google.dev/gemini-api/docs/file-search" />
             </div>
           </div>
@@ -279,7 +282,7 @@ function App() {
             <span className="text-2xl">🎬</span>
             <div>
               <div className="text-lg font-medium theme-text">Veo Video Generation</div>
-              <div className="text-sm theme-text-muted">Generate videos from text prompts using Google Veo 3.1</div>
+              <div className="text-sm theme-text">Generate videos from text prompts using Google Veo 3.1 / Veo 3.1 Lite</div>
               <DocLink url="https://ai.google.dev/gemini-api/docs/video" />
             </div>
           </div>
@@ -288,7 +291,7 @@ function App() {
             <span className="text-2xl">🎙️</span>
             <div>
               <div className="text-lg font-medium theme-text">Gemini Live</div>
-              <div className="text-sm theme-text-muted">Real-time voice conversation using <span className="font-mono text-xs">gemini-3.1-flash-live-preview</span></div>
+              <div className="text-sm theme-text">Real-time voice conversation using <span className="font-mono text-xs">gemini-3.1-flash-live-preview</span></div>
               <DocLink url="https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-live-preview" />
             </div>
           </div>
@@ -297,7 +300,7 @@ function App() {
             <span className="text-2xl">🔊</span>
             <div>
               <div className="text-lg font-medium theme-text">Gemini Text-to-Speech</div>
-              <div className="text-sm theme-text-muted">Generate natural speech with 30 voices using <span className="font-mono text-xs">gemini-2.5-flash-preview-tts</span> / <span className="font-mono text-xs">pro-preview-tts</span></div>
+              <div className="text-sm theme-text">Generate natural speech with 30 voices using <span className="font-mono text-xs">gemini-2.5-flash-preview-tts</span> / <span className="font-mono text-xs">pro-preview-tts</span></div>
               <DocLink url="https://ai.google.dev/gemini-api/docs/speech-generation" />
             </div>
           </div>
@@ -344,6 +347,7 @@ function App() {
               customUrl={customUrl}
               customLogin={settings.customLogin}
               customPassword={settings.customPassword}
+              serviceTier={serviceTier}
               onSendMessage={sendMessage}
               onClearMessages={clearMessages}
               onStopGeneration={stopGeneration}

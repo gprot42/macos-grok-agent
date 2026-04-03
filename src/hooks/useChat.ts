@@ -15,6 +15,7 @@ interface ChatOptions {
   customUrl?: string;
   customLogin?: string;
   customPassword?: string;
+  serviceTier?: string;
 }
 
 interface GenerateImageOptions {
@@ -94,6 +95,7 @@ export function useChat() {
         customLogin: options.customLogin,
         customPassword: options.customPassword,
         attachedFile,
+        serviceTier: options.serviceTier,
       });
 
       console.log("invoke response:", response);

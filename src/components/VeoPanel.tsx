@@ -26,6 +26,7 @@ export function VeoPanel({ apiKey, projectId, activeProject }: VeoPanelProps) {
   const [videos, setVideos] = useState<GeneratedVideo[]>([]);
   const [loading, setLoading] = useState(false);
   const [aspectRatio, setAspectRatio] = useState<"16:9" | "9:16">("16:9");
+  const [veoModel, setVeoModel] = useState<"veo-3.1" | "veo-3.1-lite">("veo-3.1");
   const resultsEndRef = useRef<HTMLDivElement>(null);
 
   const handleGenerate = async () => {
@@ -41,6 +42,7 @@ export function VeoPanel({ apiKey, projectId, activeProject }: VeoPanelProps) {
         projectId,
         prompt: prompt.trim(),
         aspectRatio,
+        model: veoModel,
       });
 
       setVideos((prev) =>
@@ -97,7 +99,7 @@ export function VeoPanel({ apiKey, projectId, activeProject }: VeoPanelProps) {
           <div className="flex flex-col items-center justify-center h-full text-gray-400 dark:text-tokyo-muted gap-6">
             <div className="text-8xl">🎬</div>
             <div className="text-center">
-              <div className="text-2xl font-semibold">Veo 3.1</div>
+              <div className="text-2xl font-semibold">Veo 3.1{veoModel === "veo-3.1-lite" ? " Lite" : ""}</div>
               <div className="text-lg mt-1">Generate videos from text prompts</div>
               <div className="text-base mt-4 max-w-lg text-center leading-relaxed text-gray-500">
                 <a
@@ -169,6 +171,27 @@ export function VeoPanel({ apiKey, projectId, activeProject }: VeoPanelProps) {
 
       <div className="border-t theme-border p-3 theme-surface space-y-2">
         <div className="flex gap-3 items-center flex-wrap">
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-medium theme-text">Model:</span>
+            <div className="flex gap-1">
+              {([
+                { value: "veo-3.1" as const, label: "Veo 3.1" },
+                { value: "veo-3.1-lite" as const, label: "Veo 3.1 Lite" },
+              ]).map((m) => (
+                <button
+                  key={m.value}
+                  onClick={() => setVeoModel(m.value)}
+                  className={`px-2 py-1 text-xs rounded-md transition-colors ${
+                    veoModel === m.value
+                      ? "bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 font-medium"
+                      : "theme-text-muted hover:bg-gray-100 dark:hover:bg-gray-800"
+                  }`}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="flex items-center gap-1.5">
             <span className="text-xs font-medium theme-text">Aspect:</span>
             <div className="flex gap-1">

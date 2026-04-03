@@ -15,10 +15,6 @@ target/
 *.exe
 *.msi
 
-# Build scripts
-build-dmg.sh
-run.sh
-
 # Tauri generated schemas
 src-tauri/gen/
 

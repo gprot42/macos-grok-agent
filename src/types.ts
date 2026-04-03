@@ -25,6 +25,7 @@ export interface ModelConfig {
   supportsDeepResearch?: boolean;
   defaultThinkingLevel?: string;
   defaultGrounding?: boolean;
+  supportsServiceTier?: boolean;
   endpointSupport: EndpointType[];
 }
 

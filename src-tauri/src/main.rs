@@ -112,6 +112,7 @@ async fn send_chat_message(
     custom_login: Option<String>,
     custom_password: Option<String>,
     attached_file: Option<AttachedFile>,
+    service_tier: Option<String>,
 ) -> Result<ChatResponse, String> {
     api::send_chat_message(
         prompt,
@@ -131,6 +132,7 @@ async fn send_chat_message(
         custom_login,
         custom_password,
         attached_file,
+        service_tier,
     )
     .await
 }
@@ -254,8 +256,9 @@ async fn veo_generate_video(
     project_id: String,
     prompt: String,
     aspect_ratio: Option<String>,
+    model: Option<String>,
 ) -> Result<serde_json::Value, String> {
-    api::veo_generate_video(api_key, project_id, prompt, aspect_ratio).await
+    api::veo_generate_video(api_key, project_id, prompt, aspect_ratio, model).await
 }
 
 #[tauri::command]
