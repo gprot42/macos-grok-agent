@@ -4,6 +4,9 @@ set -e
 cd "$(dirname "$0")"
 
 VERSION=$(grep '"version"' src-tauri/tauri.conf.json | head -1 | sed 's/.*: "//;s/".*//')
+DMG_DIR="src-tauri/target/release/bundle/dmg"
+APP_PATH="src-tauri/target/release/bundle/macos/Cortex Agent.app"
+DMG_NAME="Cortex Agent_${VERSION}_aarch64.dmg"
 
 # Install dependencies if needed
 if [ ! -d "node_modules" ]; then
@@ -13,24 +16,24 @@ fi
 
 echo "Building Cortex Agent v${VERSION}..."
 
-# Build the app (Tauri DMG bundling may fail on macOS 26+ due to AppleScript issues)
-if npm run tauri:build 2>&1; then
-  echo ""
-else
-  echo ""
-  echo "Tauri DMG bundler failed — falling back to manual DMG creation..."
+# Clean old DMGs before build so we can detect success reliably
+rm -f "$DMG_DIR/$DMG_NAME" "$DMG_DIR"/rw.*.dmg 2>/dev/null || true
 
-  APP_PATH="src-tauri/target/release/bundle/macos/Cortex Agent.app"
-  DMG_DIR="src-tauri/target/release/bundle/dmg"
-  DMG_NAME="Cortex Agent_${VERSION}_aarch64.dmg"
+# Run the Tauri build; ignore exit code because npm sometimes returns 0 even when
+# Tauri's DMG bundler fails (e.g. AppleScript incompatibility on macOS 26+)
+npm run tauri:build || true
 
+# If the DMG wasn't produced but the .app exists, run the manual fallback
+if [ ! -f "$DMG_DIR/$DMG_NAME" ]; then
   if [ ! -d "$APP_PATH" ]; then
     echo "Error: .app bundle not found at $APP_PATH"
     exit 1
   fi
 
-  # Clean up old DMGs
-  rm -f "$DMG_DIR/$DMG_NAME" "$DMG_DIR"/rw.*.dmg
+  echo ""
+  echo "Tauri DMG bundler failed — falling back to manual DMG creation..."
+
+  rm -f "$DMG_DIR"/rw.*.dmg 2>/dev/null || true
 
   # Create DMG with --skip-jenkins to avoid Finder AppleScript errors on macOS 26+
   bash "$DMG_DIR/bundle_dmg.sh" \
@@ -72,7 +75,6 @@ if [ "$1" = "release" ]; then
 
   TAG="v${VERSION}"
 
-  # Create the release (or use existing one)
   if gh release view "$TAG" &> /dev/null; then
     echo "Release $TAG already exists — uploading DMG to it..."
     gh release upload "$TAG" "$DMG" --clobber

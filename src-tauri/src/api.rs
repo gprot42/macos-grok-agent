@@ -1853,6 +1853,8 @@ pub async fn veo_generate_video(
     prompt: String,
     aspect_ratio: Option<String>,
     model: Option<String>,
+    main_image: Option<AttachedFile>,
+    reference_images: Option<Vec<AttachedFile>>,
 ) -> Result<Value, String> {
     let client = Client::new();
     let ratio = aspect_ratio.unwrap_or_else(|| "16:9".to_string());
@@ -1867,10 +1869,33 @@ pub async fn veo_generate_video(
         AI_STUDIO_ENDPOINT, model_name, api_key
     );
 
+    let mut instance = json!({ "prompt": prompt });
+
+    if let Some(img) = main_image {
+        instance["image"] = json!({
+            "bytesBase64Encoded": img.data,
+            "mimeType": img.mime_type,
+        });
+    }
+
+    if let Some(refs) = reference_images {
+        if !refs.is_empty() {
+            let ref_json: Vec<Value> = refs
+                .into_iter()
+                .take(3)
+                .map(|img| json!({
+                    "image": {
+                        "bytesBase64Encoded": img.data,
+                        "mimeType": img.mime_type,
+                    }
+                }))
+                .collect();
+            instance["referenceImages"] = json!(ref_json);
+        }
+    }
+
     let payload = json!({
-        "instances": [{
-            "prompt": prompt
-        }],
+        "instances": [instance],
         "parameters": {
             "aspectRatio": ratio,
             "sampleCount": 1

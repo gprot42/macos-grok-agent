@@ -257,8 +257,10 @@ async fn veo_generate_video(
     prompt: String,
     aspect_ratio: Option<String>,
     model: Option<String>,
+    main_image: Option<AttachedFile>,
+    reference_images: Option<Vec<AttachedFile>>,
 ) -> Result<serde_json::Value, String> {
-    api::veo_generate_video(api_key, project_id, prompt, aspect_ratio, model).await
+    api::veo_generate_video(api_key, project_id, prompt, aspect_ratio, model, main_image, reference_images).await
 }
 
 #[tauri::command]

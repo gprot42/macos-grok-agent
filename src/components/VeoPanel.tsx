@@ -1,15 +1,21 @@
 import { useState, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { save } from "@tauri-apps/plugin-dialog";
-import { writeFile } from "@tauri-apps/plugin-fs";
+import { save, open } from "@tauri-apps/plugin-dialog";
+import { readFile, writeFile } from "@tauri-apps/plugin-fs";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, Download, Trash2, ExternalLink } from "lucide-react";
+import { Loader2, Download, Trash2, ExternalLink, ImagePlus, X } from "lucide-react";
 
 interface VeoPanelProps {
   apiKey: string;
   projectId: string;
   activeProject: string | null;
+}
+
+interface RefImage {
+  path: string;
+  data: string;
+  mimeType: string;
 }
 
 interface GeneratedVideo {
@@ -21,13 +27,47 @@ interface GeneratedVideo {
   error?: string;
 }
 
+function mimeFromPath(path: string): string {
+  const ext = path.toLowerCase().split(".").pop() || "";
+  if (ext === "png") return "image/png";
+  if (ext === "webp") return "image/webp";
+  if (ext === "gif") return "image/gif";
+  return "image/jpeg";
+}
+
+async function pickImage(): Promise<RefImage | null> {
+  const selected = await open({
+    multiple: false,
+    filters: [{ name: "Image", extensions: ["png", "jpg", "jpeg", "webp", "gif"] }],
+  });
+  if (!selected || typeof selected !== "string") return null;
+  const bytes = await readFile(selected);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  const data = btoa(binary);
+  return { path: selected, data, mimeType: mimeFromPath(selected) };
+}
+
 export function VeoPanel({ apiKey, projectId, activeProject }: VeoPanelProps) {
   const [prompt, setPrompt] = useState("");
   const [videos, setVideos] = useState<GeneratedVideo[]>([]);
   const [loading, setLoading] = useState(false);
   const [aspectRatio, setAspectRatio] = useState<"16:9" | "9:16">("16:9");
   const [veoModel, setVeoModel] = useState<"veo-3.1" | "veo-3.1-lite">("veo-3.1");
+  const [mainImage, setMainImage] = useState<RefImage | null>(null);
+  const [refImages, setRefImages] = useState<RefImage[]>([]);
   const resultsEndRef = useRef<HTMLDivElement>(null);
+
+  const handlePickMain = async () => {
+    const img = await pickImage();
+    if (img) setMainImage(img);
+  };
+
+  const handlePickRef = async () => {
+    if (refImages.length >= 3) return;
+    const img = await pickImage();
+    if (img) setRefImages((prev) => [...prev, img]);
+  };
 
   const handleGenerate = async () => {
     if (!prompt.trim() || !apiKey) return;
@@ -43,6 +83,12 @@ export function VeoPanel({ apiKey, projectId, activeProject }: VeoPanelProps) {
         prompt: prompt.trim(),
         aspectRatio,
         model: veoModel,
+        mainImage: mainImage
+          ? { path: mainImage.path, data: mainImage.data, mimeType: mainImage.mimeType }
+          : null,
+        referenceImages: refImages.length
+          ? refImages.map((r) => ({ path: r.path, data: r.data, mimeType: r.mimeType }))
+          : null,
       });
 
       setVideos((prev) =>
@@ -91,6 +137,8 @@ export function VeoPanel({ apiKey, projectId, activeProject }: VeoPanelProps) {
   const handleDelete = (id: string) => {
     setVideos((prev) => prev.filter((v) => v.id !== id));
   };
+
+  const shortName = (p: string) => p.split("/").pop() || p;
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -211,6 +259,69 @@ export function VeoPanel({ apiKey, projectId, activeProject }: VeoPanelProps) {
             </div>
           </div>
         </div>
+
+        {/* Reference images */}
+        <div className="flex flex-wrap gap-2 items-center">
+          <span className="text-xs font-medium theme-text">Main image:</span>
+          {mainImage ? (
+            <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 text-xs">
+              <img
+                src={`data:${mainImage.mimeType};base64,${mainImage.data}`}
+                alt=""
+                className="h-6 w-6 rounded object-cover"
+              />
+              <span className="max-w-[120px] truncate">{shortName(mainImage.path)}</span>
+              <button onClick={() => setMainImage(null)} className="hover:text-red-500">
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={handlePickMain}
+              className="flex items-center gap-1 px-2 py-1 text-xs rounded-md border theme-border theme-text-muted hover:theme-text hover:bg-gray-100 dark:hover:bg-gray-800"
+              title="Upload main reference image (starting frame)"
+            >
+              <ImagePlus className="h-3.5 w-3.5" />
+              Add
+            </button>
+          )}
+
+          <div className="border-l theme-border h-5 mx-1" />
+
+          <span className="text-xs font-medium theme-text">
+            Ingredients ({refImages.length}/3):
+          </span>
+          {refImages.map((img, i) => (
+            <div
+              key={i}
+              className="flex items-center gap-1 px-2 py-1 rounded-md bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs"
+            >
+              <img
+                src={`data:${img.mimeType};base64,${img.data}`}
+                alt=""
+                className="h-6 w-6 rounded object-cover"
+              />
+              <span className="max-w-[100px] truncate">{shortName(img.path)}</span>
+              <button
+                onClick={() => setRefImages((prev) => prev.filter((_, idx) => idx !== i))}
+                className="hover:text-red-500"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+          {refImages.length < 3 && (
+            <button
+              onClick={handlePickRef}
+              className="flex items-center gap-1 px-2 py-1 text-xs rounded-md border theme-border theme-text-muted hover:theme-text hover:bg-gray-100 dark:hover:bg-gray-800"
+              title="Add reference image (character, object, style)"
+            >
+              <ImagePlus className="h-3.5 w-3.5" />
+              Add
+            </button>
+          )}
+        </div>
+
         <div className="flex gap-2 items-start">
           <Textarea
             value={prompt}
