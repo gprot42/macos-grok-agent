@@ -246,15 +246,17 @@ pub async fn deep_research(
     prompt: String,
     api_key: String,
     timeout_minutes: u32,
+    model: Option<String>,
 ) -> Result<ChatResponse, String> {
     let client = Client::new();
     
     // Step 1: Start the research task in background
     let create_url = format!("{}/v1beta/interactions", AI_STUDIO_ENDPOINT);
     
+    let agent_model = model.unwrap_or_else(|| "deep-research-pro-preview-12-2025".to_string());
     let create_payload = json!({
         "input": prompt,
-        "agent": "deep-research-pro-preview-12-2025",
+        "agent": agent_model,
         "background": true
     });
     

@@ -108,7 +108,7 @@ export function useResearchSessions() {
     }, []);
 
     const startResearch = useCallback(
-        async (query: string, apiKey: string, timeoutMinutes?: number) => {
+        async (query: string, apiKey: string, modelId: string, timeoutMinutes?: number) => {
             const taskId = `research-${Date.now()}`;
 
             // Add task as running
@@ -127,6 +127,7 @@ export function useResearchSessions() {
             invoke<ChatResponse>("deep_research", {
                 prompt: query,
                 apiKey,
+                model: modelId,
                 timeoutMinutes: timeoutMinutes || 60
             })
                 .then((response) => {

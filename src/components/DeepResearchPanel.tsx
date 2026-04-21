@@ -8,11 +8,12 @@ import { ResearchTask } from "../hooks/useResearchSessions";
 interface DeepResearchPanelProps {
   apiKey: string;
   activeProject: string | null;
+  selectedResearchModel: string;
   research: {
     tasks: ResearchTask[];
     runningTasks: ResearchTask[];
     completedTasks: ResearchTask[];
-    startResearch: (query: string, apiKey: string, timeoutMinutes?: number) => Promise<string>;
+    startResearch: (query: string, apiKey: string, modelId: string, timeoutMinutes?: number) => Promise<string>;
     cancelTask: (taskId: string) => void;
     dismissTask: (taskId: string) => void;
     clearCompleted: () => void;
@@ -22,6 +23,7 @@ interface DeepResearchPanelProps {
 export function DeepResearchPanel({
   apiKey,
   activeProject,
+  selectedResearchModel,
   research,
 }: DeepResearchPanelProps) {
   const [query, setQuery] = useState("");
@@ -71,7 +73,7 @@ export function DeepResearchPanel({
     }
 
     setLastQuery(query);
-    await research.startResearch(query, apiKey, timeoutMinutes);
+    await research.startResearch(query, apiKey, selectedResearchModel, timeoutMinutes);
     setQuery("");
     resultsEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };

@@ -65,6 +65,7 @@ function App() {
   const [showAbout, setShowAbout] = useState(false);
   const [selectedModel, setSelectedModel] = useState("claude-opus-4-6");
   const [selectedImageModel, setSelectedImageModel] = useState<"nano-banana-pro" | "nano-banana-2">("nano-banana-pro");
+  const [selectedResearchModel, setSelectedResearchModel] = useState<"gemini-deep-research" | "gemini-deep-research-max">("gemini-deep-research");
   const [selectedEndpoint, setSelectedEndpoint] = useState<EndpointType>("vertex_ai");
   const [use1MContext, setUse1MContext] = useState(false);
   const [useMemory, setUseMemory] = useState(false);
@@ -251,13 +252,34 @@ function App() {
             <DocLink url="https://ai.google.dev/gemini-api/docs/image-generation" />
           </div>
         ) : activeTab === "research" ? (
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
             <span className="text-2xl">🔬</span>
-            <div>
-              <div className="text-lg font-medium theme-text">Gemini Deep Research</div>
-              <div className="text-sm theme-text">Multi-step web research agent with source synthesis</div>
-              <DocLink url="https://ai.google.dev/gemini-api/docs/deep-research" />
+            <div className="inline-flex rounded-lg border theme-border p-0.5 gap-0.5">
+              <button
+                onClick={() => setSelectedResearchModel("gemini-deep-research")}
+                className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
+                  selectedResearchModel === "gemini-deep-research"
+                    ? "bg-indigo-500 text-white shadow-sm ring-1 ring-indigo-500/30"
+                    : "theme-text-muted hover:theme-text"
+                }`}
+              >
+                Pro
+              </button>
+              <button
+                onClick={() => setSelectedResearchModel("gemini-deep-research-max")}
+                className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
+                  selectedResearchModel === "gemini-deep-research-max"
+                    ? "bg-purple-500 text-white shadow-sm ring-1 ring-purple-500/30"
+                    : "theme-text-muted hover:theme-text"
+                }`}
+              >
+                Max
+              </button>
             </div>
+            <div className="text-sm theme-text italic">
+              {MODELS[selectedResearchModel]?.description}
+            </div>
+            <DocLink url="https://ai.google.dev/gemini-api/docs/deep-research" />
           </div>
         ) : activeTab === "parser" ? (
           <div className="flex items-center gap-3">
@@ -381,6 +403,7 @@ function App() {
             <DeepResearchPanel
               apiKey={settings.aiStudioKey || settings.apiKey}
               activeProject={activeProject}
+              selectedResearchModel={selectedResearchModel}
               research={researchSessions}
             />
           </>
