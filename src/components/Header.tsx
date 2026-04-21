@@ -123,11 +123,11 @@ export function Header({
             </Button>
 
             {menuOpen && (
-              <div className="absolute right-0 mt-2 w-48 bg-popover rounded-lg shadow-lg border z-50 overflow-hidden animate-in fade-in-0 zoom-in-95">
+              <div className="absolute right-0 mt-2 w-48 theme-surface rounded-lg shadow-lg border theme-border z-50 overflow-hidden animate-in fade-in-0 zoom-in-95">
                 <div className="p-1">
                   <button
                     onClick={() => { onShowSettings(); setMenuOpen(false); }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md hover:bg-accent hover:text-accent-foreground transition-colors"
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md hover:bg-gray-100 dark:hover:bg-tokyo-surface theme-text transition-colors"
                   >
                     <Settings className="h-4 w-4" />
                     Settings
@@ -135,7 +135,7 @@ export function Header({
 
                   <button
                     onClick={() => { onShowProjects(); setMenuOpen(false); }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md hover:bg-accent hover:text-accent-foreground transition-colors"
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md hover:bg-gray-100 dark:hover:bg-tokyo-surface theme-text transition-colors"
                   >
                     <FolderOpen className="h-4 w-4" />
                     Projects
@@ -143,7 +143,7 @@ export function Header({
 
                   <button
                     onClick={() => { onShowAbout(); setMenuOpen(false); }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md hover:bg-accent hover:text-accent-foreground transition-colors"
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md hover:bg-gray-100 dark:hover:bg-tokyo-surface theme-text transition-colors"
                   >
                     <Info className="h-4 w-4" />
                     About
