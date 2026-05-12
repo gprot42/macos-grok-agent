@@ -9,9 +9,13 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::PathBuf;
 
+pub fn get_storage_dir_pub() -> Result<PathBuf, String> {
+    get_storage_dir()
+}
+
 fn get_storage_dir() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or("Could not find home directory")?;
-    let dir = home.join(".mex-model-explorer");
+    let dir = home.join(".grok-agent");
     fs::create_dir_all(&dir).map_err(|e| format!("Failed to create storage dir: {}", e))?;
     Ok(dir)
 }
@@ -258,6 +262,41 @@ pub async fn get_project_path(project_name: &str) -> Result<String, String> {
     }
 
     Ok(project_dir.to_string_lossy().to_string())
+}
+
+pub async fn save_working_dir(path: &str) -> Result<(), String> {
+    let dir = get_storage_dir()?;
+    fs::write(dir.join("working_dir.txt"), path)
+        .map_err(|e| format!("Failed to save working dir: {}", e))
+}
+
+pub async fn load_working_dir() -> Result<Option<String>, String> {
+    let dir = get_storage_dir()?;
+    let path = dir.join("working_dir.txt");
+    if !path.exists() { return Ok(None); }
+    let s = fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read working dir: {}", e))?;
+    let trimmed = s.trim().to_string();
+    if trimmed.is_empty() { Ok(None) } else { Ok(Some(trimmed)) }
+}
+
+pub async fn save_sessions(sessions_json: &str) -> Result<(), String> {
+    let dir = get_storage_dir()?;
+    let path = dir.join("sessions.json");
+    fs::write(&path, sessions_json)
+        .map_err(|e| format!("Failed to write sessions: {}", e))?;
+    Ok(())
+}
+
+pub async fn load_sessions() -> Result<Option<String>, String> {
+    let dir = get_storage_dir()?;
+    let path = dir.join("sessions.json");
+    if !path.exists() {
+        return Ok(None);
+    }
+    let content = fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read sessions: {}", e))?;
+    Ok(Some(content))
 }
 
 pub async fn save_image_to_project(project_path: &str, filename: &str, image_base64: &str) -> Result<String, String> {

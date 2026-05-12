@@ -80,6 +80,29 @@ pub fn agent_tools_schema() -> Vec<Value> {
                 "required": ["path"]
             }
         }),
+        json!({
+            "name": "delete_file",
+            "description": "Delete a single file. A .bak backup is created automatically before deletion. Use this instead of run_command with rm.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string", "description": "Path of the file to delete (relative to working directory)" }
+                },
+                "required": ["path"]
+            }
+        }),
+        json!({
+            "name": "fetch_url",
+            "description": "Fetch a web page or URL and return its readable text content (HTML is stripped). Use for research, reading docs, checking APIs, or browsing the web. Requires user consent for external requests.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "url":       { "type": "string",  "description": "Full URL to fetch (must start with https:// or http://)" },
+                    "max_chars": { "type": "integer", "description": "Max characters to return (default 12000, max 40000)" }
+                },
+                "required": ["url"]
+            }
+        }),
     ]
 }
 
@@ -119,9 +142,9 @@ pub async fn exec_write_file(base_dir: &str, path: &str, content: &str) -> Resul
             format!("{}.bak", full.extension().and_then(|e| e.to_str()).unwrap_or(""))
         );
         if let Err(e) = fs::copy(&full, &backup).await {
-            eprintln!("[CodingAgent] Warning: could not backup {}: {}", full.display(), e);
+            info!("[agent] Warning: could not backup {}: {}", full.display(), e);
         } else {
-            eprintln!("[CodingAgent] Backed up {} -> {}", full.display(), backup.display());
+            info!("[agent] Backed up {} -> {}", full.display(), backup.display());
         }
     }
     if let Some(parent) = full.parent() {
@@ -166,39 +189,92 @@ pub async fn exec_edit_file(
     ))
 }
 
-pub async fn exec_run_command(base_dir: &str, command: &str) -> Result<CommandResult, String> {
-    let cmd_lower = command.to_lowercase();
+/// Check whether a command string contains file-deletion patterns.
+/// Returns Some(reason) if blocked, None if clean.
+fn deletion_block_reason(cmd_lower: &str, command: &str) -> Option<String> {
+    // Always-blocked: destructive disk-level commands regardless of deletion setting
+    let always_blocked = ["mkfs", "format c:", "> /dev/"];
+    for p in &always_blocked {
+        if cmd_lower.contains(p) {
+            return Some(format!(
+                "Blocked: destructive disk command is never allowed. Command: {}",
+                command
+            ));
+        }
+    }
 
-    // Safety: block commands that delete LOCAL files
-    // Allow: git rm --cached (removes from git only, keeps local)
-    // Allow: gh repo delete (remote only)
-    // Allow: git push --force (remote only)
-    let blocked_prefixes = [
-        "rm ", "rm\t", "rmdir ", "shred ",
-    ];
+    // File-deletion patterns (conditional on block_file_deletion setting)
+    let blocked_prefixes = ["rm ", "rm\t", "rmdir ", "shred "];
     let blocked_contains = [
         "rm -rf", "rm -r ", "rm -f ", "rm *",
         "find . -delete", "find . -exec rm",
         "git clean -fd", "git clean -fx", "git clean -xfd",
-        "mkfs", "format c:", "> /dev/",
         "truncate ", ":> ", "unlink ",
     ];
-    // git rm is blocked UNLESS it has --cached flag (which preserves local files)
-    let has_git_rm = cmd_lower.contains("git rm");
-    let has_cached = cmd_lower.contains("--cached");
 
     for prefix in &blocked_prefixes {
-        if cmd_lower.starts_with(prefix) {
-            return Err(format!("Blocked: file deletion commands are not allowed. Command: {}", command));
+        if cmd_lower.starts_with(prefix) || cmd_lower.contains(&format!(" {}", prefix.trim_end())) {
+            return Some(format!(
+                "File deletion command detected ({}). Command: {}",
+                prefix.trim(),
+                command
+            ));
         }
     }
     for pattern in &blocked_contains {
         if cmd_lower.contains(pattern) {
-            return Err(format!("Blocked: file deletion commands are not allowed. Command: {}", command));
+            return Some(format!(
+                "File deletion command detected ({}). Command: {}",
+                pattern.trim(),
+                command
+            ));
         }
     }
-    if has_git_rm && !has_cached {
-        return Err(format!("Blocked: 'git rm' deletes local files. Use 'git rm --cached' to remove from repo only. Command: {}", command));
+    // git rm is a deletion UNLESS --cached flag is present
+    if cmd_lower.contains("git rm") && !cmd_lower.contains("--cached") {
+        return Some(format!(
+            "File deletion command detected (git rm without --cached). Command: {}",
+            command
+        ));
+    }
+    None
+}
+
+pub async fn exec_run_command(
+    base_dir: &str,
+    command: &str,
+    block_file_deletion: bool,
+) -> Result<CommandResult, String> {
+    let cmd_lower = command.to_lowercase();
+
+    // Always-blocked destructive disk ops (independent of setting)
+    let always_blocked = ["mkfs", "format c:", "> /dev/"];
+    for p in &always_blocked {
+        if cmd_lower.contains(p) {
+            return Err(format!(
+                "Blocked: destructive disk command is never allowed. Command: {}",
+                command
+            ));
+        }
+    }
+
+    if block_file_deletion {
+        if let Some(reason) = deletion_block_reason(&cmd_lower, command) {
+            // Return a *soft* Ok result (not Err) so the agent loop can continue.
+            // is_error will be false; the agent receives a clear explanatory message
+            // and can retry with delete_file or alternative commands.
+            return Ok(CommandResult {
+                exit_code: 0,
+                stdout: format!(
+                    "⚠ Skipped: {}  \n\
+                     The 'Block file deletion' setting is enabled. \
+                     To delete files/directories use the 'delete_file' tool for individual files, \
+                     or disable 'Block file deletion' in Settings → Agent.",
+                    reason
+                ),
+                stderr: String::new(),
+            });
+        }
     }
 
     let output = Command::new("bash")
@@ -226,6 +302,153 @@ pub async fn exec_run_command(base_dir: &str, command: &str) -> Result<CommandRe
             stderr
         },
     })
+}
+
+/// Fetch a URL and return its text content (HTML stripped to readable text, truncated).
+pub async fn exec_fetch_url(url: &str, max_chars: Option<usize>) -> Result<String, String> {
+    let limit = max_chars.unwrap_or(12_000);
+
+    // Basic URL validation
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return Err(format!("Invalid URL — must start with http:// or https://: {}", url));
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(20))
+        .user_agent("Cortex-Agent/1.0 (research tool; contact: user)")
+        .build()
+        .map_err(|e| format!("HTTP client error: {}", e))?;
+
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| format!("Fetch failed for {}: {}", url, e))?;
+
+    let status = response.status();
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_lowercase();
+
+    let body = response
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read response body: {}", e))?;
+
+    // Strip HTML tags for readability
+    let text = if content_type.contains("html") {
+        strip_html_tags(&body)
+    } else {
+        body
+    };
+
+    // Truncate to limit
+    let truncated: String = text.chars().take(limit).collect();
+    let suffix = if text.chars().count() > limit {
+        format!("\n\n[...truncated to {} chars — use a smaller page or a specific section]", limit)
+    } else {
+        String::new()
+    };
+
+    Ok(format!(
+        "URL: {}\nStatus: {}\nContent-Type: {}\n\n---\n\n{}{}",
+        url, status, content_type, truncated, suffix
+    ))
+}
+
+fn strip_html_tags(html: &str) -> String {
+    let mut result = String::with_capacity(html.len() / 2);
+    let mut in_tag = false;
+    let mut in_script = false;
+    let mut buf = String::new();
+
+    let bytes = html.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let c = bytes[i] as char;
+        match c {
+            '<' => {
+                // Check for <script or <style — skip until closing tag
+                let rest = &html[i..];
+                if rest.to_ascii_lowercase().starts_with("<script")
+                    || rest.to_ascii_lowercase().starts_with("<style")
+                {
+                    in_script = true;
+                } else if in_script && (rest.to_ascii_lowercase().starts_with("</script")
+                    || rest.to_ascii_lowercase().starts_with("</style"))
+                {
+                    in_script = false;
+                }
+                in_tag = true;
+                buf.clear();
+            }
+            '>' => {
+                in_tag = false;
+                // Add space after block elements for readability
+                let tag = buf.to_ascii_lowercase();
+                if ["p", "br", "div", "h1", "h2", "h3", "h4", "li", "tr"].iter().any(|t| tag.starts_with(t)) {
+                    result.push('\n');
+                }
+            }
+            _ if in_tag => {
+                buf.push(c);
+            }
+            _ if !in_script => {
+                result.push(c);
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+
+    // Collapse excessive whitespace
+    let mut out = String::new();
+    let mut prev_newline = false;
+    for line in result.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            if !prev_newline { out.push('\n'); }
+            prev_newline = true;
+        } else {
+            out.push_str(trimmed);
+            out.push('\n');
+            prev_newline = false;
+        }
+    }
+    out.trim().to_string()
+}
+
+pub async fn exec_delete_file(base_dir: &str, path: &str) -> Result<String, String> {
+    let full = resolve_path(base_dir, path);
+
+    if !full.exists() {
+        return Err(format!("File not found: {}", full.display()));
+    }
+    if full.is_dir() {
+        return Err(format!(
+            "Cannot delete directories with this tool: {}. Use run_command only if absolutely necessary.",
+            full.display()
+        ));
+    }
+
+    // Back up before deleting
+    let backup = full.with_extension(
+        format!("{}.bak", full.extension().and_then(|e| e.to_str()).unwrap_or(""))
+    );
+    if let Err(e) = fs::copy(&full, &backup).await {
+        info!("[agent] Warning: could not backup before delete {}: {}", full.display(), e);
+    } else {
+        info!("[agent] Backed up {} -> {} before deletion", full.display(), backup.display());
+    }
+
+    fs::remove_file(&full)
+        .await
+        .map_err(|e| format!("Failed to delete {}: {}", full.display(), e))?;
+
+    Ok(format!("Deleted {} (backup saved as {})", full.display(), backup.display()))
 }
 
 pub async fn exec_list_directory(base_dir: &str, path: &str, max_depth: u32) -> Result<String, String> {
@@ -298,6 +521,119 @@ async fn build_tree(path: &Path, max_depth: u32, current_depth: u32) -> Result<D
         entry_type: "directory".to_string(),
         children: Some(entries),
     })
+}
+
+// ── Live code execution ───────────────────────────────────────────────────────
+
+/// Execute a code snippet for the given language.  Returns stdout, stderr,
+/// exit code, and wall-clock duration in milliseconds.
+pub async fn exec_code_snippet(
+    working_dir: &str,
+    code: &str,
+    language: &str,
+) -> Result<Value, String> {
+    use std::time::Instant;
+    let start = Instant::now();
+
+    let tmp_dir = std::env::temp_dir();
+    let id = uuid::Uuid::new_v4().to_string().replace('-', "");
+
+    let lang = language.to_lowercase();
+    let lang = lang.trim();
+
+    let output = match lang {
+        "bash" | "sh" | "shell" | "" => {
+            let tmp = tmp_dir.join(format!("grok_{}.sh", id));
+            fs::write(&tmp, code).await.map_err(|e| format!("write tmp: {}", e))?;
+            Command::new("bash")
+                .arg(tmp.to_string_lossy().as_ref())
+                .current_dir(working_dir)
+                .output()
+                .await
+                .map_err(|e| format!("bash: {}", e))?
+        }
+        "python" | "python3" | "py" => {
+            let tmp = tmp_dir.join(format!("grok_{}.py", id));
+            fs::write(&tmp, code).await.map_err(|e| format!("write tmp: {}", e))?;
+            Command::new("python3")
+                .arg(tmp.to_string_lossy().as_ref())
+                .current_dir(working_dir)
+                .output()
+                .await
+                .map_err(|e| format!("python3: {}", e))?
+        }
+        "javascript" | "js" | "node" => {
+            let tmp = tmp_dir.join(format!("grok_{}.js", id));
+            fs::write(&tmp, code).await.map_err(|e| format!("write tmp: {}", e))?;
+            Command::new("node")
+                .arg(tmp.to_string_lossy().as_ref())
+                .current_dir(working_dir)
+                .output()
+                .await
+                .map_err(|e| format!("node: {}", e))?
+        }
+        "typescript" | "ts" => {
+            let tmp = tmp_dir.join(format!("grok_{}.ts", id));
+            fs::write(&tmp, code).await.map_err(|e| format!("write tmp: {}", e))?;
+            // Try ts-node via npx; fall back to plain node if ts-node unavailable
+            let res = Command::new("npx")
+                .args(["--yes", "ts-node", "--transpile-only", tmp.to_string_lossy().as_ref()])
+                .current_dir(working_dir)
+                .output()
+                .await;
+            match res {
+                Ok(o) => o,
+                Err(_) => Command::new("node")
+                    .arg(tmp.to_string_lossy().as_ref())
+                    .current_dir(working_dir)
+                    .output()
+                    .await
+                    .map_err(|e| format!("node fallback: {}", e))?,
+            }
+        }
+        "rust" | "rs" => {
+            // Write main.rs to a temp dir and `cargo script` if available, else compile inline
+            let tmp_proj = tmp_dir.join(format!("grok_rs_{}", id));
+            fs::create_dir_all(&tmp_proj).await.map_err(|e| format!("mkdir: {}", e))?;
+            let src = tmp_proj.join("main.rs");
+            // Wrap in main() if no fn main is detected
+            let wrapped = if code.contains("fn main") {
+                code.to_string()
+            } else {
+                format!("fn main() {{\n{}\n}}", code)
+            };
+            fs::write(&src, wrapped).await.map_err(|e| format!("write rs: {}", e))?;
+            Command::new("rustc")
+                .args([
+                    src.to_string_lossy().as_ref(),
+                    "-o",
+                    tmp_proj.join("out").to_string_lossy().as_ref(),
+                ])
+                .output()
+                .await
+                .map_err(|e| format!("rustc: {}", e))?;
+            Command::new(tmp_proj.join("out").to_string_lossy().as_ref())
+                .current_dir(working_dir)
+                .output()
+                .await
+                .map_err(|e| format!("run: {}", e))?
+        }
+        _ => {
+            return Err(format!(
+                "Unsupported language '{}'. Supported: bash/sh, python/py, javascript/js, typescript/ts, rust/rs",
+                language
+            ));
+        }
+    };
+
+    let duration_ms = start.elapsed().as_millis() as u64;
+
+    Ok(json!({
+        "stdout": String::from_utf8_lossy(&output.stdout).trim_end().to_string(),
+        "stderr": String::from_utf8_lossy(&output.stderr).trim_end().to_string(),
+        "exitCode": output.status.code().unwrap_or(-1),
+        "durationMs": duration_ms,
+    }))
 }
 
 fn format_tree(entry: &DirEntry, prefix: &str, is_last: bool) -> String {

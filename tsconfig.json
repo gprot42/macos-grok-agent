@@ -22,9 +22,11 @@
     "forceConsistentCasingInFileNames": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": [
-        "./src/*"
-      ]
+      "@/*":          ["./src/*"],
+      "@features/*":  ["./src/features/*"],
+      "@shared/*":    ["./src/shared/*"],
+      "@lib/*":       ["./src/lib/*"],
+      "@store/*":     ["./src/store/*"]
     }
   },
   "include": [

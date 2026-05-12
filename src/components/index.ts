@@ -1,18 +1,16 @@
-export { Button } from "./Button";
-export { Select } from "./Select";
-export { TextArea } from "./TextArea";
-export { Input } from "./Input";
-export { Checkbox } from "./Checkbox";
-export { ModelSelector } from "./ModelSelector";
-export { ChatPanel } from "./ChatPanel";
-export { ImageGenerator } from "./ImageGenerator";
-export { Header } from "./Header";
-export { SettingsPanel } from "./SettingsPanel";
-export { ProjectsPanel } from "./ProjectsPanel";
-export { DeepResearchPanel } from "./DeepResearchPanel";
-export { ResearchSessionTabs } from "./ResearchSessionTabs";
-export { LayoutParserPanel } from "./LayoutParserPanel";
-export { CodingAgentPanel } from "./CodingAgentPanel";
-export { VeoPanel } from "./VeoPanel";
-export { GeminiLivePanel } from "./GeminiLivePanel";
-export { GeminiTTSPanel } from "./GeminiTTSPanel";
+// Re-export everything from new feature-based locations.
+// Kept for backward compatibility — prefer @features/* imports in new code.
+export { Button }           from "@shared/components/Button";
+export { Select }           from "@shared/components/Select";
+export { TextArea }         from "@shared/components/TextArea";
+export { Input }            from "@shared/components/Input";
+export { Checkbox }         from "@shared/components/Checkbox";
+export { ModelSelector }    from "@shared/components/ModelSelector";
+export { ChatPanel }        from "@features/chat/components/ChatPanel";
+export { ImageGenerator }   from "@features/image/components/ImageGenerator";
+export { Header }           from "@shared/components/Header";
+export { SettingsPanel }    from "@features/settings/components/SettingsPanel";
+export { ProjectsPanel }    from "@features/projects/components/ProjectsPanel";
+export { CodingAgentPanel } from "@features/agents/components/CodingAgentPanel";
+export { GrokVoicePanel }   from "@features/voice/components/GrokVoicePanel";
+export { GrokVideoPanel }   from "@features/video/components/GrokVideoPanel";

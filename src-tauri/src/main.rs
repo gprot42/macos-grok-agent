@@ -1,14 +1,44 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod agent_chain;
 mod api;
-mod auth;
 mod codegen;
+mod mcp;
+mod skills;
 mod storage;
 
+#[macro_use]
+extern crate log;
+
+use mcp::{McpServerConfig, McpServerStatus, McpTool, McpState};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tauri::Manager;
+
+/// Per-task cancellation map.  Each running agent or streaming task registers a
+/// unique `task_id` → `Arc<AtomicBool>` cancel flag here.
+pub struct CancelMap(pub Mutex<HashMap<String, Arc<AtomicBool>>>);
+
+impl CancelMap {
+    fn new() -> Self {
+        CancelMap(Mutex::new(HashMap::new()))
+    }
+    pub fn register(&self, task_id: &str) -> Arc<AtomicBool> {
+        let flag = Arc::new(AtomicBool::new(false));
+        self.0.lock().unwrap().insert(task_id.to_string(), flag.clone());
+        flag
+    }
+    pub fn cancel(&self, task_id: &str) {
+        if let Some(flag) = self.0.lock().unwrap().get(task_id) {
+            flag.store(true, Ordering::SeqCst);
+        }
+    }
+    pub fn remove(&self, task_id: &str) {
+        self.0.lock().unwrap().remove(task_id);
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
@@ -17,8 +47,6 @@ pub struct AppSettings {
     pub font_size: u32,
     #[serde(rename = "apiKey")]
     pub api_key: String,
-    #[serde(rename = "aiStudioKey", default, skip_serializing_if = "Option::is_none")]
-    pub ai_studio_key: Option<String>,
     #[serde(rename = "openrouterKey", default, skip_serializing_if = "Option::is_none")]
     pub openrouter_key: Option<String>,
     #[serde(rename = "xaiKey", default, skip_serializing_if = "Option::is_none")]
@@ -41,7 +69,6 @@ impl Default for AppSettings {
             theme: "light".to_string(),
             font_size: 14,
             api_key: String::new(),
-            ai_studio_key: None,
             openrouter_key: None,
             xai_key: None,
             kilocode_key: None,
@@ -78,6 +105,17 @@ pub struct ChatResponse {
     pub output_tokens: u32,
 }
 
+/// Return value for image generation / editing commands.
+/// Includes the raw base64 image and the actual billed cost returned by the xAI API.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageResponse {
+    /// Raw base64-encoded image data (no data-URI prefix).
+    pub image: String,
+    /// Actual cost charged by xAI, in US dollars (derived from `usage.cost_in_usd_ticks`).
+    #[serde(rename = "costUsd")]
+    pub cost_usd: f64,
+}
+
 #[tauri::command]
 async fn load_settings() -> Result<Option<AppSettings>, String> {
     storage::load_settings().await
@@ -98,7 +136,6 @@ async fn send_chat_message(
     prompt: String,
     history: Vec<Message>,
     model_id: String,
-    ai_studio_model_id: Option<String>,
     publisher: String,
     endpoint: String,
     api_key: String,
@@ -113,12 +150,12 @@ async fn send_chat_message(
     custom_password: Option<String>,
     attached_file: Option<AttachedFile>,
     service_tier: Option<String>,
+    use_search: bool,
 ) -> Result<ChatResponse, String> {
     api::send_chat_message(
         prompt,
         history,
         model_id,
-        ai_studio_model_id,
         publisher,
         endpoint,
         api_key,
@@ -133,6 +170,7 @@ async fn send_chat_message(
         custom_password,
         attached_file,
         service_tier,
+        use_search,
     )
     .await
 }
@@ -145,86 +183,20 @@ async fn generate_image(
     edit_image_mime_type: Option<String>,
     model_id: Option<String>,
     search_mode: Option<String>,
-) -> Result<String, String> {
-    api::generate_image(prompt, api_key, edit_image, edit_image_mime_type, model_id, search_mode).await
+    aspect_ratio: Option<String>,
+    // "us-east-1" | "eu-west-1" | None → global api.x.ai
+    region: Option<String>,
+    // "1k" | "2k" | None → API default (1k)
+    resolution: Option<String>,
+) -> Result<ImageResponse, String> {
+    api::generate_image(
+        prompt, api_key, edit_image, edit_image_mime_type,
+        model_id, search_mode, aspect_ratio, region, resolution,
+    )
+    .await
 }
 
-#[tauri::command]
-async fn layout_parse(
-    file_data: String,
-    mime_type: String,
-    mode: String,
-    api_key: String,
-    system_prompt: String,
-) -> Result<String, String> {
-    api::layout_parse(file_data, mime_type, mode, api_key, system_prompt).await
-}
 
-#[tauri::command]
-async fn deep_research(
-    prompt: String,
-    api_key: String,
-    timeout_minutes: Option<u32>,
-    model: Option<String>,
-) -> Result<ChatResponse, String> {
-    api::deep_research(prompt, api_key, timeout_minutes.unwrap_or(60), model).await
-}
-
-#[tauri::command]
-async fn rag_create_store(api_key: String, display_name: String) -> Result<serde_json::Value, String> {
-    api::rag_create_store(api_key, display_name).await
-}
-
-#[tauri::command]
-async fn rag_list_stores(api_key: String) -> Result<serde_json::Value, String> {
-    api::rag_list_stores(api_key).await
-}
-
-#[tauri::command]
-async fn rag_delete_store(api_key: String, store_name: String) -> Result<serde_json::Value, String> {
-    api::rag_delete_store(api_key, store_name).await
-}
-
-#[tauri::command]
-async fn rag_upload_file(api_key: String, store_name: String, file_data: String, mime_type: String, display_name: String) -> Result<serde_json::Value, String> {
-    api::rag_upload_file(api_key, store_name, file_data, mime_type, display_name).await
-}
-
-#[tauri::command]
-async fn rag_list_files(api_key: String, store_name: String) -> Result<serde_json::Value, String> {
-    api::rag_list_files(api_key, store_name).await
-}
-
-#[tauri::command]
-async fn rag_delete_file(api_key: String, file_name: String) -> Result<serde_json::Value, String> {
-    api::rag_delete_file(api_key, file_name).await
-}
-
-#[tauri::command]
-async fn rag_query(api_key: String, store_names: Vec<String>, query: String, model: String) -> Result<serde_json::Value, String> {
-    api::rag_query(api_key, store_names, query, model).await
-}
-
-#[tauri::command]
-async fn rag_embed_content(api_key: String, text: String, task_type: Option<String>) -> Result<serde_json::Value, String> {
-    api::rag_embed_content(api_key, text, task_type).await
-}
-
-#[tauri::command]
-async fn rag_embed_batch(api_key: String, texts: Vec<String>, task_type: Option<String>) -> Result<serde_json::Value, String> {
-    api::rag_embed_batch(api_key, texts, task_type).await
-}
-
-#[tauri::command]
-async fn speech_to_text(
-    audio_data: String,
-    mime_type: String,
-    language_code: String,
-    api_key: String,
-    project_id: String,
-) -> Result<String, String> {
-    api::speech_to_text(audio_data, mime_type, language_code, api_key, project_id).await
-}
 
 #[tauri::command]
 async fn coding_agent_chat(
@@ -238,41 +210,272 @@ async fn coding_agent_chat(
     working_dir: String,
     agent_timeout: Option<u64>,
     agent_mode: Option<String>,
+    // Optional: callers may supply a task_id for multi-run tracking.
+    // Defaults to "coding-agent" for backward compatibility.
+    task_id: Option<String>,
+    thinking_level: Option<String>,
+    active_skill_paths: Option<Vec<String>>,
+    // When true (default), rm/unlink/shred commands in run_command are soft-blocked.
+    // The agent receives an explanatory message and is directed to use delete_file instead.
+    block_file_deletion: Option<bool>,
 ) -> Result<serde_json::Value, String> {
-    let cancel_flag = app_handle.state::<Arc<AtomicBool>>().inner().clone();
-    cancel_flag.store(false, Ordering::SeqCst);
-    api::coding_agent_chat(messages, model_id, publisher, endpoint, api_key, project_id, working_dir, agent_timeout, agent_mode, app_handle, cancel_flag).await
+    let tid = task_id.unwrap_or_else(|| "coding-agent".to_string());
+    let cancel_map = app_handle.state::<CancelMap>();
+    let cancel_flag = cancel_map.register(&tid);
+    let mcp_state = app_handle.state::<McpState>().inner().clone();
+    // Build skills context before entering the agent loop
+    let skills_context = if let Some(paths) = active_skill_paths {
+        skills::build_skills_context(&paths).await
+    } else {
+        None
+    };
+    // Default: block file deletion for safety; only disable when caller opts out
+    let block_del = block_file_deletion.unwrap_or(false);
+    let result = api::coding_agent_chat(
+        messages, model_id, publisher, endpoint, api_key, project_id,
+        working_dir, agent_timeout, agent_mode, thinking_level, skills_context, block_del,
+        app_handle.clone(), cancel_flag, mcp_state,
+    ).await;
+    cancel_map.remove(&tid);
+    result
 }
 
 #[tauri::command]
-fn coding_agent_stop(app_handle: tauri::AppHandle) {
-    let cancel_flag = app_handle.state::<Arc<AtomicBool>>();
-    cancel_flag.store(true, Ordering::SeqCst);
-    eprintln!("[CodingAgent] Stop requested by user");
+fn coding_agent_stop(
+    app_handle: tauri::AppHandle,
+    task_id: Option<String>,
+) {
+    let tid = task_id.unwrap_or_else(|| "coding-agent".to_string());
+    let cancel_map = app_handle.state::<CancelMap>();
+    cancel_map.cancel(&tid);
+    eprintln!("[CodingAgent] Stop requested for task={}", tid);
 }
 
+// ── SSE streaming command ─────────────────────────────────────────────────────
+
 #[tauri::command]
-async fn veo_generate_video(
+async fn stream_chat_message(
+    app_handle: tauri::AppHandle,
+    task_id: String,
+    prompt: String,
+    history: Vec<Message>,
+    model_id: String,
+    publisher: String,
+    endpoint: String,
     api_key: String,
     project_id: String,
-    prompt: String,
-    aspect_ratio: Option<String>,
-    model: Option<String>,
-    main_image: Option<AttachedFile>,
-    reference_images: Option<Vec<AttachedFile>>,
-    duration_seconds: Option<u32>,
-) -> Result<serde_json::Value, String> {
-    api::veo_generate_video(api_key, project_id, prompt, aspect_ratio, model, main_image, reference_images, duration_seconds).await
+    use_1m_context: bool,
+    use_memory: bool,
+    use_grounding: bool,
+    thinking_level: Option<String>,
+    include_thoughts: bool,
+    custom_url: Option<String>,
+    custom_login: Option<String>,
+    custom_password: Option<String>,
+    attached_file: Option<AttachedFile>,
+    service_tier: Option<String>,
+    use_search: bool,
+) -> Result<(), String> {
+    api::stream_chat_message(
+        app_handle, task_id, prompt, history, model_id, publisher, endpoint,
+        api_key, project_id, use_1m_context, use_memory, use_grounding,
+        thinking_level, include_thoughts, custom_url, custom_login,
+        custom_password, attached_file, service_tier, use_search,
+    ).await
+}
+
+// ── Agent chain commands ──────────────────────────────────────────────────────
+
+#[tauri::command]
+async fn run_agent_pipeline(
+    app_handle: tauri::AppHandle,
+    pipeline: agent_chain::AgentPipeline,
+    api_key: String,
+    task_id: Option<String>,
+) -> Result<String, String> {
+    let tid = task_id.unwrap_or_else(|| format!("pipeline-{}", uuid::Uuid::new_v4()));
+    agent_chain::run_pipeline(pipeline, api_key, app_handle, tid).await
 }
 
 #[tauri::command]
-async fn tts_generate(
+async fn deep_research(
+    app_handle: tauri::AppHandle,
+    prompt: String,
     api_key: String,
-    model: String,
-    text: String,
-    speech_config: serde_json::Value,
+    model_id: Option<String>,
+    publisher: Option<String>,
+    endpoint: Option<String>,
+    task_id: Option<String>,
+) -> Result<ChatResponse, String> {
+    let tid = task_id.unwrap_or_else(|| format!("research-{}", uuid::Uuid::new_v4()));
+    agent_chain::deep_research(
+        prompt,
+        api_key,
+        model_id.unwrap_or_else(|| "grok-4.3".to_string()),
+        publisher.unwrap_or_else(|| "xai".to_string()),
+        endpoint.unwrap_or_else(|| "xai".to_string()),
+        app_handle,
+        tid,
+    ).await
+}
+
+#[tauri::command]
+async fn generate_video(
+    app_handle: tauri::AppHandle,
+    prompt: String,
+    api_key: String,
+    model_id: Option<String>,
+    duration_seconds: Option<u32>,
+    aspect_ratio: Option<String>,
 ) -> Result<serde_json::Value, String> {
-    api::tts_generate(api_key, model, text, speech_config).await
+    api::generate_video(app_handle, prompt, api_key, model_id, duration_seconds, aspect_ratio).await
+}
+
+#[tauri::command]
+async fn extend_video(
+    app_handle: tauri::AppHandle,
+    video_id: String,
+    api_key: String,
+    model_id: Option<String>,
+    duration_seconds: Option<u32>,
+    prompt: Option<String>,
+) -> Result<serde_json::Value, String> {
+    api::extend_video(app_handle, video_id, api_key, model_id, duration_seconds, prompt).await
+}
+
+#[tauri::command]
+async fn generate_speech(
+    text: String,
+    api_key: String,
+    voice_id: Option<String>,
+    language: Option<String>,
+) -> Result<String, String> {
+    api::generate_speech(text, api_key, voice_id, language).await
+}
+
+#[tauri::command]
+async fn save_sessions(sessions_json: String) -> Result<(), String> {
+    storage::save_sessions(&sessions_json).await
+}
+
+#[tauri::command]
+async fn load_sessions() -> Result<Option<String>, String> {
+    storage::load_sessions().await
+}
+
+#[tauri::command]
+async fn delete_file(path: String) -> Result<String, String> {
+    codegen::exec_delete_file("", &path).await
+}
+
+#[tauri::command]
+async fn list_skills(skills_dir: String) -> Result<Vec<skills::SkillMeta>, String> {
+    skills::list_skills(&skills_dir).await
+}
+
+#[tauri::command]
+async fn read_skill_content(skill_md_path: String) -> Result<String, String> {
+    skills::read_skill_content(&skill_md_path).await
+}
+
+#[tauri::command]
+async fn execute_code_snippet(
+    code: String,
+    language: String,
+    working_dir: String,
+) -> Result<serde_json::Value, String> {
+    codegen::exec_code_snippet(&working_dir, &code, &language).await
+}
+
+// ── MCP commands ──────────────────────────────────────────────────────────────
+
+#[tauri::command]
+async fn mcp_connect(
+    state: tauri::State<'_, McpState>,
+    config: McpServerConfig,
+) -> Result<Vec<McpTool>, String> {
+    mcp::connect_server(state.inner(), config).await
+}
+
+#[tauri::command]
+async fn mcp_disconnect(
+    state: tauri::State<'_, McpState>,
+    name: String,
+) -> Result<(), String> {
+    mcp::disconnect_server(state.inner(), &name).await
+}
+
+#[tauri::command]
+async fn mcp_list_servers(
+    state: tauri::State<'_, McpState>,
+) -> Result<Vec<McpServerStatus>, String> {
+    Ok(mcp::list_servers(state.inner()).await)
+}
+
+#[tauri::command]
+async fn mcp_save_configs(configs: Vec<McpServerConfig>) -> Result<(), String> {
+    mcp::save_configs(&configs).await
+}
+
+#[tauri::command]
+async fn mcp_load_configs() -> Result<Vec<McpServerConfig>, String> {
+    mcp::load_configs().await
+}
+
+#[tauri::command]
+async fn save_working_dir(path: String) -> Result<(), String> {
+    storage::save_working_dir(&path).await
+}
+
+#[tauri::command]
+async fn load_working_dir() -> Result<Option<String>, String> {
+    storage::load_working_dir().await
+}
+
+#[tauri::command]
+async fn get_default_working_dir(active_project: Option<String>) -> Result<String, String> {
+    let home = dirs::home_dir().ok_or("Could not find home directory")?;
+    use std::path::PathBuf;
+
+    let dir = if let Some(project) = active_project {
+        // Explicit project selected — always use Cortex Projects folder
+        let d = home.join("Cortex Projects").join(project);
+        std::fs::create_dir_all(&d)
+            .map_err(|e| format!("Failed to create directory: {}", e))?;
+        d
+    } else {
+        // Priority 1: CORTEX_LAUNCH_DIR set by start.sh — this is the project root
+        if let Ok(launch_dir) = std::env::var("CORTEX_LAUNCH_DIR") {
+            let p = PathBuf::from(&launch_dir);
+            if p.exists() && p.is_dir() {
+                return Ok(launch_dir);
+            }
+        }
+
+        // Priority 2: CWD, but skip src-tauri/ (cargo run artifact) and .app bundles
+        let cwd = std::env::current_dir().unwrap_or_else(|_| home.clone());
+        let cwd_str = cwd.to_string_lossy();
+        let is_src_tauri = cwd_str.ends_with("/src-tauri") || cwd_str.ends_with("\\src-tauri");
+        let is_app_bundle = cwd_str.contains(".app/") || cwd_str.ends_with(".app");
+        let is_home = cwd == home;
+        let is_root = cwd_str == "/";
+
+        if is_src_tauri {
+            // Go up one level to the actual project root
+            cwd.parent().map(|p| p.to_path_buf()).unwrap_or(home)
+        } else if !is_app_bundle && !is_home && !is_root {
+            cwd
+        } else {
+            home
+        }
+    };
+
+    Ok(dir.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+async fn download_video(url: String, filename: String) -> Result<String, String> {
+    api::download_video_to_disk(url, filename).await
 }
 
 #[tauri::command]
@@ -310,254 +513,22 @@ async fn save_image_to_project(project_path: String, filename: String, image_bas
     storage::save_image_to_project(&project_path, &filename, &image_base64).await
 }
 
-#[tauri::command]
-fn has_service_account() -> bool {
-    auth::has_service_account_key()
-}
 
-#[tauri::command]
-fn get_service_account_project_id() -> Option<String> {
-    auth::get_project_id_from_key()
-}
-
-#[tauri::command]
-async fn get_vertex_token() -> Result<String, String> {
-    auth::get_access_token().await
-}
-
-#[tauri::command]
-async fn run_vertex_setup(project_id: String, remove: bool) -> Result<String, String> {
-    use std::process::Command;
-    use std::env;
-    
-    fn strip_ansi_codes(s: &str) -> String {
-        let mut result = String::new();
-        let mut chars = s.chars().peekable();
-        while let Some(c) = chars.next() {
-            if c == '\x1b' {
-                if chars.peek() == Some(&'[') {
-                    chars.next();
-                    while let Some(&next) = chars.peek() {
-                        chars.next();
-                        if next.is_ascii_alphabetic() {
-                            break;
-                        }
-                    }
-                }
-            } else {
-                result.push(c);
-            }
-        }
-        result
-    }
-    
-    let script_path = if cfg!(debug_assertions) {
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .join("scripts")
-            .join("01-setup-vertex-sa.sh")
-    } else {
-        let exe_path = env::current_exe().map_err(|e| e.to_string())?;
-        let res_dir = exe_path.parent().unwrap().join("../Resources");
-        let path1 = res_dir.join("scripts/01-setup-vertex-sa.sh");
-        let path2 = res_dir.join("_up_/scripts/01-setup-vertex-sa.sh");
-        
-        if path1.exists() {
-            path1
-        } else {
-            path2
-        }
-    };
-    
-    if !script_path.exists() {
-        return Err(format!("Setup script not found at: {:?}", script_path));
-    }
-    
-    let mut cmd = Command::new("bash");
-    cmd.arg(&script_path);
-    
-    // Always use --yes for non-interactive mode from the app
-    cmd.arg("--yes");
-    
-    if remove {
-        cmd.arg("--remove");
-    }
-    
-    cmd.arg(&project_id);
-    
-    let output = cmd.output().map_err(|e| format!("Failed to run script: {}", e))?;
-    
-    let stdout = strip_ansi_codes(&String::from_utf8_lossy(&output.stdout));
-    let stderr = strip_ansi_codes(&String::from_utf8_lossy(&output.stderr));
-    
-    if output.status.success() {
-        Ok(format!("{}\n{}", stdout, stderr))
-    } else {
-        Err(format!("Script failed:\n{}\n{}", stdout, stderr))
-    }
-}
-
-#[tauri::command]
-fn get_scripts_path() -> Result<String, String> {
-    use std::env;
-    
-    let scripts_path = if cfg!(debug_assertions) {
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .join("scripts")
-    } else {
-        let exe_path = env::current_exe().map_err(|e| e.to_string())?;
-        let res_dir = exe_path.parent().unwrap().join("../Resources");
-        let path1 = res_dir.join("scripts");
-        let path2 = res_dir.join("_up_/scripts");
-        
-        if path1.exists() {
-            path1
-        } else {
-            path2
-        }
-    };
-    
-    Ok(scripts_path.to_string_lossy().to_string())
-}
-
-#[tauri::command]
-fn check_gcloud_auth() -> Result<String, String> {
-    use std::process::Command;
-    
-    let gcloud_path = find_gcloud().ok_or("gcloud CLI is not installed. Please install it from https://cloud.google.com/sdk/docs/install")?;
-    
-    // Try to get an access token - this will fail if auth is expired
-    let output = Command::new(&gcloud_path)
-        .args(["auth", "print-access-token"])
-        .output()
-        .map_err(|e| format!("Failed to check auth: {}", e))?;
-    
-    if output.status.success() {
-        // Get the authenticated account
-        let account_output = Command::new(&gcloud_path)
-            .args(["auth", "list", "--filter=status:ACTIVE", "--format=value(account)"])
-            .output()
-            .map_err(|e| format!("Failed to get account: {}", e))?;
-        
-        let account = String::from_utf8_lossy(&account_output.stdout)
-            .trim()
-            .lines()
-            .next()
-            .unwrap_or("Unknown")
-            .to_string();
-        
-        Ok(account)
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(format!("Authentication required: {}", stderr.trim()))
-    }
-}
-
-fn find_gcloud() -> Option<String> {
-    use std::path::Path;
-    use std::process::Command;
-    
-    let common_paths = [
-        "/usr/local/bin/gcloud",
-        "/opt/homebrew/bin/gcloud",
-        "/usr/bin/gcloud",
-        "/opt/google-cloud-sdk/bin/gcloud",
-    ];
-    
-    // Check common paths first
-    for path in common_paths {
-        if Path::new(path).exists() {
-            return Some(path.to_string());
-        }
-    }
-    
-    // Check user's home directory for gcloud SDK
-    if let Some(home) = dirs::home_dir() {
-        let home_sdk = home.join("google-cloud-sdk/bin/gcloud");
-        if home_sdk.exists() {
-            return Some(home_sdk.to_string_lossy().to_string());
-        }
-    }
-    
-    // Try to find via shell (gets user's PATH)
-    if let Ok(output) = Command::new("sh")
-        .args(["-l", "-c", "which gcloud"])
-        .output()
-    {
-        if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !path.is_empty() {
-                return Some(path);
-            }
-        }
-    }
-    
-    None
-}
-
-#[tauri::command]
-fn open_gcloud_auth() -> Result<(), String> {
-    use std::process::Command;
-    
-    // Open Terminal.app with gcloud auth login command
-    #[cfg(target_os = "macos")]
-    {
-        Command::new("osascript")
-            .args([
-                "-e",
-                r#"tell application "Terminal"
-                    activate
-                    if (count of windows) = 0 then
-                        do script "echo 'Authenticating with Google Cloud...' && gcloud auth login && echo '' && echo 'Authentication complete! You can close this window and return to Cortex Agent.'"
-                    else
-                        do script "echo 'Authenticating with Google Cloud...' && gcloud auth login && echo '' && echo 'Authentication complete! You can close this window and return to Cortex Agent.'" in front window
-                    end if
-                end tell"#,
-            ])
-            .output()
-            .map_err(|e| format!("Failed to open Terminal: {}", e))?;
-    }
-    
-    #[cfg(target_os = "windows")]
-    {
-        Command::new("cmd")
-            .args(["/c", "start", "cmd", "/k", "gcloud auth login"])
-            .spawn()
-            .map_err(|e| format!("Failed to open terminal: {}", e))?;
-    }
-    
-    #[cfg(target_os = "linux")]
-    {
-        // Try common terminal emulators
-        let terminals = ["gnome-terminal", "konsole", "xterm"];
-        let mut opened = false;
-        for term in terminals {
-            if Command::new(term)
-                .args(["--", "bash", "-c", "gcloud auth login; read -p 'Press Enter to close...'"])
-                .spawn()
-                .is_ok()
-            {
-                opened = true;
-                break;
-            }
-        }
-        if !opened {
-            return Err("Could not open terminal. Please run 'gcloud auth login' manually.".to_string());
-        }
-    }
-    
-    Ok(())
-}
 
 fn main() {
+    // Initialize env_logger — set RUST_LOG=debug for verbose output, info by default
+    env_logger::Builder::from_env(
+        env_logger::Env::default().default_filter_or("grok_agent=info,warn")
+    ).init();
+
+    info!("Grok Agent starting");
+
     use tauri::menu::{Menu, MenuItem, Submenu, PredefinedMenuItem};
     use tauri::Manager;
-    
+
     tauri::Builder::default()
-        .manage(Arc::new(AtomicBool::new(false)))
+        .manage(CancelMap::new())
+        .manage(mcp::new_mcp_state())
         .enable_macos_default_menu(false)
         .setup(|app| {
             if let Some(win) = app.get_webview_window("main") {
@@ -585,10 +556,10 @@ fn main() {
             // Create App submenu (macOS standard)
             let app_menu = Submenu::with_items(
                 handle,
-                "Cortex Agent",
+                "Grok Agent",
                 true,
                 &[
-                    &PredefinedMenuItem::about(handle, Some("About Cortex Agent"), None)?,
+                    &PredefinedMenuItem::about(handle, Some("About Grok Agent"), None)?,
                     &PredefinedMenuItem::separator(handle)?,
                     &PredefinedMenuItem::services(handle, None)?,
                     &PredefinedMenuItem::separator(handle)?,
@@ -651,23 +622,8 @@ fn main() {
             save_settings,
             save_api_key,
             send_chat_message,
+            stream_chat_message,
             generate_image,
-            deep_research,
-            layout_parse,
-            speech_to_text,
-            rag_create_store,
-            rag_list_stores,
-            rag_delete_store,
-            rag_upload_file,
-            rag_list_files,
-            rag_delete_file,
-            rag_query,
-            rag_embed_content,
-            rag_embed_batch,
-            coding_agent_chat,
-            coding_agent_stop,
-            veo_generate_video,
-            tts_generate,
             save_image,
             save_output,
             create_project,
@@ -675,13 +631,28 @@ fn main() {
             list_projects,
             get_project_path,
             save_image_to_project,
-            has_service_account,
-            get_service_account_project_id,
-            get_vertex_token,
-            run_vertex_setup,
-            get_scripts_path,
-            check_gcloud_auth,
-            open_gcloud_auth,
+            coding_agent_chat,
+            coding_agent_stop,
+            generate_video,
+            extend_video,
+            generate_speech,
+            download_video,
+            get_default_working_dir,
+            delete_file,
+            save_sessions,
+            load_sessions,
+            save_working_dir,
+            load_working_dir,
+            mcp_connect,
+            mcp_disconnect,
+            mcp_list_servers,
+            mcp_save_configs,
+            mcp_load_configs,
+            run_agent_pipeline,
+            deep_research,
+            execute_code_snippet,
+            list_skills,
+            read_skill_content,
         ])
         .on_menu_event(|_app, event| {
             if event.id().as_ref() == "toggle_devtools" {

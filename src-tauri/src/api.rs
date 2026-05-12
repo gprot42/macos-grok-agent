@@ -1,11 +1,61 @@
-use crate::{codegen, AttachedFile, ChatResponse, Message};
+use crate::{codegen, mcp, AttachedFile, ChatResponse, ImageResponse, Message};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use futures_util::StreamExt;
 use reqwest::Client;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter};
 
-const VERTEX_AI_ENDPOINT: &str = "https://aiplatform.googleapis.com";
-const AI_STUDIO_ENDPOINT: &str = "https://generativelanguage.googleapis.com";
+#[allow(unused_imports)]
+use log::{debug, error, info, warn};
+
+// ── Retry helper ──────────────────────────────────────────────────────────────
+
+/// Send an HTTP request with exponential back-off on 429 / 5xx errors.
+/// Falls back to a plain `.send()` if the builder cannot be cloned.
+async fn send_with_retry(
+    request: reqwest::RequestBuilder,
+    max_retries: u32,
+) -> Result<reqwest::Response, String> {
+    let mut last_err = String::new();
+    for attempt in 0..=max_retries {
+        if attempt > 0 {
+            // 1 s, 2 s, 4 s … capped at 16 s
+            let delay_ms = 1_000u64 * 2u64.pow(attempt - 1);
+            tokio::time::sleep(std::time::Duration::from_millis(delay_ms.min(16_000))).await;
+            warn!("[api] Retrying request (attempt {}/{})", attempt, max_retries);
+        }
+
+        let req = match request.try_clone() {
+            Some(r) => r,
+            // Body is not cloneable (e.g. streaming) — send once, no retries
+            None => return request.send().await.map_err(|e| e.to_string()),
+        };
+
+        match req.send().await {
+            Ok(resp) => {
+                let status = resp.status();
+                if status.as_u16() == 429 || status.is_server_error() {
+                    last_err = format!("HTTP {}", status);
+                    warn!("[api] Transient failure ({}), will retry", status);
+                    continue;
+                }
+                return Ok(resp);
+            }
+            Err(e) => {
+                last_err = e.to_string();
+                if !e.is_timeout() && !e.is_connect() {
+                    // Non-transient error — give up immediately
+                    return Err(last_err);
+                }
+            }
+        }
+    }
+    Err(format!(
+        "Request failed after {} retries: {}",
+        max_retries, last_err
+    ))
+}
+
 const OPENROUTER_ENDPOINT: &str = "https://openrouter.ai/api/v1";
 const XAI_ENDPOINT: &str = "https://api.x.ai/v1";
 const KILOCODE_ENDPOINT: &str = "https://api.kilocode.ai/v1";
@@ -14,7 +64,6 @@ pub async fn send_chat_message(
     prompt: String,
     history: Vec<Message>,
     model_id: String,
-    ai_studio_model_id: Option<String>,
     publisher: String,
     endpoint: String,
     api_key: String,
@@ -29,19 +78,19 @@ pub async fn send_chat_message(
     custom_password: Option<String>,
     attached_file: Option<AttachedFile>,
     service_tier: Option<String>,
+    use_search: bool,
 ) -> Result<ChatResponse, String> {
     let client = Client::new();
 
-    let url = build_url(
+    let mut url = build_url(
         &endpoint,
         &publisher,
         &model_id,
-        ai_studio_model_id.as_deref(),
         &project_id,
         custom_url.as_deref(),
     )?;
 
-    let payload = build_payload(
+    let mut payload = build_payload(
         &publisher,
         &prompt,
         &history,
@@ -54,71 +103,25 @@ pub async fn send_chat_message(
         &endpoint,
         &model_id,
         service_tier.as_deref(),
+        use_search,
     )?;
 
-    let mut request = client.post(&url).json(&payload);
-
-    match endpoint.as_str() {
-        "ai_studio" => {
-            request = request.header("x-goog-api-key", &api_key);
-        }
-        "vertex_ai" => {
-            // Always prefer service account for Vertex AI
-            let token = if crate::auth::has_service_account_key() {
-                crate::auth::get_access_token().await?
-            } else if !api_key.is_empty() {
-                // Fallback to API key if no service account (shouldn't happen but just in case)
-                api_key.clone()
-            } else {
-                return Err("Vertex AI requires a service account. Place your key at ~/.cortex-agent/vertex-key.json".to_string());
-            };
-            request = request.header("Authorization", format!("Bearer {}", token));
-        }
-        "openrouter" => {
-            request = request
-                .header("Authorization", format!("Bearer {}", api_key))
-                .header("HTTP-Referer", "https://cortex-agent.app")
-                .header("X-Title", "Cortex Agent");
-        }
-        "xai" | "kilocode" => {
-            request = request.header("Authorization", format!("Bearer {}", api_key));
-        }
-        "custom" => {
-            // Custom endpoint authentication: support both Basic auth (login:password) and Bearer token
-            if let (Some(login), Some(password)) = (&custom_login, &custom_password) {
-                if !login.is_empty() && !password.is_empty() {
-                    // Use Basic authentication
-                    use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-                    let credentials = BASE64.encode(format!("{}:{}", login, password));
-                    request = request.header("Authorization", format!("Basic {}", credentials));
-                } else if !password.is_empty() {
-                    // Use Bearer token if only password is provided
-                    request = request.header("Authorization", format!("Bearer {}", password));
-                }
-            } else if let Some(ref password) = custom_password {
-                if !password.is_empty() {
-                    request = request.header("Authorization", format!("Bearer {}", password));
-                }
-            }
-        }
-        _ => {}
+    // If payload signals xAI Responses API, redirect URL and strip sentinel
+    if payload.get("_xai_use_responses_api").and_then(|v| v.as_bool()).unwrap_or(false) {
+        payload.as_object_mut().map(|m| m.remove("_xai_use_responses_api"));
+        url = format!("{}/responses", XAI_ENDPOINT);
     }
 
-    if publisher == "anthropic" {
-        let mut beta_headers = Vec::new();
-        // Extended thinking for Claude 4 models
-        if let Some(ref level) = thinking_level {
-            if level != "none" && !level.is_empty() {
-                beta_headers.push("interleaved-thinking-2025-05-14");
-            }
-        }
-        if use_memory {
-            beta_headers.push("context-management-2025-06-27");
-        }
-        if !beta_headers.is_empty() {
-            request = request.header("anthropic-beta", beta_headers.join(","));
-        }
-    }
+    let request = apply_auth_headers(
+        client.post(&url).json(&payload),
+        &endpoint,
+        &publisher,
+        &api_key,
+        custom_login.as_deref(),
+        custom_password.as_deref(),
+        thinking_level.as_deref(),
+        use_memory,
+    );
 
     let response = request
         .send()
@@ -139,70 +142,461 @@ pub async fn send_chat_message(
     parse_response(&body, &publisher, include_thoughts, &prompt)
 }
 
-pub async fn generate_image(
-    prompt: String,
-    api_key: String,
-    edit_image: Option<String>,
-    edit_image_mime_type: Option<String>,
-    model_id: Option<String>,
-    search_mode: Option<String>,
-) -> Result<String, String> {
-    let client = Client::new();
-    let model = model_id.unwrap_or_else(|| "gemini-3-pro-image-preview".to_string());
-    let url = format!(
-        "{}/v1beta/models/{}:generateContent",
-        AI_STUDIO_ENDPOINT, model
-    );
+// ── Auth helper ──────────────────────────────────────────────────────────────
 
-    let mut parts = vec![json!({"text": prompt})];
-
-    if let Some(image_data) = edit_image {
-        let mime_type = edit_image_mime_type.unwrap_or_else(|| "image/png".to_string());
-        parts.push(json!({
-            "inline_data": {
-                "mime_type": mime_type,
-                "data": image_data
+/// Attach the correct Authorization (and optional Anthropic beta) headers to a request.
+pub(crate) fn apply_auth_headers(
+    mut request: reqwest::RequestBuilder,
+    endpoint: &str,
+    publisher: &str,
+    api_key: &str,
+    custom_login: Option<&str>,
+    custom_password: Option<&str>,
+    thinking_level: Option<&str>,
+    use_memory: bool,
+) -> reqwest::RequestBuilder {
+    match endpoint {
+        "openrouter" => {
+            request = request
+                .header("Authorization", format!("Bearer {}", api_key))
+                .header("HTTP-Referer", "https://grok-agent.app")
+                .header("X-Title", "Grok Agent");
+        }
+        "xai" | "kilocode" => {
+            request = request.header("Authorization", format!("Bearer {}", api_key));
+        }
+        "custom" => {
+            if let (Some(login), Some(password)) = (custom_login, custom_password) {
+                if !login.is_empty() && !password.is_empty() {
+                    let credentials = BASE64.encode(format!("{}:{}", login, password));
+                    request = request.header("Authorization", format!("Basic {}", credentials));
+                } else if !password.is_empty() {
+                    request = request.header("Authorization", format!("Bearer {}", password));
+                }
+            } else if let Some(password) = custom_password {
+                if !password.is_empty() {
+                    request = request.header("Authorization", format!("Bearer {}", password));
+                }
             }
-        }));
-    }
-
-    let mut payload = json!({
-        "contents": [{
-            "parts": parts
-        }],
-        "generationConfig": {
-            "responseModalities": ["TEXT", "IMAGE"]
-        }
-    });
-
-    match search_mode.as_deref() {
-        Some("web") => {
-            payload["tools"] = json!([{
-                "google_search": {
-                    "search_types": ["web_search"]
-                }
-            }]);
-        }
-        Some("web_images") => {
-            payload["tools"] = json!([{
-                "google_search": {
-                    "search_types": ["web_search", "image_search"]
-                }
-            }]);
-        }
-        Some("reference") => {
-            payload["tools"] = json!([{
-                "google_search": {
-                    "search_types": ["web_search", "image_search"]
-                }
-            }]);
         }
         _ => {}
     }
 
+    if publisher == "anthropic" {
+        let mut beta_headers: Vec<&str> = Vec::new();
+        if let Some(level) = thinking_level {
+            if level != "none" && !level.is_empty() {
+                beta_headers.push("interleaved-thinking-2025-05-14");
+            }
+        }
+        if use_memory {
+            beta_headers.push("context-management-2025-06-27");
+        }
+        if !beta_headers.is_empty() {
+            request = request.header("anthropic-beta", beta_headers.join(","));
+        }
+    }
+
+    request
+}
+
+// ── SSE streaming ─────────────────────────────────────────────────────────────
+
+/// Parse a single SSE `data: ...` line and emit a `chat-stream-token` event if it
+/// carries a text delta.  Mutates the running token-count accumulators.
+fn process_sse_line(
+    line: &str,
+    publisher: &str,
+    task_id: &str,
+    app_handle: &AppHandle,
+    full_content: &mut String,
+    input_tokens: &mut u32,
+    output_tokens: &mut u32,
+) {
+    if !line.starts_with("data: ") {
+        return;
+    }
+    let data = &line[6..];
+    if data == "[DONE]" {
+        return;
+    }
+
+    let Ok(json) = serde_json::from_str::<Value>(data) else { return };
+
+    // ── Extract text delta ──────────────────────────────────────────────────
+    let token: Option<String> = if publisher == "anthropic" {
+        // {"type":"content_block_delta","delta":{"type":"text_delta","text":"…"}}
+        json.get("delta")
+            .filter(|d| {
+                d.get("type").and_then(|t| t.as_str()) == Some("text_delta")
+            })
+            .and_then(|d| d.get("text").and_then(|t| t.as_str()).map(|s| s.to_string()))
+    } else {
+        // OpenAI/xAI: {"choices":[{"delta":{"content":"…"}}]}
+        json.get("choices")
+            .and_then(|c| c.as_array())
+            .and_then(|arr| arr.first())
+            .and_then(|ch| ch.get("delta"))
+            .and_then(|d| d.get("content"))
+            .and_then(|c| c.as_str())
+            .map(|s| s.to_string())
+    };
+
+    if let Some(tok) = token {
+        if !tok.is_empty() {
+            full_content.push_str(&tok);
+            let _ = app_handle.emit(
+                "chat-stream-token",
+                json!({ "taskId": task_id, "content": tok }),
+            );
+        }
+    }
+
+    // ── Extract usage (arrives in the last chunk for both formats) ──────────
+    if let Some(usage) = json.get("usage") {
+        if let Some(n) = usage
+            .get("prompt_tokens")
+            .or_else(|| usage.get("input_tokens"))
+            .and_then(|t| t.as_u64())
+        {
+            *input_tokens = n as u32;
+        }
+        if let Some(n) = usage
+            .get("completion_tokens")
+            .or_else(|| usage.get("output_tokens"))
+            .and_then(|t| t.as_u64())
+        {
+            *output_tokens = n as u32;
+        }
+    }
+    // Anthropic: message_start has usage inside "message"
+    if let Some(msg) = json.get("message") {
+        if let Some(usage) = msg.get("usage") {
+            if let Some(n) = usage.get("input_tokens").and_then(|t| t.as_u64()) {
+                *input_tokens = n as u32;
+            }
+        }
+    }
+}
+
+/// Stream a chat completion token-by-token, emitting `chat-stream-token` events
+/// and a final `chat-stream-done` event.  Falls back to buffered mode for
+/// endpoints that do not support streaming (e.g. xAI Responses API / search).
+pub async fn stream_chat_message(
+    app_handle: AppHandle,
+    task_id: String,
+    prompt: String,
+    history: Vec<Message>,
+    model_id: String,
+    publisher: String,
+    endpoint: String,
+    api_key: String,
+    project_id: String,
+    use_1m_context: bool,
+    use_memory: bool,
+    use_grounding: bool,
+    thinking_level: Option<String>,
+    include_thoughts: bool,
+    custom_url: Option<String>,
+    custom_login: Option<String>,
+    custom_password: Option<String>,
+    attached_file: Option<AttachedFile>,
+    service_tier: Option<String>,
+    use_search: bool,
+) -> Result<(), String> {
+    let client = Client::new();
+
+    let url = build_url(&endpoint, &publisher, &model_id, &project_id, custom_url.as_deref())?;
+
+    let mut payload = build_payload(
+        &publisher,
+        &prompt,
+        &history,
+        use_1m_context,
+        use_memory,
+        use_grounding,
+        thinking_level.as_deref(),
+        include_thoughts,
+        attached_file.as_ref(),
+        &endpoint,
+        &model_id,
+        service_tier.as_deref(),
+        use_search,
+    )?;
+
+    // xAI Responses API (use_search) does not support streaming — fall back.
+    if payload
+        .get("_xai_use_responses_api")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
+        let result = send_chat_message(
+            prompt.clone(), history, model_id, publisher, endpoint, api_key,
+            project_id, use_1m_context, use_memory, use_grounding, thinking_level,
+            include_thoughts, custom_url, custom_login, custom_password,
+            attached_file, service_tier, use_search,
+        )
+        .await?;
+        let _ = app_handle.emit(
+            "chat-stream-token",
+            json!({ "taskId": task_id, "content": result.content }),
+        );
+        let _ = app_handle.emit(
+            "chat-stream-done",
+            json!({
+                "taskId": task_id,
+                "inputTokens": result.input_tokens,
+                "outputTokens": result.output_tokens,
+            }),
+        );
+        return Ok(());
+    }
+
+    // Enable streaming for OpenAI/xAI (Anthropic already has stream:true in payload).
+    if publisher != "anthropic" {
+        payload["stream"] = json!(true);
+        // stream requires messages format, not Responses API format
+        payload.as_object_mut().map(|m| m.remove("_xai_use_responses_api"));
+    }
+
+    let request = apply_auth_headers(
+        client.post(&url).json(&payload),
+        &endpoint,
+        &publisher,
+        &api_key,
+        custom_login.as_deref(),
+        custom_password.as_deref(),
+        thinking_level.as_deref(),
+        use_memory,
+    );
+
+    let response = request
+        .send()
+        .await
+        .map_err(|e| format!("Stream request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("API error {}: {}", status, body));
+    }
+
+    let mut full_content = String::new();
+    let mut input_tokens: u32 = (prompt.len() / 4) as u32;
+    let mut output_tokens: u32 = 0;
+    let mut buffer = String::new();
+
+    let mut byte_stream = response.bytes_stream();
+    while let Some(chunk) = byte_stream.next().await {
+        let chunk = chunk.map_err(|e| format!("Stream read error: {}", e))?;
+        buffer.push_str(&String::from_utf8_lossy(&chunk));
+
+        // Drain complete lines from the buffer
+        loop {
+            match buffer.find('\n') {
+                Some(pos) => {
+                    let line = buffer[..pos].trim_end_matches('\r').to_string();
+                    buffer = buffer[pos + 1..].to_string();
+                    process_sse_line(
+                        &line,
+                        &publisher,
+                        &task_id,
+                        &app_handle,
+                        &mut full_content,
+                        &mut input_tokens,
+                        &mut output_tokens,
+                    );
+                }
+                None => break,
+            }
+        }
+    }
+
+    if output_tokens == 0 {
+        output_tokens = (full_content.len() / 4) as u32;
+    }
+
+    let _ = app_handle.emit(
+        "chat-stream-done",
+        json!({
+            "taskId": task_id,
+            "inputTokens": input_tokens,
+            "outputTokens": output_tokens,
+        }),
+    );
+
+    Ok(())
+}
+
+/// Map aspect ratio string to (width, height) per xAI docs
+fn aspect_ratio_to_dims(ratio: &str) -> (u32, u32) {
+    match ratio {
+        "16:9"  => (1344, 768),
+        "9:16"  => (768, 1344),
+        "3:2"   => (1152, 768),
+        "2:3"   => (768, 1152),
+        "4:3"   => (1152, 864),
+        "3:4"   => (864, 1152),
+        _       => (1024, 1024), // 1:1 default
+    }
+}
+
+/// Extract cost in USD from `usage.cost_in_usd_ticks`.
+/// xAI defines: 1 USD = 10,000,000,000 ticks.
+fn ticks_to_usd(body: &Value) -> f64 {
+    body.get("usage")
+        .and_then(|u| u.get("cost_in_usd_ticks"))
+        .and_then(|t| t.as_i64())
+        .map(|ticks| ticks as f64 / 10_000_000_000.0)
+        .unwrap_or(0.0)
+}
+
+/// Build the xAI base URL for image requests, optionally scoped to a region.
+/// Supported regions: "us-east-1", "eu-west-1".  Anything else → global api.x.ai.
+fn xai_image_base(region: Option<&str>) -> String {
+    match region {
+        Some("us-east-1") => "https://us-east-1.api.x.ai/v1".to_string(),
+        Some("eu-west-1")  => "https://eu-west-1.api.x.ai/v1".to_string(),
+        _ => XAI_ENDPOINT.to_string(),
+    }
+}
+
+pub async fn generate_image(
+    prompt: String,
+    api_key: String,
+    edit_image: Option<String>,
+    _edit_image_mime_type: Option<String>,
+    model_id: Option<String>,
+    _search_mode: Option<String>,
+    aspect_ratio: Option<String>,
+    region: Option<String>,
+    resolution: Option<String>,
+) -> Result<ImageResponse, String> {
+    let client = Client::new();
+    let model = model_id.unwrap_or_else(|| "grok-imagine-image-quality".to_string());
+    let base = xai_image_base(region.as_deref());
+    let (width, height) = aspect_ratio_to_dims(aspect_ratio.as_deref().unwrap_or("1:1"));
+    // "1k" | "2k" — only send when explicitly provided (API defaults to 1k)
+    let res_str = resolution.as_deref().unwrap_or("1k");
+
+    if let Some(image_data) = edit_image {
+        // Image editing endpoint
+        let url = format!("{}/images/edits", base);
+        info!("[generate_image] POST {} model={} {}x{} res={} region={:?}", url, model, width, height, res_str, region);
+        let payload = json!({
+            "model": model,
+            "prompt": prompt,
+            "image": {
+                "url": format!("data:image/png;base64,{}", image_data),
+                "type": "image_url"
+            },
+            "n": 1,
+            "width": width,
+            "height": height,
+            "resolution": res_str,
+            "response_format": "b64_json",
+        });
+
+        let response = client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", api_key))
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| format!("Request failed: {}", e))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(format!("API error {}: {}", status, body));
+        }
+
+        let body: Value = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse response: {}", e))?;
+
+        let cost_usd = ticks_to_usd(&body);
+
+        if let Some(data) = body.get("data").and_then(|d| d.as_array()).and_then(|arr| arr.first()) {
+            if let Some(b64) = data.get("b64_json").and_then(|b| b.as_str()) {
+                info!("[generate_image] edit done cost=${:.4}", cost_usd);
+                return Ok(ImageResponse { image: b64.to_string(), cost_usd });
+            }
+        }
+        Err("No image data in response".to_string())
+    } else {
+        // Image generation endpoint
+        let url = format!("{}/images/generations", base);
+        info!("[generate_image] POST {} model={} {}x{} res={} region={:?}", url, model, width, height, res_str, region);
+        let payload = json!({
+            "model": model,
+            "prompt": prompt,
+            "n": 1,
+            "width": width,
+            "height": height,
+            "resolution": res_str,
+            "response_format": "b64_json",
+        });
+
+        let response = client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", api_key))
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| format!("Request failed: {}", e))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(format!("API error {}: {}", status, body));
+        }
+
+        let body: Value = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse response: {}", e))?;
+
+        let cost_usd = ticks_to_usd(&body);
+
+        if let Some(data) = body.get("data").and_then(|d| d.as_array()).and_then(|arr| arr.first()) {
+            if let Some(b64) = data.get("b64_json").and_then(|b| b.as_str()) {
+                info!("[generate_image] generation done cost=${:.4}", cost_usd);
+                return Ok(ImageResponse { image: b64.to_string(), cost_usd });
+            }
+        }
+        Err("No image data in response".to_string())
+    }
+}
+
+pub async fn generate_video(
+    app_handle: tauri::AppHandle,
+    prompt: String,
+    api_key: String,
+    model_id: Option<String>,
+    duration_seconds: Option<u32>,
+    aspect_ratio: Option<String>,
+) -> Result<Value, String> {
+    let client = Client::new();
+    let model = model_id.unwrap_or_else(|| "grok-imagine-video".to_string());
+    let url = format!("{}/videos/generations", XAI_ENDPOINT);
+    info!("[generate_video] POST {} model={}", url, model);
+
+    let mut payload = json!({
+        "model": model,
+        "prompt": prompt,
+        "duration": duration_seconds.unwrap_or(10),
+    });
+    if let Some(ref ar) = aspect_ratio {
+        if !ar.is_empty() {
+            payload["aspect_ratio"] = json!(ar);
+        }
+    }
+
     let response = client
         .post(&url)
-        .header("x-goog-api-key", &api_key)
+        .header("Authorization", format!("Bearer {}", api_key))
         .json(&payload)
         .send()
         .await
@@ -211,6 +605,7 @@ pub async fn generate_image(
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
+        info!("[generate_video] Submit error {}: {}", status, body);
         return Err(format!("API error {}: {}", status, body));
     }
 
@@ -219,186 +614,113 @@ pub async fn generate_image(
         .await
         .map_err(|e| format!("Failed to parse response: {}", e))?;
 
-    if let Some(candidates) = body.get("candidates").and_then(|c| c.as_array()) {
-        if let Some(first) = candidates.first() {
-            if let Some(parts) = first
-                .get("content")
-                .and_then(|c| c.get("parts"))
-                .and_then(|p| p.as_array())
-            {
-                for part in parts {
-                    if let Some(inline_data) = part.get("inlineData") {
-                        if let Some(data) = inline_data.get("data").and_then(|d| d.as_str()) {
-                            return Ok(data.to_string());
-                        }
-                    }
-                }
-            }
-        }
-    }
+    let request_id = body
+        .get("request_id")
+        .and_then(|v| v.as_str())
+        .ok_or("Missing request_id in response")?
+        .to_string();
 
-    Err("No image data in response".to_string())
-}
+    info!("[generate_video] request_id={} — polling every 5s (max 10 min)", request_id);
+    let _ = app_handle.emit("video-progress", json!({ "message": "Request submitted, waiting for xAI to process...", "elapsed": 0 }));
 
-/// Deep Research using the Interactions API
-/// This uses the background execution pattern with polling
-pub async fn deep_research(
-    prompt: String,
-    api_key: String,
-    timeout_minutes: u32,
-    model: Option<String>,
-) -> Result<ChatResponse, String> {
-    let client = Client::new();
-    
-    // Step 1: Start the research task in background
-    let create_url = format!("{}/v1beta/interactions", AI_STUDIO_ENDPOINT);
-    
-    let agent_model = model.unwrap_or_else(|| "deep-research-pro-preview-12-2025".to_string());
-    let create_payload = json!({
-        "input": prompt,
-        "agent": agent_model,
-        "background": true
-    });
-    
-    let create_response = client
-        .post(&create_url)
-        .header("x-goog-api-key", &api_key)
-        .header("Content-Type", "application/json")
-        .json(&create_payload)
-        .send()
-        .await
-        .map_err(|e| format!("Failed to start research: {}", e))?;
-    
-    if !create_response.status().is_success() {
-        let status = create_response.status();
-        let body = create_response.text().await.unwrap_or_default();
-        return Err(format!("Failed to start research {}: {}", status, body));
-    }
-    
-    let create_body: Value = create_response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse create response: {}", e))?;
-    
-    let interaction_id = create_body
-        .get("id")
-        .and_then(|id| id.as_str())
-        .ok_or_else(|| "No interaction ID in response".to_string())?;
-    
-    // Step 2: Poll for completion
-    let poll_url = format!("{}/v1beta/interactions/{}", AI_STUDIO_ENDPOINT, interaction_id);
-    let max_attempts = (timeout_minutes * 6) as usize; // 10s intervals = 6 per minute
-    
-    for attempt in 0..max_attempts {
-        tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
-        
-        let poll_response = client
+    let poll_url = format!("{}/videos/{}", XAI_ENDPOINT, request_id);
+    let start = std::time::Instant::now();
+
+    for poll in 1u32..=120 {
+        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+        let elapsed = start.elapsed().as_secs();
+
+        let poll_resp = client
             .get(&poll_url)
-            .header("x-goog-api-key", &api_key)
+            .header("Authorization", format!("Bearer {}", api_key))
             .send()
             .await
-            .map_err(|e| format!("Poll request failed: {}", e))?;
-        
-        if !poll_response.status().is_success() {
-            let status = poll_response.status();
-            let body = poll_response.text().await.unwrap_or_default();
-            return Err(format!("Poll failed {}: {}", status, body));
+            .map_err(|e| format!("Poll failed: {}", e))?;
+
+        if !poll_resp.status().is_success() {
+            let status = poll_resp.status();
+            let body = poll_resp.text().await.unwrap_or_default();
+            info!("[generate_video] Poll #{} error {}: {}", poll, status, body);
+            return Err(format!("Poll error {}: {}", status, body));
         }
-        
-        let poll_body: Value = poll_response
+
+        let poll_body: Value = poll_resp
             .json()
             .await
             .map_err(|e| format!("Failed to parse poll response: {}", e))?;
-        
-        let status = poll_body
+
+        let status_str = poll_body
             .get("status")
             .and_then(|s| s.as_str())
             .unwrap_or("unknown");
-        
-        match status {
-            "completed" => {
-                // Extract the final output
-                if let Some(outputs) = poll_body.get("outputs").and_then(|o| o.as_array()) {
-                    if let Some(last_output) = outputs.last() {
-                        if let Some(text) = last_output.get("text").and_then(|t| t.as_str()) {
-                            return Ok(ChatResponse {
-                                content: text.to_string(),
-                                raw_json: serde_json::to_string(&poll_body).unwrap_or_default(),
-                                input_tokens: 0,
-                                output_tokens: 0,
-                            });
-                        }
+
+        info!("[generate_video] Poll #{} status={} elapsed={}s", poll, status_str, elapsed);
+        let _ = app_handle.emit("video-progress", json!({
+            "message": format!("Processing… {}s elapsed (poll #{})", elapsed, poll),
+            "elapsed": elapsed,
+            "poll": poll,
+            "status": status_str
+        }));
+
+        match status_str {
+            "succeeded" | "done" => {
+                if let Some(video) = poll_body.get("video") {
+                    if let Some(url_val) = video.get("url").and_then(|u| u.as_str()) {
+                        // Prefer video.id; fall back to request_id for extension calls
+                        let video_id = video
+                            .get("id")
+                            .and_then(|i| i.as_str())
+                            .unwrap_or(&request_id)
+                            .to_string();
+                        info!("[generate_video] Done in {}s — url={} id={}", elapsed, url_val, video_id);
+                        return Ok(json!({ "url": url_val, "videoId": video_id }));
                     }
                 }
-                return Err("No output text in completed research".to_string());
+                return Err("Video succeeded but no URL found".to_string());
             }
             "failed" => {
-                let error = poll_body
+                let err = poll_body
                     .get("error")
                     .and_then(|e| e.as_str())
                     .unwrap_or("Unknown error");
-                return Err(format!("Research failed: {}", error));
+                info!("[generate_video] Failed: {}", err);
+                return Err(format!("Video generation failed: {}", err));
             }
-            "running" | "pending" => {
-                // Continue polling
-                continue;
-            }
-            _ => {
-                // Unknown status, log and continue
-                eprintln!("Unknown research status: {} (attempt {})", status, attempt);
-            }
+            _ => continue,
         }
     }
-    
-    Err(format!("Research timed out after {} minutes", timeout_minutes))
+    Err("Video generation timed out after 10 minutes".to_string())
 }
 
-pub async fn layout_parse(
-    file_data: String,
-    mime_type: String,
-    mode: String,
+/// Extend an existing video by appending another segment.
+/// Uses POST /v1/videos/extensions with the source video_id.
+pub async fn extend_video(
+    app_handle: tauri::AppHandle,
+    video_id: String,
     api_key: String,
-    system_prompt: String,
-) -> Result<String, String> {
+    model_id: Option<String>,
+    duration_seconds: Option<u32>,
+    prompt: Option<String>,
+) -> Result<Value, String> {
     let client = Client::new();
+    let model = model_id.unwrap_or_else(|| "grok-imagine-video".to_string());
+    let url = format!("{}/videos/extensions", XAI_ENDPOINT);
+    info!("[extend_video] POST {} model={} video_id={}", url, model, video_id);
 
-    let model = "gemini-2.5-flash";
-    let url = format!(
-        "{}/v1beta/models/{}:generateContent",
-        AI_STUDIO_ENDPOINT, model
-    );
-
-    let payload = json!({
-        "systemInstruction": {
-            "parts": [{"text": system_prompt}]
-        },
-        "contents": [{
-            "parts": [
-                {
-                    "inline_data": {
-                        "mime_type": mime_type,
-                        "data": file_data
-                    }
-                },
-                {
-                    "text": match mode.as_str() {
-                        "ocr" => "Parse this document completely. Extract all text, layout elements, headings, tables, figures, headers, and footers with full structural awareness.",
-                        "rag" => "Create context-aware chunks from this document optimized for search and RAG retrieval. Each chunk must include ancestral headings and be self-contained.",
-                        "structured" => "Extract all structured data from this document into a clean JSON format. Include tables, key-value pairs, figures, sections, and any financial or form data.",
-                        _ => "Parse this document and extract its content."
-                    }
-                }
-            ]
-        }],
-        "generationConfig": {
-            "maxOutputTokens": 65536
-        }
+    let mut payload = json!({
+        "model": model,
+        "video_id": video_id,
+        "duration": duration_seconds.unwrap_or(10),
     });
+    if let Some(ref p) = prompt {
+        if !p.is_empty() {
+            payload["prompt"] = json!(p);
+        }
+    }
 
     let response = client
         .post(&url)
-        .header("x-goog-api-key", &api_key)
-        .header("Content-Type", "application/json")
+        .header("Authorization", format!("Bearer {}", api_key))
         .json(&payload)
         .send()
         .await
@@ -410,308 +732,122 @@ pub async fn layout_parse(
         return Err(format!("API error {}: {}", status, body));
     }
 
-    let body: Value = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+    let body: Value = response.json().await.map_err(|e| format!("Parse error: {}", e))?;
 
-    if let Some(candidates) = body.get("candidates").and_then(|c| c.as_array()) {
-        if let Some(first) = candidates.first() {
-            if let Some(parts) = first
-                .get("content")
-                .and_then(|c| c.get("parts"))
-                .and_then(|p| p.as_array())
-            {
-                let mut result = String::new();
-                for part in parts {
-                    if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
-                        result.push_str(text);
-                    }
-                }
-                if !result.is_empty() {
-                    return Ok(result);
-                }
-            }
-        }
-    }
-
-    Err("No content in response".to_string())
-}
-
-// --- File Search RAG ---
-
-pub async fn rag_create_store(api_key: String, display_name: String) -> Result<Value, String> {
-    let client = Client::new();
-    let url = format!("{}/v1beta/fileSearchStores?key={}", AI_STUDIO_ENDPOINT, api_key);
-    let resp = client
-        .post(&url)
-        .json(&json!({ "displayName": display_name }))
-        .send()
-        .await
-        .map_err(|e| format!("Request failed: {}", e))?;
-    if !resp.status().is_success() {
-        let body = resp.text().await.unwrap_or_default();
-        return Err(format!("API error: {}", body));
-    }
-    resp.json::<Value>().await.map_err(|e| format!("Parse error: {}", e))
-}
-
-pub async fn rag_list_stores(api_key: String) -> Result<Value, String> {
-    let client = Client::new();
-    let url = format!("{}/v1beta/fileSearchStores?key={}", AI_STUDIO_ENDPOINT, api_key);
-    let resp = client.get(&url).send().await.map_err(|e| format!("Request failed: {}", e))?;
-    if !resp.status().is_success() {
-        let body = resp.text().await.unwrap_or_default();
-        return Err(format!("API error: {}", body));
-    }
-    resp.json::<Value>().await.map_err(|e| format!("Parse error: {}", e))
-}
-
-pub async fn rag_delete_store(api_key: String, store_name: String) -> Result<Value, String> {
-    let client = Client::new();
-    let url = format!("{}/v1beta/{}?key={}&force=true", AI_STUDIO_ENDPOINT, store_name, api_key);
-    let resp = client.delete(&url).send().await.map_err(|e| format!("Request failed: {}", e))?;
-    if !resp.status().is_success() {
-        let body = resp.text().await.unwrap_or_default();
-        return Err(format!("API error: {}", body));
-    }
-    resp.json::<Value>().await.map_err(|e| format!("Parse error: {}", e))
-}
-
-pub async fn rag_upload_file(api_key: String, store_name: String, file_data: String, mime_type: String, display_name: String) -> Result<Value, String> {
-    let client = Client::new();
-
-    let upload_url = format!("{}/upload/v1beta/files?key={}", AI_STUDIO_ENDPOINT, api_key);
-    let decoded = BASE64.decode(&file_data).map_err(|e| format!("Base64 decode error: {}", e))?;
-    let resp = client
-        .post(&upload_url)
-        .header("X-Goog-Upload-Protocol", "raw")
-        .header("Content-Type", &mime_type)
-        .header("X-Goog-Upload-Header-Content-Type", &mime_type)
-        .body(decoded)
-        .send()
-        .await
-        .map_err(|e| format!("Upload failed: {}", e))?;
-    if !resp.status().is_success() {
-        let body = resp.text().await.unwrap_or_default();
-        return Err(format!("Upload error: {}", body));
-    }
-    let upload_result: Value = resp.json().await.map_err(|e| format!("Parse error: {}", e))?;
-    let file_name = upload_result["file"]["name"].as_str().ok_or("Missing file name in upload response")?;
-
-    let import_url = format!("{}/v1beta/{}:importFile?key={}", AI_STUDIO_ENDPOINT, store_name, api_key);
-    let import_resp = client
-        .post(&import_url)
-        .json(&json!({ "fileName": file_name, "displayName": display_name }))
-        .send()
-        .await
-        .map_err(|e| format!("Import failed: {}", e))?;
-    if !import_resp.status().is_success() {
-        let body = import_resp.text().await.unwrap_or_default();
-        return Err(format!("Import error: {}", body));
-    }
-    import_resp.json::<Value>().await.map_err(|e| format!("Parse error: {}", e))
-}
-
-pub async fn rag_list_files(api_key: String, store_name: String) -> Result<Value, String> {
-    let client = Client::new();
-    let url = format!("{}/v1beta/{}/files?key={}", AI_STUDIO_ENDPOINT, store_name, api_key);
-    let resp = client.get(&url).send().await.map_err(|e| format!("Request failed: {}", e))?;
-    if !resp.status().is_success() {
-        let body = resp.text().await.unwrap_or_default();
-        return Err(format!("API error: {}", body));
-    }
-    resp.json::<Value>().await.map_err(|e| format!("Parse error: {}", e))
-}
-
-pub async fn rag_delete_file(api_key: String, file_name: String) -> Result<Value, String> {
-    let client = Client::new();
-    let url = format!("{}/v1beta/{}?key={}", AI_STUDIO_ENDPOINT, file_name, api_key);
-    let resp = client.delete(&url).send().await.map_err(|e| format!("Request failed: {}", e))?;
-    if !resp.status().is_success() {
-        let body = resp.text().await.unwrap_or_default();
-        return Err(format!("API error: {}", body));
-    }
-    Ok(json!({"deleted": true}))
-}
-
-pub async fn rag_query(api_key: String, store_names: Vec<String>, query: String, model: String) -> Result<Value, String> {
-    let client = Client::new();
-    let model_id = if model.is_empty() { "gemini-3-flash-preview" } else { &model };
-    let url = format!("{}/v1beta/models/{}:generateContent?key={}", AI_STUDIO_ENDPOINT, model_id, api_key);
-
-    let payload = json!({
-        "contents": [{ "parts": [{ "text": query }] }],
-        "tools": [{
-            "fileSearch": {
-                "fileSearchStoreNames": store_names
-            }
-        }],
-        "generationConfig": { "maxOutputTokens": 65536 }
-    });
-
-    let resp = client
-        .post(&url)
-        .json(&payload)
-        .timeout(std::time::Duration::from_secs(300))
-        .send()
-        .await
-        .map_err(|e| format!("Request failed: {}", e))?;
-    if !resp.status().is_success() {
-        let body = resp.text().await.unwrap_or_default();
-        return Err(format!("API error: {}", body));
-    }
-    let body: Value = resp.json().await.map_err(|e| format!("Parse error: {}", e))?;
-
-    let text = body["candidates"][0]["content"]["parts"][0]["text"]
-        .as_str()
-        .unwrap_or("")
+    let request_id = body
+        .get("request_id")
+        .and_then(|v| v.as_str())
+        .ok_or("Missing request_id")?
         .to_string();
 
-    let grounding = body["candidates"][0]
-        .get("groundingMetadata")
-        .cloned()
-        .unwrap_or(json!(null));
+    info!("[extend_video] request_id={} — polling", request_id);
+    let _ = app_handle.emit("video-progress", json!({ "message": "Extension submitted, processing…", "elapsed": 0 }));
 
-    Ok(json!({ "text": text, "groundingMetadata": grounding }))
+    let poll_url = format!("{}/videos/{}", XAI_ENDPOINT, request_id);
+    let start = std::time::Instant::now();
+
+    for poll in 1u32..=120 {
+        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+        let elapsed = start.elapsed().as_secs();
+
+        let poll_resp = client
+            .get(&poll_url)
+            .header("Authorization", format!("Bearer {}", api_key))
+            .send()
+            .await
+            .map_err(|e| format!("Poll failed: {}", e))?;
+
+        if !poll_resp.status().is_success() {
+            let status = poll_resp.status();
+            let body = poll_resp.text().await.unwrap_or_default();
+            return Err(format!("Poll error {}: {}", status, body));
+        }
+
+        let poll_body: Value = poll_resp.json().await.map_err(|e| format!("Parse error: {}", e))?;
+        let status_str = poll_body.get("status").and_then(|s| s.as_str()).unwrap_or("unknown");
+
+        let _ = app_handle.emit("video-progress", json!({
+            "message": format!("Extending… {}s elapsed (poll #{})", elapsed, poll),
+            "elapsed": elapsed,
+            "poll": poll,
+            "status": status_str
+        }));
+
+        match status_str {
+            "succeeded" | "done" => {
+                if let Some(video) = poll_body.get("video") {
+                    if let Some(url_val) = video.get("url").and_then(|u| u.as_str()) {
+                        let new_video_id = video
+                            .get("id")
+                            .and_then(|i| i.as_str())
+                            .unwrap_or(&request_id)
+                            .to_string();
+                        info!("[extend_video] Done in {}s — url={}", elapsed, url_val);
+                        return Ok(json!({ "url": url_val, "videoId": new_video_id }));
+                    }
+                }
+                return Err("Extension succeeded but no URL found".to_string());
+            }
+            "failed" => {
+                let err = poll_body.get("error").and_then(|e| e.as_str()).unwrap_or("Unknown error");
+                return Err(format!("Video extension failed: {}", err));
+            }
+            _ => continue,
+        }
+    }
+    Err("Video extension timed out".to_string())
 }
 
-pub async fn rag_embed_content(api_key: String, text: String, task_type: Option<String>) -> Result<Value, String> {
+pub async fn download_video_to_disk(url: String, filename: String) -> Result<String, String> {
     let client = Client::new();
-    let url = format!("{}/v1beta/models/gemini-embedding-2:embedContent?key={}", AI_STUDIO_ENDPOINT, api_key);
-    let formatted_text = match task_type.as_deref() {
-        Some("SEMANTIC_SIMILARITY") => format!("task: sentence similarity | query: {}", text),
-        Some("RETRIEVAL_DOCUMENT") => format!("title: none | text: {}", text),
-        Some("RETRIEVAL_QUERY") => format!("task: search result | query: {}", text),
-        Some("CLASSIFICATION") => format!("task: classification | query: {}", text),
-        Some("CLUSTERING") => format!("task: clustering | query: {}", text),
-        _ => text,
-    };
-    let payload = json!({
-        "content": { "parts": [{ "text": formatted_text }] }
-    });
+    info!("[download_video] GET {}", url);
+
     let resp = client
-        .post(&url)
-        .json(&payload)
+        .get(&url)
         .send()
         .await
-        .map_err(|e| format!("Request failed: {}", e))?;
-    if !resp.status().is_success() {
-        let body = resp.text().await.unwrap_or_default();
-        return Err(format!("API error: {}", body));
-    }
-    let body: Value = resp.json().await.map_err(|e| format!("Parse error: {}", e))?;
-    let values = body["embedding"]["values"].clone();
-    Ok(json!({ "values": values, "dimensions": values.as_array().map(|a| a.len()).unwrap_or(0) }))
-}
+        .map_err(|e| format!("Download request failed: {}", e))?;
 
-pub async fn rag_embed_batch(api_key: String, texts: Vec<String>, task_type: Option<String>) -> Result<Value, String> {
-    let client = Client::new();
-    let url = format!("{}/v1beta/models/gemini-embedding-2:batchEmbedContents?key={}", AI_STUDIO_ENDPOINT, api_key);
-    let requests: Vec<Value> = texts.iter().map(|t| {
-        let formatted_text = match task_type.as_deref() {
-            Some("SEMANTIC_SIMILARITY") => format!("task: sentence similarity | query: {}", t),
-            Some("RETRIEVAL_DOCUMENT") => format!("title: none | text: {}", t),
-            Some("RETRIEVAL_QUERY") => format!("task: search result | query: {}", t),
-            Some("CLASSIFICATION") => format!("task: classification | query: {}", t),
-            Some("CLUSTERING") => format!("task: clustering | query: {}", t),
-            _ => t.to_string(),
-        };
-        json!({
-            "model": "models/gemini-embedding-2",
-            "content": { "parts": [{ "text": formatted_text }] }
-        })
-    }).collect();
-    let resp = client
-        .post(&url)
-        .json(&json!({ "requests": requests }))
-        .send()
+    if !resp.status().is_success() {
+        return Err(format!("Download failed with status {}", resp.status()));
+    }
+
+    let bytes = resp
+        .bytes()
         .await
-        .map_err(|e| format!("Request failed: {}", e))?;
-    if !resp.status().is_success() {
-        let body = resp.text().await.unwrap_or_default();
-        return Err(format!("API error: {}", body));
-    }
-    let body: Value = resp.json().await.map_err(|e| format!("Parse error: {}", e))?;
-    let embeddings = body["embeddings"].as_array()
-        .map(|arr| arr.iter().map(|e| e["values"].clone()).collect::<Vec<_>>())
-        .unwrap_or_default();
-    Ok(json!({ "embeddings": embeddings, "count": embeddings.len() }))
+        .map_err(|e| format!("Failed to read video bytes: {}", e))?;
+
+    let home = dirs::home_dir().ok_or("Could not find home directory")?;
+    let downloads = home.join("Downloads");
+    std::fs::create_dir_all(&downloads)
+        .map_err(|e| format!("Could not create Downloads directory: {}", e))?;
+
+    let path = downloads.join(&filename);
+    std::fs::write(&path, &bytes)
+        .map_err(|e| format!("Failed to write video file: {}", e))?;
+
+    let path_str = path.to_string_lossy().to_string();
+    info!("[download_video] Saved {} bytes → {}", bytes.len(), path_str);
+    Ok(path_str)
 }
 
-pub async fn speech_to_text(
-    audio_data: String,
-    mime_type: String,
-    language_code: String,
+pub async fn generate_speech(
+    text: String,
     api_key: String,
-    _project_id: String,
+    voice_id: Option<String>,
+    language: Option<String>,
 ) -> Result<String, String> {
     let client = Client::new();
-
-    let model = "gemini-2.5-flash";
-    let url = format!(
-        "{}/v1beta/models/{}:generateContent",
-        AI_STUDIO_ENDPOINT, model
-    );
-
-    let lang_label = match language_code.as_str() {
-        "en-US" => "English (US)",
-        "en-GB" => "English (UK)",
-        "ja-JP" => "Japanese",
-        "zh-CN" => "Chinese (Simplified)",
-        "zh-TW" => "Chinese (Traditional)",
-        "ko-KR" => "Korean",
-        "es-ES" => "Spanish",
-        "fr-FR" => "French",
-        "de-DE" => "German",
-        "pt-BR" => "Portuguese (Brazil)",
-        "it-IT" => "Italian",
-        "hi-IN" => "Hindi",
-        "ar-SA" => "Arabic",
-        "ru-RU" => "Russian",
-        "th-TH" => "Thai",
-        "vi-VN" => "Vietnamese",
-        _ => &language_code,
-    };
-
+    let url = format!("{}/tts", XAI_ENDPOINT);
     let payload = json!({
-        "systemInstruction": {
-            "parts": [{"text": format!(
-                "You are a verbatim speech transcription tool. Your ONLY job is to listen to the audio and write down EXACTLY what was said, word for word, in {}. \
-                Rules: \
-                1. Output ONLY the exact words spoken. Nothing else. \
-                2. Do NOT interpret, summarize, continue, or elaborate. \
-                3. Do NOT add any labels, timestamps, commentary, or markdown. \
-                4. If the audio is silent or unintelligible, output: [inaudible] \
-                5. Preserve natural sentence punctuation.",
-                lang_label
-            )}]
-        },
-        "contents": [{
-            "parts": [
-                {
-                    "inline_data": {
-                        "mime_type": mime_type,
-                        "data": audio_data
-                    }
-                },
-                {
-                    "text": "Transcribe this audio verbatim."
-                }
-            ]
-        }],
-        "generationConfig": {
-            "temperature": 0.0,
-            "topP": 1.0,
-            "topK": 1,
-            "maxOutputTokens": 65536
-        }
+        "text": text,
+        "voice_id": voice_id.unwrap_or_else(|| "eve".to_string()),
+        "language": language.unwrap_or_else(|| "en".to_string()),
     });
 
     let response = client
         .post(&url)
-        .header("x-goog-api-key", &api_key)
-        .header("Content-Type", "application/json")
+        .header("Authorization", format!("Bearer {}", api_key))
         .json(&payload)
         .send()
         .await
@@ -723,40 +859,18 @@ pub async fn speech_to_text(
         return Err(format!("API error {}: {}", status, body));
     }
 
-    let body: Value = response
-        .json()
+    let bytes = response
+        .bytes()
         .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+        .map_err(|e| format!("Failed to read audio data: {}", e))?;
 
-    if let Some(candidates) = body.get("candidates").and_then(|c| c.as_array()) {
-        if let Some(first) = candidates.first() {
-            if let Some(parts) = first
-                .get("content")
-                .and_then(|c| c.get("parts"))
-                .and_then(|p| p.as_array())
-            {
-                let mut result = String::new();
-                for part in parts {
-                    if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
-                        result.push_str(text);
-                    }
-                }
-                if !result.is_empty() {
-                    return Ok(result);
-                }
-            }
-        }
-    }
-
-    Err("No transcript in response. The audio may be too short, silent, or in an unsupported format.".to_string())
+    Ok(BASE64.encode(bytes))
 }
-
-fn build_url(
+pub(crate) fn build_url(
     endpoint: &str,
-    publisher: &str,
-    model_id: &str,
-    ai_studio_model_id: Option<&str>,
-    project_id: &str,
+    _publisher: &str,
+    _model_id: &str,
+    _project_id: &str,
     custom_url: Option<&str>,
 ) -> Result<String, String> {
     match endpoint {
@@ -765,26 +879,11 @@ fn build_url(
                 .map(|u| u.to_string())
                 .ok_or_else(|| "Custom URL required".to_string())
         }
-        "ai_studio" => {
-            let model = ai_studio_model_id.unwrap_or(model_id.split(':').next().unwrap_or(model_id));
-            Ok(format!(
-                "{}/v1beta/models/{}:streamGenerateContent",
-                AI_STUDIO_ENDPOINT, model
-            ))
-        }
-        "vertex_ai" => {
-            let parts: Vec<&str> = model_id.split(':').collect();
-            let model_path = parts.first().unwrap_or(&model_id);
-            let method = parts.get(1).unwrap_or(&"predict");
-            Ok(format!(
-                "{}/v1/projects/{}/locations/global/publishers/{}/models/{}:{}",
-                VERTEX_AI_ENDPOINT, project_id, publisher, model_path, method
-            ))
-        }
         "openrouter" => {
             Ok(format!("{}/chat/completions", OPENROUTER_ENDPOINT))
         }
         "xai" => {
+            // use_search is baked into the payload — URL selection handled in build_openai_payload
             Ok(format!("{}/chat/completions", XAI_ENDPOINT))
         }
         "kilocode" => {
@@ -794,19 +893,20 @@ fn build_url(
     }
 }
 
-fn build_payload(
+pub(crate) fn build_payload(
     publisher: &str,
     prompt: &str,
     history: &[Message],
     use_1m_context: bool,
     use_memory: bool,
-    use_grounding: bool,
+    _use_grounding: bool,
     thinking_level: Option<&str>,
-    include_thoughts: bool,
+    _include_thoughts: bool,
     attached_file: Option<&AttachedFile>,
-    endpoint: &str,
+    _endpoint: &str,
     model_id: &str,
-    service_tier: Option<&str>,
+    _service_tier: Option<&str>,
+    use_search: bool,
 ) -> Result<Value, String> {
     match publisher {
         "anthropic" => build_anthropic_payload(
@@ -817,23 +917,13 @@ fn build_payload(
             thinking_level,
             attached_file,
         ),
-        "google" => build_google_payload(
-            prompt,
-            history,
-            use_grounding,
-            thinking_level,
-            include_thoughts,
-            attached_file,
-            endpoint,
-            model_id,
-            service_tier,
-        ),
-        "openrouter" | "xai" | "kilocode" => build_openai_payload(
+        "xai" | "openrouter" | "kilocode" => build_openai_payload(
             prompt,
             history,
             attached_file,
             model_id,
             thinking_level,
+            use_search,
         ),
         _ => Err(format!("Unknown publisher: {}", publisher)),
     }
@@ -901,7 +991,7 @@ fn build_anthropic_payload(
     }));
 
     let mut payload = json!({
-        "anthropic_version": "vertex-2023-10-16",
+        "anthropic_version": "2023-06-01",
         "messages": messages,
         "stream": true
     });
@@ -937,96 +1027,7 @@ fn build_anthropic_payload(
     Ok(payload)
 }
 
-fn build_google_payload(
-    prompt: &str,
-    history: &[Message],
-    use_grounding: bool,
-    thinking_level: Option<&str>,
-    include_thoughts: bool,
-    attached_file: Option<&AttachedFile>,
-    endpoint: &str,
-    model_id: &str,
-    service_tier: Option<&str>,
-) -> Result<Value, String> {
-    let mut contents: Vec<Value> = history
-        .iter()
-        .map(|m| {
-            let role = if m.role == "assistant" { "model" } else { "user" };
-            json!({
-                "role": role,
-                "parts": [{"text": m.content}]
-            })
-        })
-        .collect();
 
-    let mut parts = Vec::new();
-
-    if let Some(file) = attached_file {
-        if file.mime_type.starts_with("image/") {
-            parts.push(json!({
-                "inline_data": {
-                    "mime_type": file.mime_type,
-                    "data": file.data
-                }
-            }));
-        } else {
-            if let Ok(decoded) = BASE64.decode(&file.data) {
-                if let Ok(text) = String::from_utf8(decoded) {
-                    parts.push(json!({
-                        "text": format!("[File: {}]\n{}\n[End of file]", file.path, text)
-                    }));
-                }
-            }
-        }
-    }
-
-    parts.push(json!({"text": prompt}));
-
-    contents.push(json!({
-        "role": "user",
-        "parts": parts
-    }));
-
-    let mut generation_config = json!({
-        "maxOutputTokens": 65536
-    });
-
-    // Only add thinking config for models that support it
-    let supports_thinking = model_id.contains("thinking") || 
-                            model_id.contains("gemini-3") || 
-                            model_id.contains("gemini-2.0-flash-thinking");
-    
-    if let Some(level) = thinking_level {
-        if supports_thinking && level != "none" {
-            generation_config["thinkingConfig"] = json!({
-                "includeThoughts": include_thoughts,
-                "thinkingLevel": level
-            });
-        }
-    }
-
-    let mut payload = json!({
-        "contents": contents,
-        "generationConfig": generation_config
-    });
-
-    if use_grounding {
-        let grounding_tool = if endpoint == "ai_studio" {
-            json!({"googleSearch": {}})
-        } else {
-            json!({"google_search": {}})
-        };
-        payload["tools"] = json!([grounding_tool]);
-    }
-
-    if let Some(tier) = service_tier {
-        if tier != "standard" && !tier.is_empty() {
-            payload["service_tier"] = json!(tier.to_uppercase());
-        }
-    }
-
-    Ok(payload)
-}
 
 fn build_openai_payload(
     prompt: &str,
@@ -1034,6 +1035,7 @@ fn build_openai_payload(
     attached_file: Option<&AttachedFile>,
     model_id: &str,
     thinking_level: Option<&str>,
+    use_search: bool,
 ) -> Result<Value, String> {
     let mut messages: Vec<Value> = history
         .iter()
@@ -1089,31 +1091,38 @@ fn build_openai_payload(
         "stream": false
     });
 
+    if use_search {
+        // xAI deprecated search_parameters (returns 410).
+        // New approach: Responses API at /v1/responses with tools=[{type:"x_search"}].
+        // We embed a sentinel so send_chat_message can redirect to the correct endpoint.
+        payload["_xai_use_responses_api"] = json!(true);
+        payload["tools"] = json!([{ "type": "x_search" }]);
+        // Responses API uses "input" not "messages"
+        if let Some(msgs) = payload.get("messages").cloned() {
+            payload["input"] = msgs;
+            payload.as_object_mut().map(|m| m.remove("messages"));
+        }
+        // Responses API uses "stream" differently — keep false for now
+        payload.as_object_mut().map(|m| m.remove("stream"));
+    }
+
+    // xAI reasoning: only "effort" field — valid values: low, medium, high, xhigh
+    // multi-agent: controls agent count (low/medium=4 agents, high/xhigh=16 agents)
     if let Some(level) = thinking_level {
-        if level != "none" {
-            let budget = match level {
-                "low" => 1024,
-                "medium" => 4096,
-                "high" => 16384,
-                _ => 4096,
-            };
-            payload["reasoning"] = json!({
-                "effort": level,
-                "budget_tokens": budget
-            });
+        if !level.is_empty() && level != "none" {
+            payload["reasoning"] = json!({ "effort": level });
         }
     }
 
     Ok(payload)
 }
 
-fn parse_response(body: &str, publisher: &str, include_thoughts: bool, prompt: &str) -> Result<ChatResponse, String> {
+fn parse_response(body: &str, publisher: &str, _include_thoughts: bool, prompt: &str) -> Result<ChatResponse, String> {
     let raw_json = body.to_string();
     let input_estimate = (prompt.len() / 4) as u32;
     
     match publisher {
         "anthropic" => parse_anthropic_response(body, raw_json, input_estimate),
-        "google" => parse_google_response(body, include_thoughts, raw_json, input_estimate),
         "openrouter" | "xai" | "kilocode" => parse_openai_response(body, raw_json, input_estimate),
         _ => Ok(ChatResponse {
             content: body.to_string(),
@@ -1207,136 +1216,7 @@ fn parse_anthropic_response(body: &str, raw_json: String, input_estimate: u32) -
     })
 }
 
-fn parse_google_response(body: &str, include_thoughts: bool, raw_json: String, input_estimate: u32) -> Result<ChatResponse, String> {
-    let mut full_text = String::new();
-    let mut thoughts_text = String::new();
-    let mut grounding_sources = Vec::new();
-    let mut input_tokens: u32 = input_estimate;
-    let mut output_tokens: u32 = 0;
 
-    let parse_candidate = |data: &Value| -> (String, String, Vec<(String, String)>, u32, u32) {
-        let mut text = String::new();
-        let mut thoughts = String::new();
-        let mut sources = Vec::new();
-        let mut in_tokens: u32 = 0;
-        let mut out_tokens: u32 = 0;
-
-        if let Some(candidates) = data.get("candidates").and_then(|c| c.as_array()) {
-            if let Some(candidate) = candidates.first() {
-                if let Some(parts) = candidate
-                    .get("content")
-                    .and_then(|c| c.get("parts"))
-                    .and_then(|p| p.as_array())
-                {
-                    for part in parts {
-                        if part.get("thought").and_then(|t| t.as_bool()).unwrap_or(false) {
-                            if let Some(t) = part.get("text").and_then(|t| t.as_str()) {
-                                thoughts.push_str(t);
-                                thoughts.push('\n');
-                            }
-                        } else if let Some(t) = part.get("text").and_then(|t| t.as_str()) {
-                            text.push_str(t);
-                        }
-                    }
-                }
-
-                if let Some(grounding) = candidate.get("groundingMetadata") {
-                    if let Some(chunks) = grounding.get("groundingChunks").and_then(|c| c.as_array()) {
-                        for chunk in chunks {
-                            if let Some(web) = chunk.get("web") {
-                                let title = web.get("title").and_then(|t| t.as_str()).unwrap_or("Source");
-                                let uri = web.get("uri").and_then(|u| u.as_str()).unwrap_or("#");
-                                sources.push((title.to_string(), uri.to_string()));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        if let Some(usage) = data.get("usageMetadata") {
-            if let Some(prompt_tokens) = usage.get("promptTokenCount").and_then(|t| t.as_u64()) {
-                in_tokens = prompt_tokens as u32;
-            }
-            if let Some(candidates_tokens) = usage.get("candidatesTokenCount").and_then(|t| t.as_u64()) {
-                out_tokens = candidates_tokens as u32;
-            }
-        }
-
-        (text, thoughts, sources, in_tokens, out_tokens)
-    };
-
-    if body.trim().starts_with('[') {
-        if let Ok(arr) = serde_json::from_str::<Vec<Value>>(body) {
-            for item in arr {
-                let (t, th, s, i, o) = parse_candidate(&item);
-                full_text.push_str(&t);
-                thoughts_text.push_str(&th);
-                grounding_sources.extend(s);
-                if i > 0 { input_tokens = i; }
-                output_tokens += o;
-            }
-        }
-    } else {
-        for line in body.lines() {
-            let line = line.trim().trim_end_matches(',');
-            if line.is_empty() {
-                continue;
-            }
-            if let Ok(data) = serde_json::from_str::<Value>(line) {
-                let (t, th, s, i, o) = parse_candidate(&data);
-                full_text.push_str(&t);
-                thoughts_text.push_str(&th);
-                grounding_sources.extend(s);
-                if i > 0 { input_tokens = i; }
-                output_tokens += o;
-            }
-        }
-    }
-
-    let mut output = String::new();
-
-    if !thoughts_text.is_empty() && include_thoughts {
-        output.push_str("DEEP THINKING PROCESS\n");
-        output.push_str(&"=".repeat(50));
-        output.push('\n');
-        output.push_str(thoughts_text.trim());
-        output.push_str("\n\n");
-    }
-
-    if !grounding_sources.is_empty() {
-        output.push_str("SEARCH SOURCES\n");
-        output.push_str(&"=".repeat(50));
-        output.push('\n');
-        let mut seen = std::collections::HashSet::new();
-        let mut idx = 1;
-        for (title, uri) in &grounding_sources {
-            if seen.insert(uri.clone()) {
-                output.push_str(&format!("[{}] {} ({})\n", idx, title, uri));
-                idx += 1;
-            }
-        }
-        output.push('\n');
-    }
-
-    if !output.is_empty() {
-        output.push_str("FINAL ANSWER\n");
-        output.push_str(&"=".repeat(50));
-        output.push('\n');
-    }
-    output.push_str(full_text.trim());
-
-    if output_tokens == 0 {
-        output_tokens = (output.len() / 4) as u32;
-    }
-
-    Ok(ChatResponse {
-        content: output,
-        raw_json,
-        input_tokens,
-        output_tokens,
-    })
-}
 
 fn parse_openai_response(body: &str, raw_json: String, input_estimate: u32) -> Result<ChatResponse, String> {
     let mut full_text = String::new();
@@ -1345,6 +1225,7 @@ fn parse_openai_response(body: &str, raw_json: String, input_estimate: u32) -> R
     let mut output_tokens: u32 = 0;
 
     if let Ok(data) = serde_json::from_str::<Value>(body) {
+        // --- Chat Completions API shape: choices[0].message.content ---
         if let Some(choices) = data.get("choices").and_then(|c| c.as_array()) {
             if let Some(choice) = choices.first() {
                 if let Some(message) = choice.get("message") {
@@ -1358,11 +1239,50 @@ fn parse_openai_response(body: &str, raw_json: String, input_estimate: u32) -> R
             }
         }
 
+        // --- xAI Responses API shape: output[].content[].text ---
+        if full_text.is_empty() {
+            if let Some(output_blocks) = data.get("output").and_then(|o| o.as_array()) {
+                for block in output_blocks {
+                    let block_type = block.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                    if block_type == "message" {
+                        if let Some(content_arr) = block.get("content").and_then(|c| c.as_array()) {
+                            for content_block in content_arr {
+                                if content_block.get("type").and_then(|t| t.as_str()) == Some("output_text") {
+                                    if let Some(text) = content_block.get("text").and_then(|t| t.as_str()) {
+                                        full_text.push_str(text);
+                                    }
+                                }
+                            }
+                        }
+                    } else if block_type == "reasoning" {
+                        if let Some(enc) = block.get("encrypted_content").and_then(|e| e.as_str()) {
+                            if !enc.is_empty() {
+                                reasoning_text.push_str("[encrypted reasoning]\n");
+                            }
+                        }
+                        // plain summary text
+                        if let Some(summary) = block.get("summary").and_then(|s| s.as_array()) {
+                            for s in summary {
+                                if let Some(t) = s.get("text").and_then(|t| t.as_str()) {
+                                    reasoning_text.push_str(t);
+                                    reasoning_text.push('\n');
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         if let Some(usage) = data.get("usage") {
-            if let Some(prompt_tokens) = usage.get("prompt_tokens").and_then(|t| t.as_u64()) {
+            if let Some(prompt_tokens) = usage.get("prompt_tokens")
+                .or_else(|| usage.get("input_tokens"))
+                .and_then(|t| t.as_u64()) {
                 input_tokens = prompt_tokens as u32;
             }
-            if let Some(completion_tokens) = usage.get("completion_tokens").and_then(|t| t.as_u64()) {
+            if let Some(completion_tokens) = usage.get("completion_tokens")
+                .or_else(|| usage.get("output_tokens"))
+                .and_then(|t| t.as_u64()) {
                 output_tokens = completion_tokens as u32;
             }
         }
@@ -1402,8 +1322,35 @@ Available tools:
 - write_file: Create or overwrite files (auto-creates parent directories)
 - read_file: Read file contents
 - edit_file: Targeted find-and-replace edits on existing files
+- delete_file: Delete a single file (auto-backs up as .bak before deleting). Use this instead of rm.
 - run_command: Execute shell commands (install deps, build, test, git, gh CLI, etc.)
 - list_directory: View the file tree of a directory
+- search_files: Search for a pattern across files (grep-style)
+- fetch_url: Fetch a web page and return its readable text. Use for reading docs, checking APIs, or web research.
+
+TASK FOCUS — READ THIS FIRST:
+- Start by doing the task, not by reading every file in the project.
+- Only read files that are DIRECTLY relevant to what was asked.
+- For simple tasks (write a file, delete a file, rename something): do it immediately in 1-2 tool calls.
+- Do NOT scan or read the entire codebase unless the task explicitly requires full understanding of it.
+- Wrong: reading package.json, Cargo.toml, README, App.tsx, models.ts just to write a FEATURES.md.
+- Right: write_file("FEATURES.md", content) immediately.
+- If asked to delete a file: call delete_file immediately. Do not read it first.
+- If asked to write a file: call write_file immediately with the content.
+
+AMBIGUOUS / OPEN-ENDED PROMPTS — CODE MODE RULES:
+- You are in CODE MODE. Your job is to IMPLEMENT, not to plan or advise.
+- "How to improve X", "what can be better", "improve this", "enhance this", "make it better":
+    1. Read only the most relevant source files (not the entire project).
+    2. Pick 2-3 specific concrete improvements.
+    3. IMPLEMENT them immediately: edit_file or write_file the actual source code changes.
+    4. Run a build/test command to verify.
+    5. Summarise what you changed in plain text.
+- "How to do X": DO IT. Write the code, run the commands, complete the work.
+- The phrase "Plan complete" is STRICTLY FORBIDDEN in code mode. Never output it.
+- Never end your response with "Let me know if you'd like to proceed". Always proceed.
+- If you find a PLAN.md or FEATURES.md, read it for context — then IMPLEMENT the code described, do not re-document it.
+- If the codebase is large and you are unsure which 2-3 improvements to make, pick the simplest high-value ones: add error handling, improve a UI label, fix a known issue, add a missing feature edge case.
 
 CRITICAL RULES:
 1. ALWAYS call tools to perform actions. Do not just explain code — write it using write_file.
@@ -1455,16 +1402,17 @@ Available tools:
 - list_directory: View the file tree of a directory
 
 YOUR TASK — PLANNING ONLY:
-1. Analyze the user's request thoroughly.
-2. Write a PLAN.md file containing: project overview, architecture, tech stack, folder structure, and a step-by-step implementation roadmap.
-3. Write config/scaffold files: package.json (with all dependencies), tsconfig.json, vite.config.ts, tailwind.config.js, or whatever configs the chosen stack requires.
-4. STOP after writing plan and config files.
+1. WRITE PLAN.md FIRST — immediately, in your very first tool call. Do not read files before writing. Use the working directory listing already provided plus your own knowledge to write a comprehensive plan.
+2. Only AFTER writing PLAN.md may you optionally read 1-2 specific files to refine or update it.
+3. Write relevant config/scaffold files if the user requested them (package.json, tsconfig.json, etc.).
+4. STOP after writing.
 
 CRITICAL RULES:
-1. Do NOT write any application source code — no components, pages, utilities, hooks, or styles.
-2. Do NOT run any commands — no npm install, no builds, no dev servers, no git commands.
-3. You may use read_file and list_directory to understand existing code if needed.
-4. After writing PLAN.md and config files, say "Plan complete" and STOP. Do not continue.
+1. Your FIRST tool call MUST be write_file("PLAN.md", ...) — never read_file or list_directory first.
+2. Do NOT write any application source code — no components, pages, utilities, hooks, or styles.
+3. Do NOT run any commands — no npm install, no builds, no dev servers, no git commands.
+4. Read at most 2 files total. Reading more wastes context and prevents you from writing.
+5. After writing PLAN.md, output exactly the text "Plan complete" and STOP. This phrase is ONLY valid in Plan mode.
 
 PATHS:
 - All file paths are relative to the working directory (provided separately).
@@ -1480,21 +1428,42 @@ pub async fn coding_agent_chat(
     working_dir: String,
     agent_timeout: Option<u64>,
     agent_mode: Option<String>,
+    thinking_level: Option<String>,
+    skills_context: Option<String>,
+    block_file_deletion: bool,
     app_handle: AppHandle,
     cancel_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    mcp_state: mcp::McpState,
 ) -> Result<Value, String> {
     let client = Client::new();
-    let tools = codegen::agent_tools_schema();
+
+    // Build tool list: built-in tools + all connected MCP tools
+    let mut tools = codegen::agent_tools_schema();
+    {
+        let mcp_tools = mcp::get_all_tools(&mcp_state).await;
+        if !mcp_tools.is_empty() {
+            info!("[agent] Adding {} MCP tool(s) to schema", mcp_tools.len());
+        }
+        for (_server, namespaced_name, tool) in &mcp_tools {
+            tools.push(json!({
+                "name": namespaced_name,
+                "description": format!("[MCP] {}", tool.description.as_deref().unwrap_or(&tool.name)),
+                "input_schema": tool.input_schema.clone()
+                    .unwrap_or(json!({"type": "object", "properties": {}}))
+            }));
+        }
+    }
+
     let max_iterations = 15;
 
-    eprintln!("[CodingAgent] Starting — model={}, publisher={}, endpoint={}, working_dir={}", model_id, publisher, endpoint, working_dir);
+    info!("[agent] Starting — model={}, publisher={}, endpoint={}, working_dir={}", model_id, publisher, endpoint, working_dir);
     let _ = app_handle.emit("coding-agent-debug", json!({"msg": format!("Starting agent: model={}, endpoint={}, working_dir={}", model_id, endpoint, working_dir)}));
 
     // Only auto-create if directory doesn't already exist — user-selected dirs must exist
     let wd_path = std::path::Path::new(&working_dir);
     if !wd_path.exists() {
         let err = format!("Working directory does not exist: {}. Please create it or select a different directory.", working_dir);
-        eprintln!("[CodingAgent] ERROR: {}", err);
+        info!("[agent] ERROR: {}", err);
         return Err(err);
     }
 
@@ -1509,30 +1478,60 @@ pub async fn coding_agent_chat(
     );
 
     // Normalize conversation format per publisher and inject context into first user message
-    let mut conversation: Vec<Value> = if publisher == "google" {
-        messages.iter().enumerate().map(|(i, m)| {
-            let text = m["content"].as_str().unwrap_or("");
-            let enriched = if i == 0 { format!("{}{}", context_prefix, text) } else { text.to_string() };
-            json!({
-                "role": if m["role"] == "user" { "user" } else { "model" },
-                "parts": [{"text": enriched}]
-            })
-        }).collect()
-    } else {
-        let mut msgs = messages;
-        if let Some(first) = msgs.first_mut() {
-            if let Some(content) = first.get("content").and_then(|c| c.as_str()) {
-                first["content"] = json!(format!("{}{}", context_prefix, content));
+    let mut conversation = messages.clone();
+    if let Some(first) = conversation.first_mut() {
+        if let Some(content) = first.get("content").and_then(|c| c.as_str()) {
+            // Plain string content
+            first["content"] = json!(format!("{}{}", context_prefix, content));
+        } else if let Some(arr) = first.get("content").and_then(|c| c.as_array()) {
+            // Array content (image + text) — prepend context to the text part
+            let mut new_arr = arr.clone();
+            let mut prepended = false;
+            for item in new_arr.iter_mut() {
+                if item.get("type").and_then(|t| t.as_str()) == Some("text") {
+                    if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
+                        item["text"] = json!(format!("{}{}", context_prefix, text));
+                        prepended = true;
+                        break;
+                    }
+                }
             }
+            if !prepended {
+                new_arr.push(json!({"type": "text", "text": context_prefix.trim_end()}));
+            }
+            first["content"] = json!(new_arr);
         }
-        msgs
-    };
+    }
+
+    // Track whether the agent actually wrote/edited/deleted any file this session.
+    // Used to detect "Plan complete" responses that did nothing concrete.
+    let mut files_modified = false;
+
+    // Cumulative token counts across all iterations (emitted in coding-agent-complete).
+    let mut total_input_tokens: u32 = 0;
+    let mut total_output_tokens: u32 = 0;
+
+    // Read-gate: count consecutive iterations where only read_file/list_directory were called.
+    // After the threshold, inject a hard "stop reading, write now" message.
+    let mut read_only_streak: u32 = 0;
+    let read_gate_threshold: u32 = 3;
 
     for iteration in 0..max_iterations {
         if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
-            eprintln!("[CodingAgent] Cancelled by user at iteration {}", iteration);
-            let _ = app_handle.emit("coding-agent-complete", json!({"iteration": iteration, "stop_reason": "user_cancelled"}));
-            return Ok(json!({"text": "Stopped by user", "iterations": iteration, "stop_reason": "user_cancelled"}));
+            info!("[agent] Cancelled by user at iteration {}", iteration);
+                let _ = app_handle.emit("coding-agent-complete", json!({"iteration": iteration, "stop_reason": "user_cancelled", "totalInputTokens": total_input_tokens, "totalOutputTokens": total_output_tokens}));
+                return Ok(json!({"text": "Stopped by user", "iterations": iteration, "stop_reason": "user_cancelled"}));
+        }
+
+        // Read-gate: if the agent has spent too many iterations only reading, force a write
+        if read_only_streak >= read_gate_threshold {
+            info!("[agent] Read-gate triggered at iteration {} (streak={})", iteration, read_only_streak);
+            let _ = app_handle.emit("coding-agent-debug", json!({"msg": format!("Read-gate: {} read-only iterations — injecting write nudge", read_only_streak), "iteration": iteration}));
+            conversation.push(json!({
+                "role": "user",
+                "content": "STOP READING FILES. You have already read enough context. You MUST call write_file RIGHT NOW to produce your output. Do not call read_file or list_directory again. Write the file immediately."
+            }));
+            read_only_streak = 0;
         }
 
         let agent_model_id = if publisher == "anthropic" {
@@ -1540,30 +1539,33 @@ pub async fn coding_agent_chat(
         } else {
             model_id.replace("streamGenerateContent", "generateContent")
         };
-        // For Google on Vertex, use the global endpoint with non-streaming generateContent
-        let url = if publisher == "google" && endpoint == "vertex_ai" {
-            let mid_str = agent_model_id.as_str();
-            let parts: Vec<&str> = mid_str.split(':').collect();
-            let model_path = parts.first().copied().unwrap_or(mid_str);
-            format!(
-                "{}/v1/projects/{}/locations/global/publishers/google/models/{}:generateContent",
-                VERTEX_AI_ENDPOINT, project_id, model_path
-            )
+        // grok-4.20-multi-agent requires the Responses API — Chat Completions returns 400
+        let use_responses_api = agent_model_id.contains("multi-agent") && endpoint == "xai";
+        let url = if use_responses_api {
+            format!("{}/responses", XAI_ENDPOINT)
         } else {
-            build_url(&endpoint, &publisher, &agent_model_id, None, &project_id, None)?
+            build_url(&endpoint, &publisher, &agent_model_id, &project_id, None)?
         };
-        eprintln!("[CodingAgent] Iteration {} — POST {}", iteration, url);
+        info!("[agent] Iteration {} — POST {} (responses_api={})", iteration, url, use_responses_api);
         let _ = app_handle.emit("coding-agent-debug", json!({"msg": format!("Iteration {} — calling API: {}", iteration, url), "iteration": iteration}));
 
-        let system_prompt = if agent_mode.as_deref() == Some("plan") {
+        let base_prompt = if agent_mode.as_deref() == Some("plan") {
             PLAN_MODE_SYSTEM_PROMPT
         } else {
             CODING_AGENT_SYSTEM_PROMPT
         };
+        // Prepend active Agent Skills instructions if any are loaded
+        let prompt_with_skills;
+        let system_prompt: &str = if let Some(ref ctx) = skills_context {
+            prompt_with_skills = format!("{}\n\n{}", ctx, base_prompt);
+            &prompt_with_skills
+        } else {
+            base_prompt
+        };
 
         let payload = if publisher == "anthropic" {
             let mut p = json!({
-                "anthropic_version": "vertex-2023-10-16",
+                "anthropic_version": "2023-06-01",
                 "system": system_prompt,
                 "messages": conversation,
                 "max_tokens": 64000,
@@ -1576,32 +1578,73 @@ pub async fn coding_agent_chat(
             });
             p
         } else {
-            json!({
-                "system_instruction": { "parts": [{"text": system_prompt}] },
-                "contents": conversation,
-                "tools": [{ "function_declarations": tools.iter().map(|t| {
-                    let mut params = t["input_schema"].clone();
-                    params.as_object_mut().map(|o| o.remove("additionalProperties"));
-                    json!({ "name": t["name"], "description": t["description"], "parameters": params })
-                }).collect::<Vec<_>>() }],
-                "tool_config": { "function_calling_config": { "mode": "AUTO" } },
-                "generationConfig": { "maxOutputTokens": 64000, "temperature": 0.0 }
-            })
+            // OpenAI-compatible tools schema (shared by both paths)
+            let openai_tools: Vec<Value> = tools.iter().map(|t| {
+                let mut params = t["input_schema"].clone();
+                params.as_object_mut().map(|o| o.remove("additionalProperties"));
+                json!({
+                    "type": "function",
+                    "function": {
+                        "name": t["name"],
+                        "description": t["description"],
+                        "parameters": params
+                    }
+                })
+            }).collect();
+
+            if use_responses_api {
+                // xAI Responses API format — required by grok-4.20-multi-agent.
+                // Client-side tools require beta access and are not available generally;
+                // send without tools so the model returns a text-only research response.
+                let mut input = vec![json!({"role": "system", "content": system_prompt})];
+                input.extend(conversation.clone());
+                let mut p = json!({
+                    "model": agent_model_id,
+                    "input": input,
+                });
+                if let Some(ref level) = thinking_level {
+                    if !level.is_empty() && level != "none" {
+                        p["reasoning"] = json!({ "effort": level });
+                    }
+                }
+                p
+            } else {
+                // Standard Chat Completions format (xAI, OpenRouter, Kilo Code)
+                let mut openai_messages = vec![json!({"role": "system", "content": system_prompt})];
+                openai_messages.extend(conversation.clone());
+
+                let mut p = json!({
+                    "model": agent_model_id,
+                    "messages": openai_messages,
+                    "tools": openai_tools,
+                    "tool_choice": "auto",
+                    "max_tokens": 16384,
+                    "temperature": 0.0
+                });
+                if let Some(ref level) = thinking_level {
+                    if !level.is_empty() && level != "none" {
+                        p["reasoning"] = json!({ "effort": level });
+                    }
+                }
+                p
+            }
         };
 
         let mut request = client.post(&url).json(&payload);
         match endpoint.as_str() {
-            "ai_studio" => { request = request.header("x-goog-api-key", &api_key); }
-            "vertex_ai" => {
-                let token = if crate::auth::has_service_account_key() {
-                    crate::auth::get_access_token().await?
-                } else {
-                    return Err("Vertex AI requires a service account.".to_string());
-                };
-                request = request.header("Authorization", format!("Bearer {}", token));
+            "openrouter" => {
+                request = request
+                    .header("Authorization", format!("Bearer {}", api_key))
+                    .header("HTTP-Referer", "https://grok-agent.app")
+                    .header("X-Title", "Grok Agent");
             }
-            "openrouter" | "xai" | "kilocode" => {
+            "xai" | "kilocode" => {
                 request = request.header("Authorization", format!("Bearer {}", api_key));
+            }
+            "custom" => {
+                if !api_key.is_empty() {
+                    request = request.header("Authorization", format!("Bearer {}", api_key));
+                }
             }
             _ => {}
         }
@@ -1611,62 +1654,45 @@ pub async fn coding_agent_chat(
         let timeout_secs = agent_timeout.unwrap_or(900);
         request = request.timeout(std::time::Duration::from_secs(timeout_secs));
 
-        let _ = app_handle.emit("coding-agent-text", json!({"text": format!("Calling {} (iteration {})...", if publisher == "google" { "Gemini" } else { "Claude" }, iteration + 1), "iteration": iteration}));
+        let _ = app_handle.emit("coding-agent-debug", json!({"msg": format!("Calling {} (iteration {})...", if publisher == "anthropic" { "Claude" } else { "Grok" }, iteration + 1), "iteration": iteration}));
 
-        let response = request.send().await.map_err(|e| {
-            let err = format!("Request failed (timeout or network error): {}", e);
-            eprintln!("[CodingAgent] {}", err);
+        let response = send_with_retry(request, 3).await.map_err(|e| {
+            let err = format!("Request failed after retries: {}", e);
+            info!("[agent] {}", err);
             let _ = app_handle.emit("coding-agent-debug", json!({"msg": err, "iteration": iteration}));
             err
         })?;
         let status = response.status();
-        eprintln!("[CodingAgent] Response status: {}", status);
+        info!("[agent] Response status: {}", status);
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
             let err = format!("API error {}: {}", status, body);
-            eprintln!("[CodingAgent] ERROR: {}", err);
+            info!("[agent] ERROR: {}", err);
             let _ = app_handle.emit("coding-agent-debug", json!({"msg": err, "iteration": iteration}));
             return Err(format!("API error {}: {}", status, body));
         }
 
         let raw_body = response.text().await.map_err(|e| format!("Failed to read response body: {}", e))?;
-        eprintln!("[CodingAgent] Raw response length: {} bytes", raw_body.len());
-        eprintln!("[CodingAgent] Response preview: {}", &raw_body[..raw_body.len().min(500)]);
+        info!("[agent] Raw response length: {} bytes", raw_body.len());
+        info!("[agent] Response preview: {}", &raw_body[..raw_body.len().min(500)]);
         let _ = app_handle.emit("coding-agent-debug", json!({"msg": format!("Response: {} bytes", raw_body.len()), "iteration": iteration}));
 
-        let body: Value = if publisher == "google" {
-            // generateContent returns a single JSON object; streamGenerateContent returns an array
-            let parsed: Value = serde_json::from_str(&raw_body)
-                .map_err(|e| format!("Failed to parse response: {}", e))?;
-            if parsed.is_array() {
-                // Merge streamed chunks into one response
-                let chunks = parsed.as_array().unwrap();
-                let mut all_parts: Vec<Value> = Vec::new();
-                let mut finish_reason = String::new();
-                for chunk in chunks {
-                    if let Some(candidates) = chunk.get("candidates").and_then(|c| c.as_array()) {
-                        if let Some(first) = candidates.first() {
-                            if let Some(parts) = first.get("content").and_then(|c| c.get("parts")).and_then(|p| p.as_array()) {
-                                all_parts.extend(parts.iter().cloned());
-                            }
-                            if let Some(fr) = first.get("finishReason").and_then(|f| f.as_str()) {
-                                finish_reason = fr.to_string();
-                            }
-                        }
-                    }
-                }
-                json!({"candidates": [{"content": {"parts": all_parts}, "finishReason": finish_reason}]})
-            } else {
-                parsed
+        let body: Value = serde_json::from_str(&raw_body).map_err(|e| format!("Failed to parse response: {}", e))?;
+
+        // Accumulate token usage from this iteration
+        if let Some(usage) = body.get("usage") {
+            if let Some(n) = usage.get("input_tokens").or_else(|| usage.get("prompt_tokens")).and_then(|t| t.as_u64()) {
+                total_input_tokens += n as u32;
             }
-        } else {
-            serde_json::from_str(&raw_body).map_err(|e| format!("Failed to parse response: {}", e))?
-        };
+            if let Some(n) = usage.get("output_tokens").or_else(|| usage.get("completion_tokens")).and_then(|t| t.as_u64()) {
+                total_output_tokens += n as u32;
+            }
+        }
 
         if publisher == "anthropic" {
             let content = body.get("content").and_then(|c| c.as_array()).cloned().unwrap_or_default();
             let stop_reason = body.get("stop_reason").and_then(|s| s.as_str()).unwrap_or("");
-            eprintln!("[CodingAgent] stop_reason={}, content_blocks={}", stop_reason, content.len());
+            info!("[agent] stop_reason={}, content_blocks={}", stop_reason, content.len());
             let _ = app_handle.emit("coding-agent-debug", json!({"msg": format!("Response: stop_reason={}, content_blocks={}", stop_reason, content.len()), "iteration": iteration}));
 
             let mut text_parts = Vec::new();
@@ -1674,7 +1700,7 @@ pub async fn coding_agent_chat(
 
             for block in &content {
                 let block_type = block.get("type").and_then(|t| t.as_str()).unwrap_or("unknown");
-                eprintln!("[CodingAgent]   block type={}", block_type);
+                info!("[agent]   block type={}", block_type);
                 match block_type {
                     "text" => {
                         if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
@@ -1693,13 +1719,31 @@ pub async fn coding_agent_chat(
             }
 
             if tool_uses.is_empty() {
-                eprintln!("[CodingAgent] No tool calls — completing (stop_reason={})", stop_reason);
+                let joined_text = text_parts.join("\n");
+                let plan_complete_response = joined_text.to_lowercase().contains("plan complete")
+                    || joined_text.to_lowercase().contains("plan is complete")
+                    || (joined_text.to_lowercase().contains("plan") && joined_text.len() < 1200);
+
+                if plan_complete_response && !files_modified && iteration < max_iterations - 2 {
+                    info!("[agent] Detected plan-only response with no file writes — re-injecting implementation prompt");
+                    let _ = app_handle.emit("coding-agent-debug", json!({"msg": "Plan-only response detected — forcing implementation", "iteration": iteration}));
+                    conversation.push(json!({"role": "assistant", "content": content}));
+                    conversation.push(json!({"role": "user", "content": "You described improvements but did not implement any. Stop describing. Pick ONE small, concrete improvement from what you described and implement it RIGHT NOW using write_file or edit_file. Just do it — no more planning text."}));
+                    continue;
+                }
+
+                info!("[agent] No tool calls — completing (stop_reason={})", stop_reason);
                 let _ = app_handle.emit("coding-agent-debug", json!({"msg": format!("No tool calls, completing. stop_reason={}", stop_reason), "iteration": iteration}));
-                let _ = app_handle.emit("coding-agent-complete", json!({"iteration": iteration, "stop_reason": stop_reason}));
-                return Ok(json!({"text": text_parts.join("\n"), "iterations": iteration + 1, "stop_reason": stop_reason}));
+                let _ = app_handle.emit("coding-agent-complete", json!({"iteration": iteration, "stop_reason": stop_reason, "totalInputTokens": total_input_tokens, "totalOutputTokens": total_output_tokens}));
+                return Ok(json!({"text": joined_text, "iterations": iteration + 1, "stop_reason": stop_reason}));
             }
 
-            eprintln!("[CodingAgent] {} tool call(s) to execute", tool_uses.len());
+            info!("[agent] {} tool call(s) to execute", tool_uses.len());
+            // If all tools this iteration were reads, increment the read streak
+            let has_write = tool_uses.iter().any(|t| {
+                matches!(t.get("name").and_then(|n| n.as_str()).unwrap_or(""), "write_file" | "edit_file" | "delete_file")
+            });
+            if !has_write { read_only_streak += 1; } else { read_only_streak = 0; }
             conversation.push(json!({"role": "assistant", "content": content}));
             let mut tool_results: Vec<Value> = Vec::new();
 
@@ -1708,17 +1752,26 @@ pub async fn coding_agent_chat(
                 let tool_id = tool_use.get("id").and_then(|i| i.as_str()).unwrap_or("");
                 let input = tool_use.get("input").cloned().unwrap_or(json!({}));
 
-                eprintln!("[CodingAgent] Executing tool={}, id={}, input={}", tool_name, tool_id, input);
+                info!("[agent] Executing tool={}, id={}, input={}", tool_name, tool_id, input);
                 let _ = app_handle.emit("coding-agent-debug", json!({"msg": format!("Executing: {} — {}", tool_name, input), "iteration": iteration}));
                 let _ = app_handle.emit("coding-agent-tool-call", json!({"tool": tool_name, "input": input, "tool_use_id": tool_id, "iteration": iteration}));
-                let result = execute_tool(&working_dir, tool_name, &input).await;
+                if matches!(tool_name, "write_file" | "edit_file" | "delete_file") {
+                    files_modified = true;
+                    read_only_streak = 0;
+                }
+                // Route: MCP tool (mcp__server__tool) or built-in
+                 let result = if tool_name.starts_with("mcp__") {
+                     mcp::call_namespaced_tool(&mcp_state, tool_name, &input).await
+                 } else {
+                     execute_tool(&working_dir, tool_name, &input, block_file_deletion).await
+                 };
                 let (content_val, is_error) = match &result {
                     Ok(val) => {
-                        eprintln!("[CodingAgent] Tool {} OK: {}...", tool_name, &val[..val.len().min(200)]);
+                        info!("[agent] Tool {} OK: {}...", tool_name, &val[..val.len().min(200)]);
                         (val.clone(), false)
                     }
                     Err(e) => {
-                        eprintln!("[CodingAgent] Tool {} ERROR: {}", tool_name, e);
+                        info!("[agent] Tool {} ERROR: {}", tool_name, e);
                         (e.clone(), true)
                     }
                 };
@@ -1727,107 +1780,193 @@ pub async fn coding_agent_chat(
                 tool_results.push(json!({"type": "tool_result", "tool_use_id": tool_id, "content": content_val, "is_error": is_error}));
             }
             conversation.push(json!({"role": "user", "content": tool_results}));
-        } else {
-            // Google Gemini tool-use handling
-            let candidates = body.get("candidates").and_then(|c| c.as_array()).cloned().unwrap_or_default();
-            let first = candidates.first().cloned().unwrap_or(json!({}));
-            let parts = first.get("content").and_then(|c| c.get("parts")).and_then(|p| p.as_array()).cloned().unwrap_or_default();
-            let finish_reason = first.get("finishReason").and_then(|f| f.as_str()).unwrap_or("");
+        } else if use_responses_api {
+            // ── xAI Responses API response parsing ───────────────────────────
+            // Response shape: { output: [ {type:"message"|"function_call", ...} ] }
+            let output = body["output"].as_array().cloned().unwrap_or_default();
+            let mut text_content = String::new();
+            let mut function_calls: Vec<Value> = Vec::new();
 
-            eprintln!("[CodingAgent] Google response: parts={}, finishReason={}", parts.len(), finish_reason);
-            let _ = app_handle.emit("coding-agent-debug", json!({"msg": format!("Google response: parts={}, finishReason={}", parts.len(), finish_reason), "iteration": iteration}));
-
-            if (finish_reason == "RECITATION" || finish_reason == "SAFETY") && parts.is_empty() {
-                eprintln!("[CodingAgent] Blocked by {} filter, retrying with simplified prompt", finish_reason);
-                let _ = app_handle.emit("coding-agent-text", json!({"text": format!("(Response blocked by {} filter — retrying...)", finish_reason), "iteration": iteration}));
-                let last_idx = conversation.len() - 1;
-                if let Some(last_msg) = conversation.get_mut(last_idx) {
-                    if let Some(parts_arr) = last_msg.get("parts").and_then(|p| p.as_array()) {
-                        let simplified: Vec<Value> = parts_arr.iter().map(|p| {
-                            if let Some(fr) = p.get("functionResponse") {
-                                let name = fr.get("name").and_then(|n| n.as_str()).unwrap_or("");
-                                let result = fr.get("response").and_then(|r| r.get("result")).and_then(|r| r.as_str()).unwrap_or("");
-                                let truncated = if result.len() > 500 { &result[..500] } else { result };
-                                json!({"functionResponse": {"name": name, "response": {"result": truncated, "is_error": false}}})
-                            } else {
-                                p.clone()
+            for item in &output {
+                match item.get("type").and_then(|t| t.as_str()) {
+                    Some("message") => {
+                        if let Some(content_arr) = item.get("content").and_then(|c| c.as_array()) {
+                            for cb in content_arr {
+                                if cb.get("type").and_then(|t| t.as_str()) == Some("output_text") {
+                                    if let Some(text) = cb.get("text").and_then(|t| t.as_str()) {
+                                        text_content.push_str(text);
+                                        let _ = app_handle.emit("coding-agent-text", json!({"text": text, "iteration": iteration}));
+                                    }
+                                }
                             }
-                        }).collect();
-                        *last_msg = json!({"role": "user", "parts": simplified});
+                        }
                     }
+                    Some("function_call") => {
+                        function_calls.push(item.clone());
+                    }
+                    _ => {}
+                }
+            }
+
+            if !function_calls.is_empty() {
+                // Add function_call items to conversation (they become part of `input` next turn)
+                for fc in &function_calls {
+                    conversation.push(fc.clone());
+                }
+
+                let mut had_write = false;
+                for fc in &function_calls {
+                    let fn_name = fc.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                    let fn_args_str = fc.get("arguments").and_then(|a| a.as_str()).unwrap_or("{}");
+                    // Responses API uses `call_id`; fall back to `id`
+                    let call_id = fc.get("call_id")
+                        .or_else(|| fc.get("id"))
+                        .and_then(|i| i.as_str())
+                        .unwrap_or(fn_name);
+                    let fn_args: Value = serde_json::from_str(fn_args_str).unwrap_or(json!({}));
+
+                    info!("[agent] Responses API executing tool={}", fn_name);
+                    let _ = app_handle.emit("coding-agent-debug", json!({"msg": format!("Executing: {} — {}", fn_name, fn_args), "iteration": iteration}));
+                    let _ = app_handle.emit("coding-agent-tool-call", json!({"tool": fn_name, "input": fn_args, "tool_use_id": call_id, "iteration": iteration}));
+                    if matches!(fn_name, "write_file" | "edit_file" | "delete_file") {
+                        files_modified = true;
+                        read_only_streak = 0;
+                        had_write = true;
+                    }
+
+                    let result = if fn_name.starts_with("mcp__") {
+                         mcp::call_namespaced_tool(&mcp_state, fn_name, &fn_args).await
+                     } else {
+                         execute_tool(&working_dir, fn_name, &fn_args, block_file_deletion).await
+                     };
+                     let (content_val, is_error) = match &result {
+                         Ok(val) => (val.clone(), false),
+                         Err(e) => (e.clone(), true),
+                     };
+                     let _ = app_handle.emit("coding-agent-tool-result", json!({"tool": fn_name, "result": content_val, "is_error": is_error, "tool_use_id": call_id, "iteration": iteration}));
+
+                    // Responses API tool result format
+                    conversation.push(json!({
+                        "type": "function_call_output",
+                        "call_id": call_id,
+                        "output": content_val,
+                    }));
+                }
+                if !had_write { read_only_streak += 1; }
+                continue;
+            } else {
+                // No tool calls — text-only final response
+                let plan_complete_response = text_content.to_lowercase().contains("plan complete")
+                    || text_content.to_lowercase().contains("plan is complete")
+                    || (text_content.to_lowercase().contains("plan") && text_content.len() < 1200);
+
+                if plan_complete_response && !files_modified && iteration < max_iterations - 2 {
+                    let _ = app_handle.emit("coding-agent-debug", json!({"msg": "Plan-only response — forcing implementation", "iteration": iteration}));
+                    conversation.push(json!({"role": "user", "content": "You described improvements but did not implement any. Stop describing. Implement RIGHT NOW using write_file or edit_file."}));
+                    continue;
+                }
+
+                let _ = app_handle.emit("coding-agent-complete", json!({"iteration": iteration, "stop_reason": "stop", "totalInputTokens": total_input_tokens, "totalOutputTokens": total_output_tokens}));
+                return Ok(json!({"text": text_content, "iterations": iteration + 1, "stop_reason": "stop"}));
+            }
+        } else {
+            // ── Standard Chat Completions response handling ──────────────────
+            let message = body["choices"][0]["message"].clone();
+            let content = message.get("content").and_then(|c| c.as_str()).unwrap_or("").to_string();
+            let tool_calls = message.get("tool_calls").and_then(|t| t.as_array()).cloned().unwrap_or_default();
+
+            if !tool_calls.is_empty() {
+                // Add assistant message to conversation
+                conversation.push(message.clone());
+
+                // Execute each tool call
+                let mut tool_results = Vec::new();
+                for tool_call in &tool_calls {
+                    let fn_name = tool_call.get("function")
+                        .and_then(|f| f.get("name"))
+                        .and_then(|n| n.as_str())
+                        .unwrap_or("");
+                    let fn_args_str = tool_call.get("function")
+                        .and_then(|f| f.get("arguments"))
+                        .and_then(|a| a.as_str())
+                        .unwrap_or("{}");
+                    let fn_args: Value = serde_json::from_str(fn_args_str).unwrap_or(json!({}));
+
+                    info!("[agent] OpenAI executing tool={}, args={}", fn_name, fn_args);
+                    let _ = app_handle.emit("coding-agent-debug", json!({"msg": format!("Executing: {} — {}", fn_name, fn_args), "iteration": iteration}));
+                    let _ = app_handle.emit("coding-agent-tool-call", json!({"tool": fn_name, "input": fn_args, "tool_use_id": fn_name, "iteration": iteration}));
+                    if matches!(fn_name, "write_file" | "edit_file" | "delete_file") {
+                        files_modified = true;
+                        read_only_streak = 0;
+                    }
+
+                    let result = if fn_name.starts_with("mcp__") {
+                         mcp::call_namespaced_tool(&mcp_state, fn_name, &fn_args).await
+                     } else {
+                         execute_tool(&working_dir, fn_name, &fn_args, block_file_deletion).await
+                     };
+                     let (content_val, is_error) = match &result {
+                         Ok(val) => (val.clone(), false),
+                         Err(e) => (e.clone(), true),
+                     };
+                     let _ = app_handle.emit("coding-agent-tool-result", json!({"tool": fn_name, "result": content_val, "is_error": is_error, "tool_use_id": fn_name, "iteration": iteration}));
+
+                    tool_results.push(json!({
+                        "role": "tool",
+                        "tool_call_id": tool_call.get("id").and_then(|i| i.as_str()).unwrap_or(""),
+                        "content": content_val,
+                    }));
+                }
+
+                // Each tool result is a separate message in OpenAI format
+                for tool_result in tool_results {
+                    conversation.push(tool_result);
+                }
+                // If no write happened this iteration, count it toward the read streak
+                if !tool_calls.iter().any(|t| {
+                    matches!(t.get("function").and_then(|f| f.get("name")).and_then(|n| n.as_str()).unwrap_or(""), "write_file" | "edit_file" | "delete_file")
+                }) {
+                    read_only_streak += 1;
                 }
                 continue;
-            }
+            } else {
+                // No tool calls — check if the model just described a plan without implementing anything
+                let plan_complete_response = content.to_lowercase().contains("plan complete")
+                    || content.to_lowercase().contains("plan is complete")
+                    || (content.to_lowercase().contains("plan") && content.len() < 1200);
 
-            let mut text_parts = Vec::new();
-            let mut function_calls = Vec::new();
-
-            for part in &parts {
-                if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
-                    eprintln!("[CodingAgent]   text part: {}...", &text[..text.len().min(100)]);
-                    text_parts.push(text.to_string());
-                    let _ = app_handle.emit("coding-agent-text", json!({"text": text, "iteration": iteration}));
+                if plan_complete_response && !files_modified && iteration < max_iterations - 2 {
+                    // Re-inject: force the agent to actually write something
+                    info!("[agent] Detected plan-only response with no file writes — re-injecting implementation prompt");
+                    let _ = app_handle.emit("coding-agent-debug", json!({"msg": "Plan-only response detected — forcing implementation", "iteration": iteration}));
+                    conversation.push(json!({"role": "assistant", "content": content}));
+                    conversation.push(json!({"role": "user", "content": "You described improvements but did not implement any. Stop describing. Pick ONE small, concrete improvement from what you described and implement it RIGHT NOW using write_file or edit_file. Just do it — no more planning text."}));
+                    continue;
                 }
-                if let Some(fc) = part.get("functionCall") {
-                    eprintln!("[CodingAgent]   functionCall: {}", fc);
-                    function_calls.push(fc.clone());
+
+                // Normal final response
+                if !content.is_empty() {
+                    let _ = app_handle.emit("coding-agent-text", json!({"text": content, "iteration": iteration}));
                 }
-            }
-
-            if function_calls.is_empty() {
-                eprintln!("[CodingAgent] Google: no function calls, completing");
-                let _ = app_handle.emit("coding-agent-complete", json!({"iteration": iteration, "stop_reason": finish_reason}));
-                return Ok(json!({"text": text_parts.join("\n"), "iterations": iteration + 1, "stop_reason": finish_reason}));
-            }
-
-            // Add model response to conversation
-            conversation.push(json!({
-                "role": "model",
-                "parts": parts
-            }));
-
-            // Execute function calls and build responses
-            let mut response_parts: Vec<Value> = Vec::new();
-            for fc in &function_calls {
-                let fn_name = fc.get("name").and_then(|n| n.as_str()).unwrap_or("");
-                let fn_args = fc.get("args").cloned().unwrap_or(json!({}));
-
-                eprintln!("[CodingAgent] Google executing tool={}, args={}", fn_name, fn_args);
-                let _ = app_handle.emit("coding-agent-debug", json!({"msg": format!("Executing: {} — {}", fn_name, fn_args), "iteration": iteration}));
-                let _ = app_handle.emit("coding-agent-tool-call", json!({"tool": fn_name, "input": fn_args, "tool_use_id": fn_name, "iteration": iteration}));
-
-                let result = execute_tool(&working_dir, fn_name, &fn_args).await;
-                let (content_val, is_error) = match &result {
-                    Ok(val) => {
-                        eprintln!("[CodingAgent] Google tool {} OK: {}...", fn_name, &val[..val.len().min(200)]);
-                        (val.clone(), false)
-                    }
-                    Err(e) => {
-                        eprintln!("[CodingAgent] Google tool {} ERROR: {}", fn_name, e);
-                        (e.clone(), true)
-                    }
-                };
-                let _ = app_handle.emit("coding-agent-tool-result", json!({"tool": fn_name, "result": content_val, "is_error": is_error, "tool_use_id": fn_name, "iteration": iteration}));
-
-                response_parts.push(json!({
-                    "functionResponse": {
-                        "name": fn_name,
-                        "response": { "result": content_val, "is_error": is_error }
-                    }
+                let _ = app_handle.emit("coding-agent-complete", json!({"iteration": iteration, "stop_reason": "stop", "totalInputTokens": total_input_tokens, "totalOutputTokens": total_output_tokens}));
+                return Ok(json!({
+                    "text": content,
+                    "iterations": iteration + 1,
+                    "stop_reason": "stop"
                 }));
             }
-
-            conversation.push(json!({
-                "role": "user",
-                "parts": response_parts
-            }));
         }
     }
-    let _ = app_handle.emit("coding-agent-complete", json!({"iteration": max_iterations, "stop_reason": "max_iterations"}));
+    let _ = app_handle.emit("coding-agent-complete", json!({"iteration": max_iterations, "stop_reason": "max_iterations", "totalInputTokens": total_input_tokens, "totalOutputTokens": total_output_tokens}));
     Ok(json!({"text": "Agent completed (reached iteration limit)", "iterations": max_iterations, "stop_reason": "max_iterations"}))
 }
 
-async fn execute_tool(working_dir: &str, tool_name: &str, input: &Value) -> Result<String, String> {
+async fn execute_tool(
+    working_dir: &str,
+    tool_name: &str,
+    input: &Value,
+    block_file_deletion: bool,
+) -> Result<String, String> {
     match tool_name {
         "read_file" => {
             let path = input.get("path").and_then(|p| p.as_str()).unwrap_or("");
@@ -1846,7 +1985,7 @@ async fn execute_tool(working_dir: &str, tool_name: &str, input: &Value) -> Resu
         }
         "run_command" => {
             let command = input.get("command").and_then(|c| c.as_str()).unwrap_or("");
-            let result = codegen::exec_run_command(working_dir, command).await?;
+            let result = codegen::exec_run_command(working_dir, command, block_file_deletion).await?;
             Ok(json!({"exit_code": result.exit_code, "stdout": result.stdout, "stderr": result.stderr}).to_string())
         }
         "list_directory" => {
@@ -1854,196 +1993,17 @@ async fn execute_tool(working_dir: &str, tool_name: &str, input: &Value) -> Resu
             let depth = input.get("max_depth").and_then(|d| d.as_u64()).unwrap_or(3) as u32;
             codegen::exec_list_directory(working_dir, path, depth).await
         }
+        "delete_file" => {
+            let path = input.get("path").and_then(|p| p.as_str()).unwrap_or("");
+            codegen::exec_delete_file(working_dir, path).await
+        }
+        "fetch_url" => {
+            let url = input.get("url").and_then(|u| u.as_str()).unwrap_or("");
+            let max_chars = input.get("max_chars").and_then(|m| m.as_u64()).map(|v| v as usize);
+            codegen::exec_fetch_url(url, max_chars).await
+        }
         _ => Err(format!("Unknown tool: {}", tool_name)),
     }
 }
 
-pub async fn veo_generate_video(
-    api_key: String,
-    _project_id: String,
-    prompt: String,
-    aspect_ratio: Option<String>,
-    model: Option<String>,
-    main_image: Option<AttachedFile>,
-    reference_images: Option<Vec<AttachedFile>>,
-    duration_seconds: Option<u32>,
-) -> Result<Value, String> {
-    let client = Client::new();
-    let ratio = aspect_ratio.unwrap_or_else(|| "16:9".to_string());
-
-    let model_name = match model.as_deref() {
-        Some("veo-3.1-lite") => "veo-3.1-lite-generate-preview",
-        _ => "veo-3.1-generate-preview",
-    };
-
-    let url = format!(
-        "{}/v1beta/models/{}:predictLongRunning?key={}",
-        AI_STUDIO_ENDPOINT, model_name, api_key
-    );
-
-    let mut instance = json!({ "prompt": prompt });
-
-    if let Some(img) = main_image {
-        instance["image"] = json!({
-            "bytesBase64Encoded": img.data,
-            "mimeType": img.mime_type,
-        });
-    }
-
-    if let Some(refs) = reference_images {
-        if !refs.is_empty() {
-            let ref_json: Vec<Value> = refs
-                .into_iter()
-                .take(3)
-                .map(|img| json!({
-                    "image": {
-                        "bytesBase64Encoded": img.data,
-                        "mimeType": img.mime_type,
-                    }
-                }))
-                .collect();
-            instance["referenceImages"] = json!(ref_json);
-        }
-    }
-
-    let payload = json!({
-        "instances": [instance],
-        "parameters": {
-            "aspectRatio": ratio,
-            "sampleCount": 1,
-            "durationSeconds": duration_seconds.unwrap_or(8),
-        }
-    });
-
-    let response = client
-        .post(&url)
-        .header("Content-Type", "application/json")
-        .json(&payload)
-        .send()
-        .await
-        .map_err(|e| format!("Request failed: {}", e))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("API error {}: {}", status, body));
-    }
-
-    let body: Value = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
-
-    let op_name = body.get("name").and_then(|n| n.as_str()).unwrap_or("");
-    if op_name.is_empty() {
-        return Err("No operation name returned".to_string());
-    }
-
-    let poll_url = format!(
-        "{}/v1beta/{}?key={}",
-        AI_STUDIO_ENDPOINT, op_name, api_key
-    );
-
-    for _ in 0..120 {
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-
-        let poll_resp = client
-            .get(&poll_url)
-            .send()
-            .await
-            .map_err(|e| format!("Poll failed: {}", e))?;
-
-        let poll_body: Value = poll_resp
-            .json()
-            .await
-            .map_err(|e| format!("Failed to parse poll: {}", e))?;
-
-        if let Some(done) = poll_body.get("done").and_then(|d| d.as_bool()) {
-            if done {
-                if let Some(err) = poll_body.get("error") {
-                    return Err(format!("Generation failed: {}", err));
-                }
-                if let Some(response) = poll_body.get("response") {
-                    if let Some(videos) = response.get("generateVideoResponse")
-                        .and_then(|r| r.get("generatedSamples"))
-                        .and_then(|s| s.as_array())
-                    {
-                        if let Some(first) = videos.first() {
-                            if let Some(video) = first.get("video") {
-                                if let Some(uri) = video.get("uri").and_then(|u| u.as_str()) {
-                                    let video_resp = client
-                                        .get(uri)
-                                        .header("x-goog-api-key", &api_key)
-                                        .send()
-                                        .await
-                                        .map_err(|e| format!("Download failed: {}", e))?;
-                                    let video_bytes = video_resp
-                                        .bytes()
-                                        .await
-                                        .map_err(|e| format!("Failed to read video: {}", e))?;
-                                    let video_b64 = BASE64.encode(&video_bytes);
-                                    return Ok(json!({
-                                        "videoData": video_b64,
-                                        "videoUrl": uri
-                                    }));
-                                }
-                            }
-                        }
-                    }
-                }
-                return Err("Completed but no video data found in response".to_string());
-            }
-        }
-    }
-
-    Err("Video generation timed out after 10 minutes".to_string())
-}
-
-pub async fn tts_generate(
-    api_key: String,
-    model: String,
-    text: String,
-    speech_config: Value,
-) -> Result<Value, String> {
-    let client = Client::new();
-    let url = format!(
-        "{}/v1beta/models/{}:generateContent?key={}",
-        AI_STUDIO_ENDPOINT, model, api_key
-    );
-
-    let payload = json!({
-        "contents": [{"parts": [{"text": text}]}],
-        "generationConfig": {
-            "responseModalities": ["AUDIO"],
-            "speechConfig": speech_config
-        }
-    });
-
-    let resp = client
-        .post(&url)
-        .json(&payload)
-        .send()
-        .await
-        .map_err(|e| format!("Request failed: {}", e))?;
-
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
-        // Try to extract a clear error message
-        if let Ok(parsed) = serde_json::from_str::<Value>(&body) {
-            if let Some(msg) = parsed["error"]["message"].as_str() {
-                let code = parsed["error"]["status"].as_str().unwrap_or("");
-                return Err(format!("{}{}{}", code, if code.is_empty() { "" } else { ": " }, msg));
-            }
-        }
-        return Err(format!("HTTP {}: {}", status, &body[..body.len().min(500)]));
-    }
-
-    let data: Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
-
-    Ok(data)
-}
 
