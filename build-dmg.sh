@@ -4,9 +4,12 @@ set -e
 cd "$(dirname "$0")"
 
 VERSION=$(grep '"version"' src-tauri/tauri.conf.json | head -1 | sed 's/.*: "//;s/".*//')
+PRODUCT_NAME=$(grep '"productName"' src-tauri/tauri.conf.json | head -1 | sed 's/.*: "//;s/".*//')
+
 DMG_DIR="src-tauri/target/release/bundle/dmg"
-APP_PATH="src-tauri/target/release/bundle/macos/Cortex Agent.app"
-DMG_NAME="Cortex Agent_${VERSION}_aarch64.dmg"
+APP_BUNDLE_NAME="${PRODUCT_NAME}.app"
+APP_PATH="src-tauri/target/release/bundle/macos/${APP_BUNDLE_NAME}"
+DMG_NAME="${PRODUCT_NAME// /_}_${VERSION}_aarch64.dmg"
 
 # Install dependencies if needed
 if [ ! -d "node_modules" ]; then
@@ -14,7 +17,7 @@ if [ ! -d "node_modules" ]; then
   npm install
 fi
 
-echo "Building Cortex Agent v${VERSION}..."
+echo "Building ${PRODUCT_NAME} v${VERSION}..."
 
 # Clean old DMGs before build so we can detect success reliably
 rm -f "$DMG_DIR/$DMG_NAME" "$DMG_DIR"/rw.*.dmg 2>/dev/null || true
@@ -37,11 +40,11 @@ if [ ! -f "$DMG_DIR/$DMG_NAME" ]; then
 
   # Create DMG with --skip-jenkins to avoid Finder AppleScript errors on macOS 26+
   bash "$DMG_DIR/bundle_dmg.sh" \
-    --volname "Cortex Agent" \
+    --volname "${PRODUCT_NAME}" \
     --no-internet-enable \
-    --hide-extension "Cortex Agent.app" \
+    --hide-extension "${APP_BUNDLE_NAME}" \
     --app-drop-link 480 170 \
-    --icon "Cortex Agent.app" 180 170 \
+    --icon "${APP_BUNDLE_NAME}" 180 170 \
     --skip-jenkins \
     "$DMG_DIR/$DMG_NAME" \
     "$APP_PATH"
@@ -80,8 +83,8 @@ if [ "$1" = "release" ]; then
     gh release upload "$TAG" "$DMG" --clobber
   else
     gh release create "$TAG" "$DMG" \
-      --title "Cortex Agent $TAG" \
-      --notes "Cortex Agent $TAG release" \
+      --title "${PRODUCT_NAME} $TAG" \
+      --notes "${PRODUCT_NAME} $TAG release" \
       --latest
   fi
 
