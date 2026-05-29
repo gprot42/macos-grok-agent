@@ -1,0 +1,182 @@
+package com.tinyggrok.app.data.local
+
+import android.content.Context
+import android.util.Log
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
+import com.tinyggrok.app.ui.theme.AppTheme
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import javax.inject.Inject
+import javax.inject.Singleton
+
+val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
+
+@Singleton
+class SettingsRepository @Inject constructor(
+    @ApplicationContext private val context: Context
+) {
+    private val API_KEY_KEY = stringPreferencesKey("api_key")
+    private val THEME_KEY = stringPreferencesKey("theme")
+    private val SHOW_COST_KEY = booleanPreferencesKey("show_cost")
+    private val DEBUG_MODE_KEY = booleanPreferencesKey("debug_mode")
+    private val RESPONSE_FORMAT_KEY = stringPreferencesKey("response_format")
+    private val FONT_SIZE_KEY = floatPreferencesKey("font_size")
+    private val VOICE_ENABLED_KEY = booleanPreferencesKey("voice_enabled")
+    private val VOICE_TARGET_LANGUAGE_KEY = stringPreferencesKey("voice_target_language")
+    private val VOICE_SOURCE_LANGUAGE_KEY = stringPreferencesKey("voice_source_language")
+    private val VOICE_OPTION_KEY = stringPreferencesKey("voice_option")
+    private val PERSONALITY_MODE_KEY = stringPreferencesKey("personality_mode")
+    private val VOICE_SILENT_MODE_KEY = booleanPreferencesKey("voice_silent_mode")
+    private val VOICE_VAD_THRESHOLD_KEY = floatPreferencesKey("voice_vad_threshold")
+    private val VOICE_PERMANENT_LISTEN_KEY = booleanPreferencesKey("voice_permanent_listen")
+
+    val apiKey: Flow<String?> = context.dataStore.data
+        .map { preferences -> preferences[API_KEY_KEY] }
+
+    val theme: Flow<AppTheme> = context.dataStore.data
+        .map { preferences ->
+            when (preferences[THEME_KEY]) {
+                "LIGHT" -> AppTheme.LIGHT
+                "TOKYO_NIGHT" -> AppTheme.TOKYO_NIGHT
+                else -> AppTheme.DARK
+            }
+        }
+
+    val showCost: Flow<Boolean> = context.dataStore.data
+        .map { preferences -> preferences[SHOW_COST_KEY] ?: false }
+
+    val debugMode: Flow<Boolean> = context.dataStore.data
+        .map { preferences -> preferences[DEBUG_MODE_KEY] ?: false }
+
+    val responseFormat: Flow<String> = context.dataStore.data
+        .map { preferences -> preferences[RESPONSE_FORMAT_KEY] ?: "html" }
+
+    val fontSize: Flow<Float> = context.dataStore.data
+        .map { preferences -> preferences[FONT_SIZE_KEY] ?: 14f }
+
+    val voiceEnabled: Flow<Boolean> = context.dataStore.data
+        .map { preferences -> preferences[VOICE_ENABLED_KEY] ?: true }
+
+    val voiceTargetLanguage: Flow<String> = context.dataStore.data
+        .map { preferences -> preferences[VOICE_TARGET_LANGUAGE_KEY] ?: "ENGLISH" }
+
+    val voiceSourceLanguage: Flow<String> = context.dataStore.data
+        .map { preferences -> preferences[VOICE_SOURCE_LANGUAGE_KEY] ?: "AUTO" }
+
+    val voiceOption: Flow<String> = context.dataStore.data
+        .map { preferences -> preferences[VOICE_OPTION_KEY] ?: "EVE" }
+
+    val personalityMode: Flow<String> = context.dataStore.data
+        .map { preferences -> preferences[PERSONALITY_MODE_KEY] ?: "ASSISTANT" }
+
+    val voiceSilentMode: Flow<Boolean> = context.dataStore.data
+        .map { preferences -> preferences[VOICE_SILENT_MODE_KEY] ?: false }
+
+    val voiceVadThreshold: Flow<Float> = context.dataStore.data
+        .map { preferences -> preferences[VOICE_VAD_THRESHOLD_KEY] ?: 0.5f }
+
+    val voicePermanentListen: Flow<Boolean> = context.dataStore.data
+        .map { preferences -> preferences[VOICE_PERMANENT_LISTEN_KEY] ?: false }
+
+    suspend fun saveApiKey(key: String) {
+        context.dataStore.edit { preferences ->
+            preferences[API_KEY_KEY] = key
+        }
+    }
+
+    suspend fun clearApiKey() {
+        context.dataStore.edit { preferences ->
+            preferences.remove(API_KEY_KEY)
+        }
+    }
+
+    suspend fun saveTheme(theme: AppTheme) {
+        context.dataStore.edit { preferences ->
+            preferences[THEME_KEY] = theme.name
+        }
+    }
+
+    suspend fun saveShowCost(show: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[SHOW_COST_KEY] = show
+        }
+    }
+
+    suspend fun saveDebugMode(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[DEBUG_MODE_KEY] = enabled
+        }
+    }
+
+    suspend fun saveResponseFormat(format: String) {
+        context.dataStore.edit { preferences ->
+            preferences[RESPONSE_FORMAT_KEY] = format
+        }
+    }
+
+    suspend fun saveFontSize(size: Float) {
+        context.dataStore.edit { preferences ->
+            preferences[FONT_SIZE_KEY] = size
+        }
+    }
+
+    suspend fun saveVoiceEnabled(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[VOICE_ENABLED_KEY] = enabled
+        }
+    }
+
+    suspend fun saveVoiceTargetLanguage(languageName: String) {
+        context.dataStore.edit { preferences ->
+            preferences[VOICE_TARGET_LANGUAGE_KEY] = languageName
+        }
+    }
+
+    suspend fun saveVoiceSourceLanguage(languageName: String) {
+        context.dataStore.edit { preferences ->
+            preferences[VOICE_SOURCE_LANGUAGE_KEY] = languageName
+        }
+    }
+
+    suspend fun saveVoiceOption(optionName: String) {
+        context.dataStore.edit { preferences ->
+            preferences[VOICE_OPTION_KEY] = optionName
+        }
+    }
+
+    suspend fun savePersonalityMode(modeName: String) {
+        context.dataStore.edit { preferences ->
+            preferences[PERSONALITY_MODE_KEY] = modeName
+        }
+    }
+
+    suspend fun saveVoiceSilentMode(silent: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[VOICE_SILENT_MODE_KEY] = silent
+        }
+    }
+
+    suspend fun saveVoiceVadThreshold(threshold: Float) {
+        context.dataStore.edit { preferences ->
+            preferences[VOICE_VAD_THRESHOLD_KEY] = threshold.coerceIn(0.1f, 0.9f)
+        }
+    }
+
+    suspend fun saveVoicePermanentListen(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[VOICE_PERMANENT_LISTEN_KEY] = enabled
+        }
+    }
+
+    fun logDebug(tag: String, message: String) {
+        // Always log to Android logcat; UI visibility is controlled separately
+        Log.d(tag, message)
+    }
+}

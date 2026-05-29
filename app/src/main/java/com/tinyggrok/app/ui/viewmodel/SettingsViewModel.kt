@@ -1,0 +1,311 @@
+package com.tinyggrok.app.ui.viewmodel
+
+import android.content.Context
+import android.media.MediaPlayer
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.tinyggrok.app.data.local.SettingsRepository
+import com.tinyggrok.app.data.model.PersonalityMode
+import com.tinyggrok.app.data.model.VoiceOption
+import com.tinyggrok.app.ui.theme.AppTheme
+import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
+import java.io.File
+import javax.inject.Inject
+
+data class SettingsUiState(
+    val apiKey: String = "",
+    val theme: AppTheme = AppTheme.DARK,
+    val showCost: Boolean = false,
+    val debugMode: Boolean = false,
+    val responseFormat: String = "html",
+    val fontSize: Float = 14f,
+    val voiceEnabled: Boolean = true,
+    val voiceOption: VoiceOption = VoiceOption.EVE,
+    val personalityMode: PersonalityMode = PersonalityMode.ASSISTANT,
+    val savedMessage: String? = null,
+    /** Which voice is currently being previewed (null = none) */
+    val previewingVoice: VoiceOption? = null,
+    /** Which personality is currently being previewed (null = none) */
+    val previewingPersonality: PersonalityMode? = null,
+    val previewError: String? = null,
+    /** VAD (voice activity detection) threshold 0.1–0.9; higher = less sensitive */
+    val vadThreshold: Float = 0.5f
+)
+
+@HiltViewModel
+class SettingsViewModel @Inject constructor(
+    private val settingsRepository: SettingsRepository,
+    @ApplicationContext private val context: Context
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow(SettingsUiState())
+    val uiState: StateFlow<SettingsUiState> = _uiState
+
+    private val ttsClient = OkHttpClient()
+    private var mediaPlayer: MediaPlayer? = null
+
+    init {
+        viewModelScope.launch {
+            settingsRepository.apiKey.collect { apiKey ->
+                _uiState.value = _uiState.value.copy(apiKey = apiKey.orEmpty())
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.theme.collect { theme ->
+                _uiState.value = _uiState.value.copy(theme = theme)
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.showCost.collect { show ->
+                _uiState.value = _uiState.value.copy(showCost = show)
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.debugMode.collect { debug ->
+                _uiState.value = _uiState.value.copy(debugMode = debug)
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.responseFormat.collect { format ->
+                _uiState.value = _uiState.value.copy(responseFormat = format)
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.fontSize.collect { size ->
+                _uiState.value = _uiState.value.copy(fontSize = size)
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.voiceEnabled.collect { enabled ->
+                _uiState.value = _uiState.value.copy(voiceEnabled = enabled)
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.voiceOption.collect { name ->
+                _uiState.value = _uiState.value.copy(voiceOption = VoiceOption.fromName(name))
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.personalityMode.collect { name ->
+                _uiState.value = _uiState.value.copy(personalityMode = PersonalityMode.fromName(name))
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.voiceVadThreshold.collect { v ->
+                _uiState.value = _uiState.value.copy(vadThreshold = v)
+            }
+        }
+    }
+
+    // ── TTS preview ───────────────────────────────────────────────────────────
+
+    private val voiceSamplePhrases = mapOf<VoiceOption, String>(
+        VoiceOption.EVE to "Hi there! I'm Eve — energetic and ready to help.",
+        VoiceOption.ARA to "Hello. I'm Ara — warm, friendly, and here for you.",
+        VoiceOption.REX to "I'm Rex. Clear, confident, and ready to assist.",
+        VoiceOption.SAL to "Hi, I'm Sal — smooth, balanced, and at your service.",
+        VoiceOption.LEO to "I'm Leo. Strong and authoritative, here to guide you."
+    )
+
+    private val personalitySamplePhrases = mapOf<PersonalityMode, String>(
+        PersonalityMode.ASSISTANT      to "Hello! How can I help you today?",
+        PersonalityMode.THERAPIST      to "I'm here to listen. Tell me what's on your mind.",
+        PersonalityMode.STORYTELLER    to "Once upon a time, in a land of wonder and mystery...",
+        PersonalityMode.KIDS_STORY     to "Are you ready for a magical adventure? Let's go!",
+        PersonalityMode.KIDS_TRIVIA    to "What has hands but cannot clap? A clock! Did you get it right?",
+        PersonalityMode.MEDITATION     to "Breathe in slowly... and breathe out. Let everything go.",
+        PersonalityMode.GROK_DOC       to "Based on what you've described, here are some things to consider.",
+        PersonalityMode.MOTIVATION     to "You've got this! Every step forward is a victory!",
+        PersonalityMode.PROFESSOR      to "Today we'll explore a fascinating concept that will change how you see the world.",
+        PersonalityMode.ROMANTIC       to "The evening light is beautiful, and so is this moment.",
+        PersonalityMode.SEXY           to "Hey there... I'm glad you called.",
+        PersonalityMode.UNHINGED       to "Oh my — are you serious right now?! This is absolutely wild!",
+        PersonalityMode.CONSPIRACY     to "Did you know they've been hiding the truth in plain sight all along?",
+        PersonalityMode.ARGUMENTATIVE  to "Actually, I'd have to respectfully disagree with that perspective.",
+        PersonalityMode.LANGUAGE_TUTOR to "Bonjour! Let's practice French today. Repeat after me: Comment allez-vous?"
+    )
+
+    fun previewVoice(voice: VoiceOption) {
+        val apiKey = _uiState.value.apiKey.trim()
+        if (apiKey.isEmpty()) {
+            _uiState.value = _uiState.value.copy(previewError = "Save your API key first.")
+            return
+        }
+        val text = voiceSamplePhrases[voice] ?: "Hello! This is ${voice.displayName}."
+        _uiState.value = _uiState.value.copy(previewingVoice = voice, previewError = null)
+        viewModelScope.launch {
+            playTtsPreview(text, voice.name.lowercase(), onDone = {
+                _uiState.value = _uiState.value.copy(previewingVoice = null)
+            }, onError = { err ->
+                _uiState.value = _uiState.value.copy(previewingVoice = null, previewError = err)
+            })
+        }
+    }
+
+    fun previewPersonality(mode: PersonalityMode) {
+        val apiKey = _uiState.value.apiKey.trim()
+        if (apiKey.isEmpty()) {
+            _uiState.value = _uiState.value.copy(previewError = "Save your API key first.")
+            return
+        }
+        val text = personalitySamplePhrases[mode] ?: mode.description
+        val voiceId = _uiState.value.voiceOption.name.lowercase()
+        _uiState.value = _uiState.value.copy(previewingPersonality = mode, previewError = null)
+        viewModelScope.launch {
+            playTtsPreview(text, voiceId, onDone = {
+                _uiState.value = _uiState.value.copy(previewingPersonality = null)
+            }, onError = { err ->
+                _uiState.value = _uiState.value.copy(previewingPersonality = null, previewError = err)
+            })
+        }
+    }
+
+    fun clearPreviewError() { _uiState.value = _uiState.value.copy(previewError = null) }
+
+    private suspend fun playTtsPreview(
+        text: String,
+        voiceId: String,
+        onDone: () -> Unit,
+        onError: (String) -> Unit
+    ) = withContext(Dispatchers.IO) {
+        try {
+            stopPreview()
+            val apiKey = _uiState.value.apiKey.trim()
+            val body = JSONObject().apply {
+                put("text", text)
+                put("voice_id", voiceId)
+                put("language", "en")
+                put("response_format", "mp3")
+            }.toString().toRequestBody("application/json".toMediaType())
+
+            val request = Request.Builder()
+                .url("https://api.x.ai/v1/tts")
+                .header("Authorization", "Bearer $apiKey")
+                .post(body)
+                .build()
+
+            val response = ttsClient.newCall(request).execute()
+            if (!response.isSuccessful) {
+                val msg = response.body?.string()?.take(200) ?: "HTTP ${response.code}"
+                withContext(Dispatchers.Main) { onError("TTS error: $msg") }
+                return@withContext
+            }
+
+            val mp3Bytes = response.body?.bytes() ?: run {
+                withContext(Dispatchers.Main) { onError("Empty TTS response") }
+                return@withContext
+            }
+
+            val file = File(context.cacheDir, "tts_preview.mp3")
+            file.writeBytes(mp3Bytes)
+
+            withContext(Dispatchers.Main) {
+                val mp = MediaPlayer()
+                mediaPlayer = mp
+                mp.setDataSource(file.absolutePath)
+                mp.setOnCompletionListener {
+                    it.release()
+                    if (mediaPlayer === it) mediaPlayer = null
+                    onDone()
+                }
+                mp.setOnErrorListener { _, _, _ ->
+                    mp.release()
+                    if (mediaPlayer === mp) mediaPlayer = null
+                    onError("Playback error")
+                    true
+                }
+                mp.prepareAsync()
+                mp.setOnPreparedListener { it.start() }
+            }
+        } catch (e: Exception) {
+            withContext(Dispatchers.Main) { onError(e.message ?: "Preview failed") }
+        }
+    }
+
+    fun stopPreview() {
+        mediaPlayer?.runCatching { stop(); release() }
+        mediaPlayer = null
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        stopPreview()
+    }
+
+    // ── Settings mutations ────────────────────────────────────────────────────
+
+    fun updateApiKey(apiKey: String) {
+        _uiState.value = _uiState.value.copy(apiKey = apiKey, savedMessage = null)
+    }
+
+    fun updateTheme(theme: AppTheme) {
+        _uiState.value = _uiState.value.copy(theme = theme, savedMessage = null)
+        viewModelScope.launch { settingsRepository.saveTheme(theme) }
+    }
+
+    fun updateShowCost(show: Boolean) {
+        _uiState.value = _uiState.value.copy(showCost = show, savedMessage = null)
+        viewModelScope.launch { settingsRepository.saveShowCost(show) }
+    }
+
+    fun updateDebugMode(enabled: Boolean) {
+        _uiState.value = _uiState.value.copy(debugMode = enabled, savedMessage = null)
+        viewModelScope.launch { settingsRepository.saveDebugMode(enabled) }
+    }
+
+    fun updateResponseFormat(format: String) {
+        _uiState.value = _uiState.value.copy(responseFormat = format, savedMessage = null)
+        viewModelScope.launch { settingsRepository.saveResponseFormat(format) }
+    }
+
+    fun updateFontSize(size: Float) {
+        _uiState.value = _uiState.value.copy(fontSize = size, savedMessage = null)
+        viewModelScope.launch { settingsRepository.saveFontSize(size) }
+    }
+
+    fun updateVoiceEnabled(enabled: Boolean) {
+        _uiState.value = _uiState.value.copy(voiceEnabled = enabled, savedMessage = null)
+        viewModelScope.launch { settingsRepository.saveVoiceEnabled(enabled) }
+    }
+
+    fun updateVoiceOption(option: VoiceOption) {
+        _uiState.value = _uiState.value.copy(voiceOption = option, savedMessage = null)
+        viewModelScope.launch { settingsRepository.saveVoiceOption(option.name) }
+    }
+
+    fun updatePersonalityMode(mode: PersonalityMode) {
+        _uiState.value = _uiState.value.copy(personalityMode = mode, savedMessage = null)
+        viewModelScope.launch { settingsRepository.savePersonalityMode(mode.name) }
+    }
+
+    fun updateVadThreshold(value: Float) {
+        _uiState.value = _uiState.value.copy(vadThreshold = value, savedMessage = null)
+        viewModelScope.launch { settingsRepository.saveVoiceVadThreshold(value) }
+    }
+
+    fun saveApiKey() {
+        viewModelScope.launch {
+            settingsRepository.saveApiKey(_uiState.value.apiKey.trim())
+            _uiState.value = _uiState.value.copy(savedMessage = "Settings saved.")
+        }
+    }
+
+    fun clearApiKey() {
+        viewModelScope.launch {
+            settingsRepository.clearApiKey()
+            _uiState.value = _uiState.value.copy(apiKey = "", savedMessage = "API key cleared.")
+        }
+    }
+}
+
