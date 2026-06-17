@@ -8,9 +8,14 @@ import { MODELS } from "@shared/constants/models";
 interface GrokVideoPanelProps {
   apiKey: string;
   modelId?: string;
+  modelDisplayName?: string;
 }
 
-export function GrokVideoPanel({ apiKey, modelId = "grok-imagine-video" }: GrokVideoPanelProps) {
+export function GrokVideoPanel({
+  apiKey,
+  modelId = "grok-imagine-video-1.5",
+  modelDisplayName = "Grok Imagine Video 1.5",
+}: GrokVideoPanelProps) {
   const modelConfig = Object.values(MODELS).find(m => m.modelId === modelId);
   const [prompt, setPrompt] = useState("");
   const [duration, setDuration] = useState(8);
@@ -91,8 +96,20 @@ export function GrokVideoPanel({ apiKey, modelId = "grok-imagine-video" }: GrokV
               <path d="M44 2 C44 2 44.7 5.5 45 5.8 C45.3 6.1 49 6.8 49 6.8 C49 6.8 45.3 7.5 45 7.8 C44.7 8.1 44 11.5 44 11.5 C44 11.5 43.3 8.1 43 7.8 C42.7 7.5 39 6.8 39 6.8 C39 6.8 42.7 6.1 43 5.8 C43.3 5.5 44 2 44 2 Z" fill="#00CFFF" opacity="0.8"/>
             </svg>
             <div>
-              <div className="text-xl font-semibold">Generate videos from text prompts</div>
-              <div className="text-sm font-mono text-gray-400 dark:text-tokyo-muted mt-1.5">model: {modelId} · {modelConfig?.description ?? ""}</div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="text-xl font-semibold">{modelDisplayName}</div>
+                {modelId.includes("1.5") && (
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-[#6C63FF]/15 text-[#6C63FF] border border-[#6C63FF]/30">
+                    v1.5
+                  </span>
+                )}
+              </div>
+              <div className="text-sm text-gray-500 dark:text-tokyo-muted mt-1">
+                Generate videos from text prompts
+              </div>
+              <div className="text-sm font-mono text-gray-400 dark:text-tokyo-muted mt-1.5">
+                model: {modelId} · {modelConfig?.description ?? ""}
+              </div>
             </div>
           </div>
           <Textarea

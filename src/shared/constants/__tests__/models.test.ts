@@ -41,9 +41,10 @@ describe("MODELS registry", () => {
   });
 
   it("video generation models are flagged correctly", () => {
-    const videoMod = MODELS["grok-video"];
+    const videoMod = MODELS["grok-imagine-video-1-5"];
     expect(videoMod).toBeDefined();
     expect(videoMod.supportsVideoGeneration).toBe(true);
+    expect(videoMod.modelId).toBe("grok-imagine-video-1.5");
   });
 
   it("TTS models are flagged correctly", () => {

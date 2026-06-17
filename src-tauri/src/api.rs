@@ -579,7 +579,7 @@ pub async fn generate_video(
     aspect_ratio: Option<String>,
 ) -> Result<Value, String> {
     let client = Client::new();
-    let model = model_id.unwrap_or_else(|| "grok-imagine-video".to_string());
+    let model = model_id.unwrap_or_else(|| "grok-imagine-video-1.5".to_string());
     let url = format!("{}/videos/generations", XAI_ENDPOINT);
     info!("[generate_video] POST {} model={}", url, model);
 
@@ -703,7 +703,7 @@ pub async fn extend_video(
     prompt: Option<String>,
 ) -> Result<Value, String> {
     let client = Client::new();
-    let model = model_id.unwrap_or_else(|| "grok-imagine-video".to_string());
+    let model = model_id.unwrap_or_else(|| "grok-imagine-video-1.5".to_string());
     let url = format!("{}/videos/extensions", XAI_ENDPOINT);
     info!("[extend_video] POST {} model={} video_id={}", url, model, video_id);
 

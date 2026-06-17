@@ -237,6 +237,7 @@ function App() {
     (m) => m.endpointSupport.includes(selectedEndpoint) &&
            !m.supportsImageGeneration && !m.supportsVideoGeneration && !m.supportsTextToSpeech
   );
+  const selectedVideoModelConfig = MODELS[selectedVideoModel] ?? MODELS["grok-imagine-video-1-5"];
 
   return (
     <ErrorBoundary>
@@ -272,13 +273,23 @@ function App() {
             <div className="flex items-center gap-4">
               <span className="text-2xl">🎬</span>
               <div>
-                <div className="text-lg font-medium theme-text">Grok Video</div>
+                <div className="flex items-center gap-2">
+                  <div className="text-lg font-medium theme-text">{selectedVideoModelConfig.displayName}</div>
+                  {selectedVideoModelConfig.id === "grok-imagine-video-1-5" && (
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-[#6C63FF]/15 text-[#6C63FF] border border-[#6C63FF]/30">
+                      v1.5
+                    </span>
+                  )}
+                </div>
                 <div className="text-sm theme-text italic">
-                  {MODELS[selectedVideoModel]?.description}
+                  {selectedVideoModelConfig.description}
+                </div>
+                <div className="text-xs font-mono theme-text-muted mt-0.5">
+                  API model: {selectedVideoModelConfig.modelId}
                 </div>
               </div>
               <select
-                value={selectedVideoModel}
+                value={selectedVideoModelConfig.id}
                 onChange={(e) => setSelectedVideoModel(e.target.value)}
                 className="ml-4 text-sm rounded border theme-border theme-surface theme-text px-2 py-1"
               >
@@ -369,7 +380,11 @@ function App() {
 
           {/* Video — always mounted to preserve generation state */}
           <div className={`flex flex-col flex-1 min-h-0 overflow-hidden ${activeTab === "video" ? "" : "hidden"}`}>
-            <GrokVideoPanel apiKey={settings.xaiKey || settings.apiKey} modelId={MODELS[selectedVideoModel]?.modelId} />
+            <GrokVideoPanel
+              apiKey={settings.xaiKey || settings.apiKey}
+              modelId={selectedVideoModelConfig.modelId}
+              modelDisplayName={selectedVideoModelConfig.displayName}
+            />
           </div>
 
           {/* Voice — always mounted to preserve audio state */}
@@ -698,8 +713,9 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
               <div>
                 <h5 className="text-sm font-semibold text-emerald-800 dark:text-emerald-200 mb-1">Video generation</h5>
                 <ul className="text-sm text-emerald-700 dark:text-emerald-300 space-y-0.5">
-                  <li>• <strong>grok-imagine-video</strong> — $4.20 per minute of video (audio included)</li>
-                  <li>• A 5 s clip ≈ $0.35 · 10 s ≈ $0.70 · 15 s (max) ≈ $1.05</li>
+                  <li>• <strong>grok-imagine-video-1.5</strong> — $0.08 per second (default)</li>
+                  <li>• A 5 s clip ≈ $0.40 · 10 s ≈ $0.80 · 15 s (max) ≈ $1.20</li>
+                  <li>• <strong>grok-imagine-video</strong> (legacy) — $0.05 per second</li>
                 </ul>
               </div>
 
