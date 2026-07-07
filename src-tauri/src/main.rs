@@ -327,8 +327,22 @@ async fn generate_video(
     model_id: Option<String>,
     duration_seconds: Option<u32>,
     aspect_ratio: Option<String>,
+    resolution: Option<String>,
+    image: Option<String>,
+    image_mime_type: Option<String>,
 ) -> Result<serde_json::Value, String> {
-    api::generate_video(app_handle, prompt, api_key, model_id, duration_seconds, aspect_ratio).await
+    api::generate_video(
+        app_handle,
+        prompt,
+        api_key,
+        model_id,
+        duration_seconds,
+        aspect_ratio,
+        resolution,
+        image,
+        image_mime_type,
+    )
+    .await
 }
 
 #[tauri::command]

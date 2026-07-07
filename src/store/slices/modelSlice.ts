@@ -32,7 +32,7 @@ export const createModelSlice: StateCreator<ModelSlice> = (set, get) => ({
   selectedModel: "grok-4-3",
   selectedEndpoint: "xai",
   selectedImageModel: "grok-imagine-quality",
-  selectedVideoModel: "grok-imagine-video-1-5",
+  selectedVideoModel: "grok-imagine-video",
   use1MContext: false,
   useMemory: false,
   useGrounding: false,

@@ -1,22 +1,12 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Button } from "@shared/components/ui/button";
+import { BUILTIN_VOICES } from "@shared/constants/voices";
 import { Mic, Wand2, Info, Copy, Check, X } from "lucide-react";
 
 interface GrokVoicePanelProps {
   apiKey: string;
 }
-
-const BUILTIN_VOICES = [
-  { value: "eve",   label: "Eve",   desc: "Warm female"     },
-  { value: "ara",   label: "Ara",   desc: "Expressive"      },
-  { value: "rex",   label: "Rex",   desc: "Deep male"       },
-  { value: "adam",  label: "Adam",  desc: "Clear male"      },
-  { value: "ava",   label: "Ava",   desc: "Bright female"   },
-  { value: "leo",   label: "Leo",   desc: "Friendly male"   },
-  { value: "luna",  label: "Luna",  desc: "Soft female"     },
-  { value: "orion", label: "Orion", desc: "Rich male"       },
-];
 
 const LANGUAGES = [
   { value: "en", label: "English" }, { value: "es", label: "Spanish" },
@@ -97,7 +87,7 @@ export function GrokVoicePanel({ apiKey }: GrokVoicePanelProps) {
           <div className="flex items-center gap-2 min-w-0">
             <span className="font-semibold theme-text">Grok Voice</span>
             <span className="text-sm font-mono text-gray-400 dark:text-gray-400 hidden sm:inline">
-              grok-tts · 20+ languages · $4.20/1M chars
+              grok-tts · 26 voices · 20+ languages
             </span>
           </div>
         </div>
@@ -117,20 +107,22 @@ export function GrokVoicePanel({ apiKey }: GrokVoicePanelProps) {
           </div>
 
           {voiceMode === "builtin" ? (
-            /* Compact voice pills */
-            <div className="flex gap-1 flex-wrap">
-              {BUILTIN_VOICES.map((v) => (
-                <button key={v.value} onClick={() => setBuiltinVoice(v.value)}
-                  title={v.desc}
-                  className={`px-2.5 py-1 rounded-md text-sm font-medium transition-colors ${
-                    builtinVoice === v.value
-                      ? "bg-blue-500 text-white"
-                      : "theme-surface border theme-border theme-text-muted hover:border-blue-400 hover:theme-text"
-                  }`}>
-                  {v.label}
-                </button>
-              ))}
-            </div>
+            <select
+              value={builtinVoice}
+              onChange={(e) => setBuiltinVoice(e.target.value)}
+              className="flex-1 min-w-0 rounded-lg border theme-border theme-surface theme-text px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <optgroup label="Original">
+                {BUILTIN_VOICES.filter((v) => v.group === "original").map((v) => (
+                  <option key={v.value} value={v.value}>{v.label} — {v.desc}</option>
+                ))}
+              </optgroup>
+              <optgroup label="Flagship (new)">
+                {BUILTIN_VOICES.filter((v) => v.group === "flagship").map((v) => (
+                  <option key={v.value} value={v.value}>{v.label} — {v.desc}</option>
+                ))}
+              </optgroup>
+            </select>
           ) : (
             /* Custom voice ID */
             <div className="flex items-center gap-2 flex-1 min-w-0">

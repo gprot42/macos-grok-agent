@@ -4,7 +4,7 @@ version = "0.0.1"
 description = "Grok Agent - AI Assistant"
 authors = ["Cortex Team"]
 license = "MIT"
-repository = ""
+repository = "https://github.com/gprot42/macos-grok-agent"
 edition = "2021"
 
 [build-dependencies]

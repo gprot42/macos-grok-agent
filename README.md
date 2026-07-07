@@ -2,6 +2,8 @@
 
 A desktop AI assistant for interacting with multiple Large Language Models via **xAI Grok**, **OpenRouter**, **Anthropic**, **OpenAI**, and **Kilo Code**. Built with Tauri 2, React 18, and Rust for macOS.
 
+**Repository:** [github.com/gprot42/macos-grok-agent](https://github.com/gprot42/macos-grok-agent)
+
 ## Tech Stack
 
 | Layer | Technology |

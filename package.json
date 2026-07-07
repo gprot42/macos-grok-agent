@@ -1,7 +1,15 @@
 {
-  "name": "grok-agent",
+  "name": "macos-grok-agent",
   "private": true,
   "version": "0.0.1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gprot42/macos-grok-agent.git"
+  },
+  "homepage": "https://github.com/gprot42/macos-grok-agent",
+  "bugs": {
+    "url": "https://github.com/gprot42/macos-grok-agent/issues"
+  },
   "type": "module",
   "scripts": {
     "version:sync": "node scripts/sync-version.mjs",

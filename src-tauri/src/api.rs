@@ -159,7 +159,7 @@ pub(crate) fn apply_auth_headers(
         "openrouter" => {
             request = request
                 .header("Authorization", format!("Bearer {}", api_key))
-                .header("HTTP-Referer", "https://grok-agent.app")
+                .header("HTTP-Referer", "https://github.com/gprot42/macos-grok-agent")
                 .header("X-Title", "Grok Agent");
         }
         "xai" | "kilocode" => {
@@ -577,21 +577,47 @@ pub async fn generate_video(
     model_id: Option<String>,
     duration_seconds: Option<u32>,
     aspect_ratio: Option<String>,
+    resolution: Option<String>,
+    image: Option<String>,
+    image_mime_type: Option<String>,
 ) -> Result<Value, String> {
     let client = Client::new();
-    let model = model_id.unwrap_or_else(|| "grok-imagine-video-1.5".to_string());
+    let model = model_id.unwrap_or_else(|| "grok-imagine-video".to_string());
+    let has_image = image.as_ref().is_some_and(|data| !data.is_empty());
+
+    // grok-imagine-video-1.5 is image-to-video only; grok-imagine-video supports text-to-video.
+    if model.contains("1.5") && !has_image {
+        return Err(
+            "grok-imagine-video-1.5 requires a source image (image-to-video only). \
+             Upload an image, or switch to Grok Imagine Video (Legacy) for text-to-video."
+                .to_string(),
+        );
+    }
+
     let url = format!("{}/videos/generations", XAI_ENDPOINT);
-    info!("[generate_video] POST {} model={}", url, model);
+    let res_str = resolution.as_deref().unwrap_or("720p");
+    info!(
+        "[generate_video] POST {} model={} resolution={} has_image={}",
+        url, model, res_str, has_image
+    );
 
     let mut payload = json!({
         "model": model,
         "prompt": prompt,
         "duration": duration_seconds.unwrap_or(10),
+        "resolution": res_str,
     });
     if let Some(ref ar) = aspect_ratio {
         if !ar.is_empty() {
             payload["aspect_ratio"] = json!(ar);
         }
+    }
+    if has_image {
+        let mime = image_mime_type.as_deref().unwrap_or("image/png");
+        payload["image"] = json!({
+            "url": format!("data:{};base64,{}", mime, image.as_ref().unwrap()),
+            "type": "image_url"
+        });
     }
 
     let response = client
@@ -1635,7 +1661,7 @@ pub async fn coding_agent_chat(
             "openrouter" => {
                 request = request
                     .header("Authorization", format!("Bearer {}", api_key))
-                    .header("HTTP-Referer", "https://grok-agent.app")
+                    .header("HTTP-Referer", "https://github.com/gprot42/macos-grok-agent")
                     .header("X-Title", "Grok Agent");
             }
             "xai" | "kilocode" => {
