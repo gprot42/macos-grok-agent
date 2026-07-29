@@ -102,6 +102,16 @@ function AspectRatioSelector({
   );
 }
 
+/** Image count options for Grok Imagine batch generation. */
+const IMAGE_COUNT_OPTIONS = [
+  { value: "auto" as const, label: "Auto", n: 1, hint: "Generate 1 image (API default)" },
+  { value: "4" as const, label: "4", n: 4, hint: "Generate 4 variations" },
+  { value: "8" as const, label: "8", n: 8, hint: "Generate 8 variations" },
+  { value: "12" as const, label: "12", n: 12, hint: "Generate 12 variations (batched)" },
+] as const;
+
+type ImageCountValue = (typeof IMAGE_COUNT_OPTIONS)[number]["value"];
+
 interface ImageGeneratorProps {
   apiKey: string;
   onGenerateImage: (options: {
@@ -114,7 +124,8 @@ interface ImageGeneratorProps {
     aspectRatio?: string;
     region?: string;
     resolution?: string;
-  }) => Promise<string | undefined>;
+    n?: number;
+  }) => Promise<string[] | undefined>;
   generatedImages: string[];
   /** Actual per-image cost in USD returned by the API (index-aligned with generatedImages). */
   imageCosts?: (number | null)[];
@@ -167,6 +178,8 @@ export function ImageGenerator({
   const [region, setRegion] = useState<"auto" | "us-east-1" | "eu-west-1">("auto");
   /** "1k" = 1024px longest side (~$0.05); "2k" = 2048px (~$0.07) */
   const [resolution, setResolution] = useState<"1k" | "2k">("1k");
+  /** How many images to generate: Auto (1), 4, 8, or 12 */
+  const [imageCount, setImageCount] = useState<ImageCountValue>("auto");
   const generationStartRef = useRef<number | null>(null);
   const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -240,7 +253,8 @@ export function ImageGenerator({
 
     const usedPrompt = autoPrompt;
     setLastPrompt(usedPrompt);
-    const result = await onGenerateImage({
+    const countOpt = IMAGE_COUNT_OPTIONS.find((o) => o.value === imageCount) ?? IMAGE_COUNT_OPTIONS[0];
+    const results = await onGenerateImage({
       prompt: usedPrompt,
       apiKey,
       editImage: sourceImage?.data,
@@ -250,12 +264,18 @@ export function ImageGenerator({
       aspectRatio: aspectRatio !== "1:1" ? aspectRatio : undefined,
       region: region !== "auto" ? region : undefined,
       resolution,
+      n: countOpt.n,
     });
-    if (result) {
-      setImagePrompts(prev => [...prev, usedPrompt]);
+    if (results && results.length > 0) {
+      // One prompt entry per returned image so redraw/prompts stay index-aligned.
+      setImagePrompts((prev) => [
+        ...prev,
+        ...Array.from({ length: results.length }, () => usedPrompt),
+      ]);
+      const last = results[results.length - 1];
       setSourceImage({
-        data: result,
-        name: `generated-${generatedImages.length + 1}`,
+        data: last,
+        name: `generated-${generatedImages.length + results.length}`,
         mimeType: "image/png",
       });
     }
@@ -376,15 +396,19 @@ export function ImageGenerator({
   const handleRedrawWithAlt = async (index: number) => {
     const originalPrompt = imagePrompts[index];
     if (!originalPrompt || !altModelId) return;
-    const result = await onGenerateImage({
+    const results = await onGenerateImage({
       prompt: originalPrompt,
       apiKey,
       modelId: altModelId,
       region: region !== "auto" ? region : undefined,
       resolution,
+      n: 1,
     });
-    if (result) {
-      setImagePrompts(prev => [...prev, originalPrompt]);
+    if (results && results.length > 0) {
+      setImagePrompts((prev) => [
+        ...prev,
+        ...Array.from({ length: results.length }, () => originalPrompt),
+      ]);
     }
   };
 
@@ -548,7 +572,13 @@ export function ImageGenerator({
                 </svg>
               <div className="text-center space-y-1">
                 <div className="text-gray-600 dark:text-tokyo-muted font-medium">
-                  {sourceImage ? "Editing image…" : "Generating image…"}
+                  {sourceImage
+                    ? imageCount !== "auto"
+                      ? `Editing · ${IMAGE_COUNT_OPTIONS.find((o) => o.value === imageCount)?.n ?? 1} images…`
+                      : "Editing image…"
+                    : imageCount !== "auto"
+                      ? `Generating ${IMAGE_COUNT_OPTIONS.find((o) => o.value === imageCount)?.n ?? 1} images…`
+                      : "Generating image…"}
                 </div>
                 <div className="text-sm text-gray-400 dark:text-tokyo-muted tabular-nums">
                   {elapsedSeconds}s elapsed
@@ -763,8 +793,33 @@ export function ImageGenerator({
           </>
         )}
 
-        {/* ── Resolution + Region controls ──────────────────────────────── */}
+        {/* ── Count + Resolution + Region controls ───────────────────────── */}
         <div className="flex items-center gap-4 flex-wrap">
+          {/* Image count */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm font-semibold theme-text">Count:</span>
+            {IMAGE_COUNT_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setImageCount(opt.value)}
+                title={opt.hint}
+                className={`px-2.5 py-1 text-xs rounded-md font-mono transition-colors ${
+                  imageCount === opt.value
+                    ? "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 font-bold ring-1 ring-emerald-400 dark:ring-emerald-600"
+                    : "theme-text-muted hover:bg-gray-100 dark:hover:bg-gray-800"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+            <span className="text-xs theme-text-muted">
+              {imageCount === "auto"
+                ? "1 image"
+                : `${IMAGE_COUNT_OPTIONS.find((o) => o.value === imageCount)?.n ?? 1} images`}
+            </span>
+          </div>
+
           {/* Resolution */}
           <div className="flex items-center gap-1.5">
             <span className="text-sm font-semibold theme-text">Size:</span>
@@ -787,6 +842,9 @@ export function ImageGenerator({
             ))}
             <span className="text-xs theme-text-muted font-mono">
               {resolution === "1k" ? "1024px · ~$0.05" : "2048px · ~$0.07"}
+              {imageCount !== "auto" && (
+                <> · ×{IMAGE_COUNT_OPTIONS.find((o) => o.value === imageCount)?.n}</>
+              )}
             </span>
           </div>
 
@@ -860,8 +918,12 @@ export function ImageGenerator({
                 : searchMode === "change-ratio"
                   ? "Convert Ratio"
                   : sourceImage
-                    ? "Edit Image"
-                    : "Generate"}
+                    ? imageCount !== "auto"
+                      ? `Edit ×${IMAGE_COUNT_OPTIONS.find((o) => o.value === imageCount)?.n ?? 1}`
+                      : "Edit Image"
+                    : imageCount !== "auto"
+                      ? `Generate ${IMAGE_COUNT_OPTIONS.find((o) => o.value === imageCount)?.n ?? 1}`
+                      : "Generate"}
             </Button>
           </div>
         </div>

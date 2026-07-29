@@ -461,6 +461,47 @@ fn xai_image_base(region: Option<&str>) -> String {
     }
 }
 
+/// Max images the xAI API accepts per single request (`n` range 1–10).
+const IMAGE_N_MAX_PER_REQUEST: u32 = 10;
+/// Max images the UI may request (split across multiple API calls when > 10).
+const IMAGE_N_MAX_UI: u32 = 12;
+
+/// Collect all `b64_json` entries from an images API response body.
+fn extract_b64_images(body: &Value) -> Vec<String> {
+    body.get("data")
+        .and_then(|d| d.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|item| {
+                    item.get("b64_json")
+                        .and_then(|b| b.as_str())
+                        .map(|s| s.to_string())
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Resolve UI count: None / 0 / "Auto" → 1; clamp to 1..=12.
+fn resolve_image_n(n: Option<u32>) -> u32 {
+    match n {
+        None | Some(0) => 1,
+        Some(v) => v.clamp(1, IMAGE_N_MAX_UI),
+    }
+}
+
+/// Split total image count into per-request chunks of at most 10.
+fn image_n_chunks(total: u32) -> Vec<u32> {
+    let mut remaining = total;
+    let mut chunks = Vec::new();
+    while remaining > 0 {
+        let c = remaining.min(IMAGE_N_MAX_PER_REQUEST);
+        chunks.push(c);
+        remaining -= c;
+    }
+    chunks
+}
+
 pub async fn generate_image(
     prompt: String,
     api_key: String,
@@ -471,6 +512,7 @@ pub async fn generate_image(
     aspect_ratio: Option<String>,
     region: Option<String>,
     resolution: Option<String>,
+    n: Option<u32>,
 ) -> Result<ImageResponse, String> {
     let client = Client::new();
     let model = model_id.unwrap_or_else(|| "grok-imagine-image-quality".to_string());
@@ -478,95 +520,130 @@ pub async fn generate_image(
     let (width, height) = aspect_ratio_to_dims(aspect_ratio.as_deref().unwrap_or("1:1"));
     // "1k" | "2k" — only send when explicitly provided (API defaults to 1k)
     let res_str = resolution.as_deref().unwrap_or("1k");
+    let total_n = resolve_image_n(n);
 
     if let Some(image_data) = edit_image {
-        // Image editing endpoint
+        // Image editing endpoint — batch when n > 10
         let url = format!("{}/images/edits", base);
-        info!("[generate_image] POST {} model={} {}x{} res={} region={:?}", url, model, width, height, res_str, region);
-        let payload = json!({
-            "model": model,
-            "prompt": prompt,
-            "image": {
-                "url": format!("data:image/png;base64,{}", image_data),
-                "type": "image_url"
-            },
-            "n": 1,
-            "width": width,
-            "height": height,
-            "resolution": res_str,
-            "response_format": "b64_json",
-        });
+        let mut all_images: Vec<String> = Vec::new();
+        let mut total_cost = 0.0f64;
 
-        let response = client
-            .post(&url)
-            .header("Authorization", format!("Bearer {}", api_key))
-            .json(&payload)
-            .send()
-            .await
-            .map_err(|e| format!("Request failed: {}", e))?;
+        for chunk_n in image_n_chunks(total_n) {
+            info!(
+                "[generate_image] POST {} model={} {}x{} res={} n={} region={:?}",
+                url, model, width, height, res_str, chunk_n, region
+            );
+            let payload = json!({
+                "model": model,
+                "prompt": prompt,
+                "image": {
+                    "url": format!("data:image/png;base64,{}", image_data),
+                    "type": "image_url"
+                },
+                "n": chunk_n,
+                "width": width,
+                "height": height,
+                "resolution": res_str,
+                "response_format": "b64_json",
+            });
 
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(format!("API error {}: {}", status, body));
-        }
+            let response = client
+                .post(&url)
+                .header("Authorization", format!("Bearer {}", api_key))
+                .json(&payload)
+                .send()
+                .await
+                .map_err(|e| format!("Request failed: {}", e))?;
 
-        let body: Value = response
-            .json()
-            .await
-            .map_err(|e| format!("Failed to parse response: {}", e))?;
-
-        let cost_usd = ticks_to_usd(&body);
-
-        if let Some(data) = body.get("data").and_then(|d| d.as_array()).and_then(|arr| arr.first()) {
-            if let Some(b64) = data.get("b64_json").and_then(|b| b.as_str()) {
-                info!("[generate_image] edit done cost=${:.4}", cost_usd);
-                return Ok(ImageResponse { image: b64.to_string(), cost_usd });
+            if !response.status().is_success() {
+                let status = response.status();
+                let body = response.text().await.unwrap_or_default();
+                return Err(format!("API error {}: {}", status, body));
             }
+
+            let body: Value = response
+                .json()
+                .await
+                .map_err(|e| format!("Failed to parse response: {}", e))?;
+
+            total_cost += ticks_to_usd(&body);
+            let imgs = extract_b64_images(&body);
+            if imgs.is_empty() {
+                return Err("No image data in response".to_string());
+            }
+            all_images.extend(imgs);
         }
-        Err("No image data in response".to_string())
+
+        info!(
+            "[generate_image] edit done count={} cost=${:.4}",
+            all_images.len(),
+            total_cost
+        );
+        let first = all_images.first().cloned().unwrap_or_default();
+        Ok(ImageResponse {
+            image: first,
+            images: all_images,
+            cost_usd: total_cost,
+        })
     } else {
-        // Image generation endpoint
+        // Image generation endpoint — batch when n > 10
         let url = format!("{}/images/generations", base);
-        info!("[generate_image] POST {} model={} {}x{} res={} region={:?}", url, model, width, height, res_str, region);
-        let payload = json!({
-            "model": model,
-            "prompt": prompt,
-            "n": 1,
-            "width": width,
-            "height": height,
-            "resolution": res_str,
-            "response_format": "b64_json",
-        });
+        let mut all_images: Vec<String> = Vec::new();
+        let mut total_cost = 0.0f64;
 
-        let response = client
-            .post(&url)
-            .header("Authorization", format!("Bearer {}", api_key))
-            .json(&payload)
-            .send()
-            .await
-            .map_err(|e| format!("Request failed: {}", e))?;
+        for chunk_n in image_n_chunks(total_n) {
+            info!(
+                "[generate_image] POST {} model={} {}x{} res={} n={} region={:?}",
+                url, model, width, height, res_str, chunk_n, region
+            );
+            let payload = json!({
+                "model": model,
+                "prompt": prompt,
+                "n": chunk_n,
+                "width": width,
+                "height": height,
+                "resolution": res_str,
+                "response_format": "b64_json",
+            });
 
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(format!("API error {}: {}", status, body));
-        }
+            let response = client
+                .post(&url)
+                .header("Authorization", format!("Bearer {}", api_key))
+                .json(&payload)
+                .send()
+                .await
+                .map_err(|e| format!("Request failed: {}", e))?;
 
-        let body: Value = response
-            .json()
-            .await
-            .map_err(|e| format!("Failed to parse response: {}", e))?;
-
-        let cost_usd = ticks_to_usd(&body);
-
-        if let Some(data) = body.get("data").and_then(|d| d.as_array()).and_then(|arr| arr.first()) {
-            if let Some(b64) = data.get("b64_json").and_then(|b| b.as_str()) {
-                info!("[generate_image] generation done cost=${:.4}", cost_usd);
-                return Ok(ImageResponse { image: b64.to_string(), cost_usd });
+            if !response.status().is_success() {
+                let status = response.status();
+                let body = response.text().await.unwrap_or_default();
+                return Err(format!("API error {}: {}", status, body));
             }
+
+            let body: Value = response
+                .json()
+                .await
+                .map_err(|e| format!("Failed to parse response: {}", e))?;
+
+            total_cost += ticks_to_usd(&body);
+            let imgs = extract_b64_images(&body);
+            if imgs.is_empty() {
+                return Err("No image data in response".to_string());
+            }
+            all_images.extend(imgs);
         }
-        Err("No image data in response".to_string())
+
+        info!(
+            "[generate_image] generation done count={} cost=${:.4}",
+            all_images.len(),
+            total_cost
+        );
+        let first = all_images.first().cloned().unwrap_or_default();
+        Ok(ImageResponse {
+            image: first,
+            images: all_images,
+            cost_usd: total_cost,
+        })
     }
 }
 
@@ -580,10 +657,13 @@ pub async fn generate_video(
     resolution: Option<String>,
     image: Option<String>,
     image_mime_type: Option<String>,
+    with_audio: Option<bool>,
 ) -> Result<Value, String> {
     let client = Client::new();
     let model = model_id.unwrap_or_else(|| "grok-imagine-video".to_string());
     let has_image = image.as_ref().is_some_and(|data| !data.is_empty());
+    // Default to native audio on (Grok Imagine is a video-audio model).
+    let audio_enabled = with_audio.unwrap_or(true);
 
     // grok-imagine-video-1.5 is image-to-video only; grok-imagine-video supports text-to-video.
     if model.contains("1.5") && !has_image {
@@ -597,8 +677,8 @@ pub async fn generate_video(
     let url = format!("{}/videos/generations", XAI_ENDPOINT);
     let res_str = resolution.as_deref().unwrap_or("720p");
     info!(
-        "[generate_video] POST {} model={} resolution={} has_image={}",
-        url, model, res_str, has_image
+        "[generate_video] POST {} model={} resolution={} has_image={} with_audio={}",
+        url, model, res_str, has_image, audio_enabled
     );
 
     let mut payload = json!({
@@ -606,6 +686,10 @@ pub async fn generate_video(
         "prompt": prompt,
         "duration": duration_seconds.unwrap_or(10),
         "resolution": res_str,
+        // Native soundtrack: with_audio is the product-facing name; generate_audio is
+        // the field used by several xAI video wrappers. Send both for compatibility.
+        "with_audio": audio_enabled,
+        "generate_audio": audio_enabled,
     });
     if let Some(ref ar) = aspect_ratio {
         if !ar.is_empty() {
@@ -620,7 +704,9 @@ pub async fn generate_video(
         });
     }
 
-    let response = client
+    // Some API revisions accept with_audio / generate_audio; older ones reject
+    // unknown fields. Submit once with audio flags, retry without on 400.
+    let mut response = client
         .post(&url)
         .header("Authorization", format!("Bearer {}", api_key))
         .json(&payload)
@@ -631,8 +717,41 @@ pub async fn generate_video(
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        info!("[generate_video] Submit error {}: {}", status, body);
-        return Err(format!("API error {}: {}", status, body));
+        let body_lower = body.to_lowercase();
+        let audio_field_rejected = status.as_u16() == 400
+            && (body_lower.contains("with_audio")
+                || body_lower.contains("generate_audio")
+                || body_lower.contains("unknown field")
+                || body_lower.contains("extra field"));
+
+        if audio_field_rejected {
+            info!(
+                "[generate_video] Audio flags rejected ({}), retrying without them",
+                status
+            );
+            let mut retry_payload = payload.clone();
+            if let Some(obj) = retry_payload.as_object_mut() {
+                obj.remove("with_audio");
+                obj.remove("generate_audio");
+            }
+            response = client
+                .post(&url)
+                .header("Authorization", format!("Bearer {}", api_key))
+                .json(&retry_payload)
+                .send()
+                .await
+                .map_err(|e| format!("Request failed: {}", e))?;
+
+            if !response.status().is_success() {
+                let status = response.status();
+                let body = response.text().await.unwrap_or_default();
+                info!("[generate_video] Submit error {}: {}", status, body);
+                return Err(format!("API error {}: {}", status, body));
+            }
+        } else {
+            info!("[generate_video] Submit error {}: {}", status, body);
+            return Err(format!("API error {}: {}", status, body));
+        }
     }
 
     let body: Value = response

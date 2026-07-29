@@ -106,11 +106,14 @@ pub struct ChatResponse {
 }
 
 /// Return value for image generation / editing commands.
-/// Includes the raw base64 image and the actual billed cost returned by the xAI API.
+/// Includes the raw base64 image(s) and the actual billed cost returned by the xAI API.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImageResponse {
-    /// Raw base64-encoded image data (no data-URI prefix).
+    /// First generated image (base64, no data-URI prefix). Kept for backward compatibility.
     pub image: String,
+    /// All generated images for this request (base64, no data-URI prefix). Length matches `n`.
+    #[serde(default)]
+    pub images: Vec<String>,
     /// Actual cost charged by xAI, in US dollars (derived from `usage.cost_in_usd_ticks`).
     #[serde(rename = "costUsd")]
     pub cost_usd: f64,
@@ -188,10 +191,12 @@ async fn generate_image(
     region: Option<String>,
     // "1k" | "2k" | None → API default (1k)
     resolution: Option<String>,
+    // Number of images to generate (1–12 UI; API max per request is 10). None/0 = Auto (1).
+    n: Option<u32>,
 ) -> Result<ImageResponse, String> {
     api::generate_image(
         prompt, api_key, edit_image, edit_image_mime_type,
-        model_id, search_mode, aspect_ratio, region, resolution,
+        model_id, search_mode, aspect_ratio, region, resolution, n,
     )
     .await
 }
@@ -330,6 +335,8 @@ async fn generate_video(
     resolution: Option<String>,
     image: Option<String>,
     image_mime_type: Option<String>,
+    // When true (default), request native audio with the video. When false, silent video.
+    with_audio: Option<bool>,
 ) -> Result<serde_json::Value, String> {
     api::generate_video(
         app_handle,
@@ -341,6 +348,7 @@ async fn generate_video(
         resolution,
         image,
         image_mime_type,
+        with_audio,
     )
     .await
 }

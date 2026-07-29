@@ -34,6 +34,11 @@ interface GenerateImageOptions {
   region?: string;
   /** "1k" | "2k" — xAI resolution field */
   resolution?: string;
+  /**
+   * How many images to generate. UI values: Auto (1), 4, 8, 12.
+   * Pass undefined / 0 for Auto. API max per request is 10; 12 is batched.
+   */
+  n?: number;
 }
 
 
@@ -225,13 +230,17 @@ export function useChat() {
     }
   }, [messages, activeSessionId]);
 
-  const generateImage = useCallback(async (options: GenerateImageOptions) => {
+  /**
+   * Generate one or more images. Returns all base64 images produced (empty/undefined on cancel or error).
+   * Callers that only need the last image can use `images?.at(-1)`.
+   */
+  const generateImage = useCallback(async (options: GenerateImageOptions): Promise<string[] | undefined> => {
     cancelledRef.current = false;
     setIsLoading(true);
     setError(null);
 
     try {
-      const resp = await invoke<{ image: string; costUsd: number }>("generate_image", {
+      const resp = await invoke<{ image: string; images?: string[]; costUsd: number }>("generate_image", {
         prompt: options.prompt,
         apiKey: options.apiKey,
         editImage: options.editImage,
@@ -241,13 +250,29 @@ export function useChat() {
         aspectRatio: options.aspectRatio,
         region: options.region || null,
         resolution: options.resolution || null,
+        n: options.n && options.n > 0 ? options.n : null,
       });
 
       if (cancelledRef.current) return;
 
-      setGeneratedImages(prev => [...prev, resp.image]);
-      setImageCosts(prev => [...prev, resp.costUsd > 0 ? resp.costUsd : null]);
-      return resp.image;
+      const imgs =
+        resp.images && resp.images.length > 0
+          ? resp.images
+          : resp.image
+            ? [resp.image]
+            : [];
+      if (imgs.length === 0) return;
+
+      // Spread total cost evenly across returned images for per-tile display.
+      const perCost =
+        resp.costUsd > 0 && imgs.length > 0 ? resp.costUsd / imgs.length : null;
+
+      setGeneratedImages(prev => [...prev, ...imgs]);
+      setImageCosts(prev => [
+        ...prev,
+        ...imgs.map(() => (perCost != null ? perCost : null)),
+      ]);
+      return imgs;
     } catch (e) {
       if (!cancelledRef.current) {
         const errorMsg = e instanceof Error ? e.message : String(e);

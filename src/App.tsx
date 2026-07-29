@@ -254,7 +254,7 @@ function App() {
           subAgentStatus={isReviewing ? "Reviewing..." : reviews.length > 0 ? "Optimized" : "Idle"}
         />
 
-        <div className="theme-surface border-b theme-border px-6 py-3">
+        <div className={`theme-surface border-b theme-border px-6 ${activeTab === "video" ? "py-1.5" : "py-3"}`}>
           {activeTab === "chat" ? (
             <>
               <ModelSelector />
@@ -270,33 +270,22 @@ function App() {
               </div>
             </div>
           ) : activeTab === "video" ? (
-            <div className="flex items-center gap-4">
-              <span className="text-2xl">🎬</span>
-              <div>
-                <div className="flex items-center gap-2">
-                  <div className="text-lg font-medium theme-text">{selectedVideoModelConfig.displayName}</div>
-                  {selectedVideoModelConfig.id === "grok-imagine-video-1-5" && (
-                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-[#6C63FF]/15 text-[#6C63FF] border border-[#6C63FF]/30">
-                      v1.5
-                    </span>
-                  )}
-                </div>
-                <div className="text-sm theme-text italic">
-                  {selectedVideoModelConfig.description}
-                </div>
-                <div className="text-xs font-mono theme-text-muted mt-0.5">
-                  API model: {selectedVideoModelConfig.modelId}
-                </div>
-              </div>
+            <div className="flex items-center gap-2.5 min-h-0">
+              <span className="text-lg leading-none">🎬</span>
+              <span className="text-sm font-medium theme-text shrink-0">Video</span>
               <select
                 value={selectedVideoModelConfig.id}
                 onChange={(e) => setSelectedVideoModel(e.target.value)}
-                className="ml-4 text-sm rounded border theme-border theme-surface theme-text px-2 py-1"
+                className="text-sm rounded border theme-border theme-surface theme-text px-2 py-1 max-w-xs"
+                title={selectedVideoModelConfig.description}
               >
                 {Object.values(MODELS).filter(m => m.supportsVideoGeneration).map(m => (
                   <option key={m.id} value={m.id}>{m.displayName}</option>
                 ))}
               </select>
+              <span className="text-[11px] font-mono theme-text-muted truncate hidden sm:inline">
+                {selectedVideoModelConfig.modelId}
+              </span>
             </div>
           ) : activeTab === "voice" ? (
             <div className="flex items-center gap-3">
