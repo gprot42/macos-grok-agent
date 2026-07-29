@@ -647,6 +647,56 @@ pub async fn generate_image(
     }
 }
 
+/// Turn a raw xAI video API error body into a short, user-facing message.
+fn format_video_api_error(context: &str, status: reqwest::StatusCode, body: &str) -> String {
+    // Try JSON: { "code": "imagine:content-moderated", "error": "..." }
+    if let Ok(v) = serde_json::from_str::<Value>(body) {
+        let code = v
+            .get("code")
+            .and_then(|c| c.as_str())
+            .or_else(|| v.get("error").and_then(|e| e.get("code")).and_then(|c| c.as_str()))
+            .unwrap_or("");
+        let message = v
+            .get("error")
+            .and_then(|e| e.as_str())
+            .or_else(|| v.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str()))
+            .or_else(|| v.get("message").and_then(|m| m.as_str()))
+            .unwrap_or("");
+
+        let code_l = code.to_lowercase();
+        let msg_l = message.to_lowercase();
+        if code_l.contains("content-moderated")
+            || code_l.contains("moderation")
+            || msg_l.contains("content moderation")
+            || msg_l.contains("respect_moderation")
+            || msg_l.contains("moderated")
+        {
+            return "Content moderation blocked this video. Try a different prompt \
+(avoid copyrighted characters, real-person likenesses, graphic violence, or sexual content)."
+                .to_string();
+        }
+
+        if !message.is_empty() {
+            if !code.is_empty() {
+                return format!("{}: {} ({})", context, message, code);
+            }
+            return format!("{}: {}", context, message);
+        }
+        if !code.is_empty() {
+            return format!("{}: {} (HTTP {})", context, code, status);
+        }
+    }
+
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        format!("{}: HTTP {}", context, status)
+    } else if trimmed.len() > 280 {
+        format!("{}: HTTP {} — {}…", context, status, &trimmed[..280])
+    } else {
+        format!("{}: HTTP {} — {}", context, status, trimmed)
+    }
+}
+
 pub async fn generate_video(
     app_handle: tauri::AppHandle,
     prompt: String,
@@ -665,14 +715,17 @@ pub async fn generate_video(
     // Default to native audio on (Grok Imagine is a video-audio model).
     let audio_enabled = with_audio.unwrap_or(true);
 
-    // grok-imagine-video-1.5 is image-to-video only; grok-imagine-video supports text-to-video.
-    if model.contains("1.5") && !has_image {
-        return Err(
-            "grok-imagine-video-1.5 requires a source image (image-to-video only). \
-             Upload an image, or switch to Grok Imagine Video (Legacy) for text-to-video."
-                .to_string(),
+    // grok-imagine-video-1.5 is image-to-video oriented. For text-only requests,
+    // automatically fall back to grok-imagine-video (supports text-to-video).
+    let model = if model.contains("1.5") && !has_image {
+        info!(
+            "[generate_video] No source image with 1.5 model — using {} for text-to-video",
+            "grok-imagine-video"
         );
-    }
+        "grok-imagine-video".to_string()
+    } else {
+        model
+    };
 
     let url = format!("{}/videos/generations", XAI_ENDPOINT);
     let res_str = resolution.as_deref().unwrap_or("720p");
@@ -746,11 +799,11 @@ pub async fn generate_video(
                 let status = response.status();
                 let body = response.text().await.unwrap_or_default();
                 info!("[generate_video] Submit error {}: {}", status, body);
-                return Err(format!("API error {}: {}", status, body));
+                return Err(format_video_api_error("Video request failed", status, &body));
             }
         } else {
             info!("[generate_video] Submit error {}: {}", status, body);
-            return Err(format!("API error {}: {}", status, body));
+            return Err(format_video_api_error("Video request failed", status, &body));
         }
     }
 
@@ -786,7 +839,7 @@ pub async fn generate_video(
             let status = poll_resp.status();
             let body = poll_resp.text().await.unwrap_or_default();
             info!("[generate_video] Poll #{} error {}: {}", poll, status, body);
-            return Err(format!("Poll error {}: {}", status, body));
+            return Err(format_video_api_error("Video generation failed", status, &body));
         }
 
         let poll_body: Value = poll_resp
@@ -810,7 +863,26 @@ pub async fn generate_video(
         match status_str {
             "succeeded" | "done" => {
                 if let Some(video) = poll_body.get("video") {
+                    // Empty URL + failed moderation flag
+                    let moderated = video
+                        .get("respect_moderation")
+                        .and_then(|r| r.as_bool())
+                        == Some(false);
+                    if moderated {
+                        return Err(
+                            "Content moderation blocked this video. Try a different prompt \
+(avoid copyrighted characters, real-person likenesses, graphic violence, or sexual content)."
+                                .to_string(),
+                        );
+                    }
                     if let Some(url_val) = video.get("url").and_then(|u| u.as_str()) {
+                        if url_val.is_empty() {
+                            return Err(
+                                "Video completed but no URL was returned (often content moderation). \
+Try a different prompt."
+                                    .to_string(),
+                            );
+                        }
                         // Prefer video.id; fall back to request_id for extension calls
                         let video_id = video
                             .get("id")
@@ -823,13 +895,35 @@ pub async fn generate_video(
                 }
                 return Err("Video succeeded but no URL found".to_string());
             }
-            "failed" => {
-                let err = poll_body
+            "failed" | "expired" => {
+                // error may be a string or { code, message }
+                let err_msg = poll_body
                     .get("error")
-                    .and_then(|e| e.as_str())
-                    .unwrap_or("Unknown error");
-                info!("[generate_video] Failed: {}", err);
-                return Err(format!("Video generation failed: {}", err));
+                    .and_then(|e| {
+                        e.as_str().map(|s| s.to_string()).or_else(|| {
+                            e.get("message")
+                                .and_then(|m| m.as_str())
+                                .map(|s| s.to_string())
+                        })
+                    })
+                    .unwrap_or_else(|| "Unknown error".to_string());
+                let err_code = poll_body
+                    .get("error")
+                    .and_then(|e| e.get("code"))
+                    .and_then(|c| c.as_str())
+                    .or_else(|| poll_body.get("code").and_then(|c| c.as_str()))
+                    .unwrap_or("");
+                info!("[generate_video] Failed: code={} msg={}", err_code, err_msg);
+                let fake_body = if err_code.is_empty() {
+                    json!({ "error": err_msg }).to_string()
+                } else {
+                    json!({ "code": err_code, "error": err_msg }).to_string()
+                };
+                return Err(format_video_api_error(
+                    "Video generation failed",
+                    reqwest::StatusCode::OK,
+                    &fake_body,
+                ));
             }
             _ => continue,
         }

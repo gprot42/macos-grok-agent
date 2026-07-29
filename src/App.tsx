@@ -237,7 +237,7 @@ function App() {
     (m) => m.endpointSupport.includes(selectedEndpoint) &&
            !m.supportsImageGeneration && !m.supportsVideoGeneration && !m.supportsTextToSpeech
   );
-  const selectedVideoModelConfig = MODELS[selectedVideoModel] ?? MODELS["grok-imagine-video-1-5"];
+  const selectedVideoModelConfig = MODELS[selectedVideoModel] ?? MODELS["grok-imagine-video"];
 
   return (
     <ErrorBoundary>

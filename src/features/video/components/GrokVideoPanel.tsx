@@ -22,19 +22,162 @@ const VIDEO_ASPECT_RATIOS = [
 
 const VIDEO_DURATIONS = [6, 10, 15] as const;
 
+/** Comparison rows for Legacy vs Video 1.5 helper. */
+const MODEL_COMPARE_ROWS: { label: string; legacy: string; v15: string }[] = [
+  { label: "API model ID", legacy: "grok-imagine-video", v15: "grok-imagine-video-1.5" },
+  { label: "Role", legacy: "Original / classic Imagine video model", v15: "Current generation (successor)" },
+  { label: "Primary strength", legacy: "Flexible modes (text + image + references)", v15: "Stronger image-to-video quality" },
+  {
+    label: "Text-to-video",
+    legacy: "Yes (prompt only)",
+    v15: "Image-to-video oriented; text-only falls back to Legacy in this app",
+  },
+  { label: "Image-to-video", legacy: "Yes (image as first frame)", v15: "Yes — main intended mode" },
+  { label: "Reference-to-video", legacy: "Yes (up to ~7 reference images)", v15: "No (single source image)" },
+  {
+    label: "Video edit / extend",
+    legacy: "Supported on classic pipeline",
+    v15: "Edit/extend paths differ; 1.5 focus is I2V",
+  },
+  { label: "Quality", legacy: "Solid baseline", v15: "Better motion, physics, faces, audio sync" },
+  {
+    label: "Speed",
+    legacy: "Slower (e.g. ~40s+ for short 720p clips)",
+    v15: "Faster (e.g. ~25s for 6s 720p on Fast path)",
+  },
+  { label: "Resolutions", legacy: "480p, 720p", v15: "480p, 720p, 1080p (1080p mainly I2V)" },
+  { label: "Duration", legacy: "About 1–15s (API range)", v15: "About 1–15s" },
+  { label: "Audio", legacy: "Native video-audio model", v15: "Improved native audio" },
+  { label: "Pricing (approx.)", legacy: "~$0.05 / sec", v15: "~$0.08 / sec" },
+  {
+    label: "Best when",
+    legacy: "Text-only clips, multi-reference style, cheaper experiments",
+    v15: "Best quality from a still frame + motion prompt",
+  },
+  {
+    label: "In this app",
+    legacy: "Default for text-only / no upload",
+    v15: "Prefer when you upload a source image",
+  },
+];
+
+function VideoModelCompareHelper({
+  open,
+  onToggle,
+  highlightV15,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  /** When true, highlight the 1.5 column (current selection is 1.5). */
+  highlightV15: boolean;
+}) {
+  return (
+    <div className="rounded-xl border border-border bg-card overflow-hidden">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left hover:bg-muted/40 transition-colors"
+        aria-expanded={open}
+      >
+        <span className="flex items-center gap-2 min-w-0">
+          <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-muted text-[11px] font-bold text-muted-foreground shrink-0">
+            ?
+          </span>
+          <span className="text-xs font-semibold theme-text truncate">
+            Legacy vs 1.5 — which model should I pick?
+          </span>
+        </span>
+        <span className="text-[11px] text-muted-foreground shrink-0">
+          {open ? "Hide ▲" : "Show ▼"}
+        </span>
+      </button>
+
+      {open && (
+        <div className="border-t border-border px-3 pb-3 pt-2 space-y-2">
+          <p className="text-[11px] text-muted-foreground leading-relaxed">
+            <span className="font-semibold text-foreground">Rule of thumb:</span>{" "}
+            no image → <span className="font-medium">Legacy</span>
+            {" · "}
+            animate a still for quality → <span className="font-medium">1.5</span>
+          </p>
+
+          <div className="overflow-x-auto rounded-lg border border-border">
+            <table className="w-full text-[11px] border-collapse min-w-[32rem]">
+              <thead>
+                <tr className="bg-muted/50 border-b border-border">
+                  <th className="text-left font-semibold px-2.5 py-1.5 w-[7.5rem] text-muted-foreground">
+                    Feature
+                  </th>
+                  <th
+                    className={`text-left font-semibold px-2.5 py-1.5 ${
+                      !highlightV15 ? "bg-sky-500/10 text-sky-700 dark:text-sky-300" : ""
+                    }`}
+                  >
+                    Legacy
+                    <div className="font-mono font-normal text-[10px] opacity-80">
+                      grok-imagine-video
+                    </div>
+                  </th>
+                  <th
+                    className={`text-left font-semibold px-2.5 py-1.5 ${
+                      highlightV15 ? "bg-violet-500/10 text-violet-700 dark:text-violet-300" : ""
+                    }`}
+                  >
+                    Video 1.5
+                    <div className="font-mono font-normal text-[10px] opacity-80">
+                      grok-imagine-video-1.5
+                    </div>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {MODEL_COMPARE_ROWS.map((row) => (
+                  <tr key={row.label} className="align-top">
+                    <td className="px-2.5 py-1.5 font-medium text-muted-foreground whitespace-nowrap">
+                      {row.label}
+                    </td>
+                    <td
+                      className={`px-2.5 py-1.5 leading-snug ${
+                        !highlightV15 ? "bg-sky-500/5" : ""
+                      }`}
+                    >
+                      {row.legacy}
+                    </td>
+                    <td
+                      className={`px-2.5 py-1.5 leading-snug ${
+                        highlightV15 ? "bg-violet-500/5" : ""
+                      }`}
+                    >
+                      {row.v15}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface GrokVideoPanelProps {
   apiKey: string;
   modelId?: string;
   modelDisplayName?: string;
 }
 
+/** Text-to-video model used when the selected model is image-to-video-only and no image is set. */
+const TEXT_TO_VIDEO_MODEL = "grok-imagine-video";
+
 export function GrokVideoPanel({
   apiKey,
-  modelId = "grok-imagine-video-1.5",
-  modelDisplayName: _modelDisplayName = "Grok Imagine Video 1.5",
+  modelId = "grok-imagine-video",
+  modelDisplayName: _modelDisplayName = "Grok Imagine Video",
 }: GrokVideoPanelProps) {
   const modelConfig = Object.values(MODELS).find(m => m.modelId === modelId);
-  const isImageToVideoOnly = modelId.includes("1.5");
+  /** 1.5 is image-to-video oriented; text-only falls back to legacy T2V model. */
+  const isImageToVideoModel = modelId.includes("1.5");
   const [prompt, setPrompt] = useState("");
   const [sourceImage, setSourceImage] = useState<SourceImage | null>(null);
   const [aspectRatio, setAspectRatio] = useState<string>("9:16");
@@ -46,6 +189,7 @@ export function GrokVideoPanel({
   const [error, setError] = useState<string | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [progress, setProgress] = useState("");
+  const [showModelHelp, setShowModelHelp] = useState(false);
   const unlistenRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -63,15 +207,25 @@ export function GrokVideoPanel({
     reader.readAsDataURL(file);
   };
 
-  const canGenerate =
-    prompt.trim().length > 0 && (!isImageToVideoOnly || sourceImage !== null);
+  // Text-to-video needs only a prompt. Image is always optional in the UI.
+  const canGenerate = prompt.trim().length > 0 && !!apiKey;
 
   const handleGenerate = async () => {
     if (!canGenerate) return;
     setIsLoading(true);
     setError(null);
     setVideoUrl(null);
-    setProgress("Submitting to xAI…");
+
+    // 1.5 is image-to-video only: for prompt-only, use the legacy T2V model automatically.
+    const hasImage = sourceImage !== null;
+    const effectiveModelId =
+      isImageToVideoModel && !hasImage ? TEXT_TO_VIDEO_MODEL : modelId;
+
+    setProgress(
+      isImageToVideoModel && !hasImage
+        ? "Text-to-video (using Legacy model)…"
+        : "Submitting to xAI…"
+    );
 
     // Listen for progress events from the Rust polling loop
     unlistenRef.current?.();
@@ -85,7 +239,7 @@ export function GrokVideoPanel({
       const result = await invoke<{ url: string; videoId?: string }>("generate_video", {
         prompt: prompt,
         apiKey,
-        modelId,
+        modelId: effectiveModelId,
         durationSeconds: duration,
         aspectRatio,
         resolution,
@@ -125,18 +279,29 @@ export function GrokVideoPanel({
 
   return (
     <div className="flex flex-col h-full min-h-0 overflow-hidden">
-      {/* Controls — fixed density so the form fits without page scroll */}
-      <div className="shrink-0 px-3 pt-2 pb-2 space-y-2 max-w-3xl mx-auto w-full">
+      {/* Form + helper; scroll only if content exceeds viewport (e.g. help open) */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
+      <div className="px-3 pt-2.5 pb-2.5 space-y-2.5 max-w-3xl mx-auto w-full">
         {/* One-line context (model selected in toolbar) */}
-        <div className="text-[11px] text-muted-foreground truncate">
-          {isImageToVideoOnly
-            ? "Animate a still image with a motion prompt"
-            : "Text-to-video · optional source image"}
-          {modelConfig?.description ? ` · ${modelConfig.description}` : ""}
+        <div className="flex items-start justify-between gap-2">
+          <div className="text-[11px] text-muted-foreground leading-snug min-w-0">
+            {isImageToVideoModel && !sourceImage
+              ? "Text-to-video ready — type a prompt (image optional; 1.5 uses Legacy for text-only)"
+              : isImageToVideoModel
+                ? "Image-to-video · animate your uploaded still"
+                : "Text-to-video · source image optional"}
+            {modelConfig?.description ? ` · ${modelConfig.description}` : ""}
+          </div>
         </div>
 
+        <VideoModelCompareHelper
+          open={showModelHelp}
+          onToggle={() => setShowModelHelp((v) => !v)}
+          highlightV15={isImageToVideoModel}
+        />
+
         {/* Settings card — single dense block */}
-        <div className="rounded-xl border border-border bg-card px-3 py-2 space-y-2">
+        <div className="rounded-xl border border-border bg-card px-3.5 py-2.5 space-y-2.5">
           {/* Aspect ratio — compact row */}
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs font-semibold shrink-0 w-14">Aspect</span>
@@ -239,18 +404,14 @@ export function GrokVideoPanel({
           </div>
         </div>
 
-        {/* Source image — compact */}
-        <div className="rounded-xl border border-border bg-card px-3 py-2">
+        {/* Source image — always optional */}
+        <div className="rounded-xl border border-border bg-card px-3.5 py-2.5">
           <div className="flex items-center gap-3">
             <div className="min-w-0 flex-1">
-              <div className="text-xs font-semibold">
-                {isImageToVideoOnly ? "Source image (required)" : "Source image (optional)"}
-              </div>
-              {isImageToVideoOnly && (
-                <p className="text-[10px] text-muted-foreground leading-snug mt-0.5">
-                  Image-to-video only. Switch to Legacy for text-only generation.
-                </p>
-              )}
+              <div className="text-xs font-semibold">Source image (optional)</div>
+              <p className="text-[11px] text-muted-foreground leading-snug mt-0.5">
+                Skip to generate from text only. Upload to animate a still frame.
+              </p>
             </div>
             {sourceImage ? (
               <div className="flex items-center gap-2 shrink-0">
@@ -291,17 +452,13 @@ export function GrokVideoPanel({
         </div>
 
         {/* Prompt + generate */}
-        <div className="space-y-1.5">
+        <div className="space-y-2">
           <Textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            placeholder={
-              isImageToVideoOnly
-                ? "Describe how the image should move and animate..."
-                : "Describe the video you want to generate..."
-            }
-            rows={2}
-            className="min-h-[3.25rem] max-h-24 resize-none text-sm"
+            placeholder="Describe the video you want to generate… (image not required)"
+            rows={3}
+            className="min-h-[4.5rem] max-h-28 resize-none text-sm"
             onKeyDown={(e) => {
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && canGenerate && !isLoading) {
                 e.preventDefault();
@@ -314,6 +471,13 @@ export function GrokVideoPanel({
               size="sm"
               onClick={handleGenerate}
               disabled={isLoading || !canGenerate}
+              title={
+                !apiKey
+                  ? "Add an xAI API key in Settings"
+                  : !prompt.trim()
+                    ? "Enter a prompt to generate"
+                    : "Generate video from text"
+              }
             >
               {isLoading ? "Generating…" : "Generate Video"}
             </Button>
@@ -322,39 +486,40 @@ export function GrokVideoPanel({
                 ⚠️ xAI API key required
               </span>
             )}
+            {prompt.trim().length === 0 && apiKey && (
+              <span className="text-[11px] text-muted-foreground">
+                Enter a prompt to enable Generate
+              </span>
+            )}
             {progress && !error && (
               <span className="text-xs text-blue-500 truncate min-w-0">{progress}</span>
             )}
           </div>
           {error && (
-            <div className="text-red-500 text-xs bg-red-50 dark:bg-red-900/20 p-2 rounded max-h-16 overflow-y-auto">
+            <div className="text-red-500 text-xs bg-red-50 dark:bg-red-900/20 p-2.5 rounded max-h-20 overflow-y-auto">
               {error}
             </div>
           )}
         </div>
-      </div>
 
-      {/* Result — only this area scrolls if the video is tall */}
+      {/* Result — stays in the scroll area with the form */}
       {videoUrl && (
-        <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-3 max-w-3xl mx-auto w-full">
-          <div className="space-y-1.5 rounded-xl border border-border bg-card p-2.5">
-            <div className="flex items-center justify-between gap-2">
-              <div className="text-xs text-green-600 font-medium">Video ready</div>
-              <Button size="sm" onClick={handleDownload} variant="outline">
-                Download
-              </Button>
-            </div>
-            <video
-              controls
-              src={videoUrl}
-              className="w-full max-h-[min(42vh,360px)] rounded-lg border object-contain bg-black"
-            />
+        <div className="rounded-xl border border-border bg-card p-3 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-xs text-green-600 font-medium">Video ready</div>
+            <Button size="sm" onClick={handleDownload} variant="outline">
+              Download
+            </Button>
           </div>
+          <video
+            controls
+            src={videoUrl}
+            className="w-full max-h-[min(42vh,360px)] rounded-lg border object-contain bg-black"
+          />
         </div>
       )}
-
-      {/* Empty filler so layout stays top-aligned when no video */}
-      {!videoUrl && <div className="flex-1 min-h-0" />}
+      </div>
+      </div>
     </div>
   );
 }
