@@ -199,4 +199,4 @@ Secure, local, powerful AI on your desktop.
 
 ---
 
-Version 0.0.1
+Version 0.0.2

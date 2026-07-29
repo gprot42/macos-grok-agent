@@ -61,10 +61,10 @@ echo ""
 echo "DMG built successfully: $DMG"
 echo "Size: $(du -h "$DMG" | cut -f1)"
 
-# Copy DMG to home folder
-cp "$DMG" ~/
-HOME_DMG="$HOME/$(basename "$DMG")"
-echo "Copied to: $HOME_DMG"
+# Copy DMG to project root
+ROOT_DMG="$(basename "$DMG")"
+cp "$DMG" "./$ROOT_DMG"
+echo "Copied to: $(pwd)/$ROOT_DMG"
 
 # Release mode: create GitHub release and upload DMG
 if [ "$1" = "release" ]; then
