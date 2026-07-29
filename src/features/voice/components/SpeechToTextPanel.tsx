@@ -5,20 +5,20 @@ import { Badge } from "@shared/components/ui/badge";
 import { Upload, Mic, Copy, Check, Download, X, Loader2, Trash2, Square } from "lucide-react";
 
 const LANGUAGES = [
-  { code: "en-US", label: "English (US)" },
-  { code: "en-GB", label: "English (UK)" },
-  { code: "ja-JP", label: "Japanese" },
+  { code: "ar-SA", label: "Arabic" },
   { code: "zh-CN", label: "Chinese (Simplified)" },
   { code: "zh-TW", label: "Chinese (Traditional)" },
-  { code: "ko-KR", label: "Korean" },
-  { code: "es-ES", label: "Spanish" },
+  { code: "en-GB", label: "English (UK)" },
+  { code: "en-US", label: "English (US)" },
   { code: "fr-FR", label: "French" },
   { code: "de-DE", label: "German" },
-  { code: "pt-BR", label: "Portuguese (Brazil)" },
-  { code: "it-IT", label: "Italian" },
   { code: "hi-IN", label: "Hindi" },
-  { code: "ar-SA", label: "Arabic" },
+  { code: "it-IT", label: "Italian" },
+  { code: "ja-JP", label: "Japanese" },
+  { code: "ko-KR", label: "Korean" },
+  { code: "pt-BR", label: "Portuguese (Brazil)" },
   { code: "ru-RU", label: "Russian" },
+  { code: "es-ES", label: "Spanish" },
   { code: "th-TH", label: "Thai" },
   { code: "vi-VN", label: "Vietnamese" },
 ];
