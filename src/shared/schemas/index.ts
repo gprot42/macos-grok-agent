@@ -65,6 +65,7 @@ export const ModelConfigSchema = z.object({
   supportsImageGeneration: z.boolean().optional(),
   supportsDeepResearch: z.boolean().optional(),
   supportsTextToSpeech: z.boolean().optional(),
+  supportsVoiceAgent: z.boolean().optional(),
   supportsVideoGeneration: z.boolean().optional(),
   supportsSearch: z.boolean().optional(),
   defaultThinkingLevel: z.string().optional(),

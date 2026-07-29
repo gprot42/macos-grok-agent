@@ -7,7 +7,7 @@ import {
   SettingsPanel,
   ProjectsPanel,
   CodingAgentPanel,
-  GrokVoicePanel,
+  VoiceTab,
   GrokVideoPanel,
 } from "./components";
 import { useSettings, useChat, useSubAgent } from "./hooks";
@@ -235,7 +235,8 @@ function App() {
   // Guard: persisted model ID may no longer exist after a model was removed/renamed
   const currentModel = MODELS[selectedModel] ?? Object.values(MODELS).find(
     (m) => m.endpointSupport.includes(selectedEndpoint) &&
-           !m.supportsImageGeneration && !m.supportsVideoGeneration && !m.supportsTextToSpeech
+           !m.supportsImageGeneration && !m.supportsVideoGeneration &&
+           !m.supportsTextToSpeech && !m.supportsVoiceAgent
   );
   const selectedVideoModelConfig = MODELS[selectedVideoModel] ?? MODELS["grok-imagine-video"];
 
@@ -292,7 +293,9 @@ function App() {
               <span className="text-2xl">🎤</span>
               <div>
                 <div className="text-lg font-medium theme-text">Grok Voice</div>
-                <div className="text-sm theme-text">Generate natural speech from text</div>
+                <div className="text-sm theme-text">
+                  Live Agent (default: Think Fast 2.0) · Text to Speech (grok-tts)
+                </div>
               </div>
             </div>
           ) : (
@@ -378,7 +381,7 @@ function App() {
 
           {/* Voice — always mounted to preserve audio state */}
           <div className={`flex flex-col flex-1 min-h-0 overflow-hidden ${activeTab === "voice" ? "" : "hidden"}`}>
-            <GrokVoicePanel apiKey={settings.xaiKey || settings.apiKey} />
+            <VoiceTab apiKey={settings.xaiKey || settings.apiKey} />
           </div>
 
           {/* Code — always mounted to preserve agent conversation and working dir */}
@@ -598,7 +601,7 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
                    <li>• Grok 4.3 — xAI flagship, 2M context, built-in reasoning</li>
                    <li>• Grok 4.20 Reasoning / Multi-Agent / Fast — xAI (Beta)</li>
                    <li>• Grok 4.1 — xAI with deep thinking &amp; X search</li>
-                   <li>• Grok Imagine / Video / Voice — image, video &amp; TTS generation</li>
+                   <li>• Grok Imagine / Video / Voice — image, video, TTS &amp; Think Fast live agent</li>
                  </ul>
              </div>
 
@@ -709,9 +712,11 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
               </div>
 
               <div>
-                <h5 className="text-sm font-semibold text-emerald-800 dark:text-emerald-200 mb-1">Voice / TTS</h5>
+                <h5 className="text-sm font-semibold text-emerald-800 dark:text-emerald-200 mb-1">Voice</h5>
                 <ul className="text-sm text-emerald-700 dark:text-emerald-300 space-y-0.5">
-                  <li>• <strong>grok-tts</strong> — $4.20 per hour of audio generated (~$0.07 / min)</li>
+                  <li>• <strong>Think Fast 2.0</strong> (speech-to-speech) — $0.08 / min audio · $0.004 text input</li>
+                  <li>• <strong>Think Fast 1.0</strong> (speech-to-speech) — $0.05 / min audio · $0.004 text input</li>
+                  <li>• <strong>grok-tts</strong> (text-to-speech) — $15 / 1M characters</li>
                 </ul>
               </div>
 
@@ -723,6 +728,7 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
                   <li>• <AboutLink href="https://x.ai/api/imagine">x.ai/api/imagine</AboutLink> — Grok Imagine API overview</li>
                   <li>• <AboutLink href="https://docs.x.ai/docs/guides/video-generation">docs.x.ai — Video Generation</AboutLink></li>
                   <li>• <AboutLink href="https://docs.x.ai/docs/guides/image-generation">docs.x.ai — Image Generation</AboutLink></li>
+                  <li>• <AboutLink href="https://docs.x.ai/developers/model-capabilities/audio/voice-agent">docs.x.ai — Voice Agent (Speech to Speech)</AboutLink></li>
                 </ul>
               </div>
 

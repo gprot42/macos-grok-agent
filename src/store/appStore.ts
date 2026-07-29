@@ -59,7 +59,8 @@ export const useAppStore = create<AppState>()(
               m.endpointSupport.includes(state.selectedEndpoint) &&
               !m.supportsImageGeneration &&
               !m.supportsVideoGeneration &&
-              !m.supportsTextToSpeech
+              !m.supportsTextToSpeech &&
+              !m.supportsVoiceAgent
           );
           state.selectedModel = fallback?.id ?? "grok-4-3";
         }

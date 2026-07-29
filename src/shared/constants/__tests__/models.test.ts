@@ -52,6 +52,20 @@ describe("MODELS registry", () => {
     expect(ttsMod).toBeDefined();
     expect(ttsMod.supportsTextToSpeech).toBe(true);
   });
+
+  it("voice agent models include Think Fast 2.0", () => {
+    const v2 = MODELS["grok-voice-think-fast-2.0"];
+    expect(v2).toBeDefined();
+    expect(v2.supportsVoiceAgent).toBe(true);
+    expect(v2.modelId).toBe("grok-voice-think-fast-2.0");
+    expect(v2.endpointSupport).toContain("xai");
+
+    const v1 = MODELS["grok-voice-think-fast-1.0"];
+    expect(v1?.supportsVoiceAgent).toBe(true);
+
+    const latest = MODELS["grok-voice-latest"];
+    expect(latest?.supportsVoiceAgent).toBe(true);
+  });
 });
 
 describe("ENDPOINT_URLS", () => {

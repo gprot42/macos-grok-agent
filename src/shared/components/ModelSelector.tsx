@@ -34,7 +34,8 @@ export function ModelSelector() {
     m.endpointSupport.includes(selectedEndpoint) &&
     !m.supportsImageGeneration &&
     !m.supportsVideoGeneration &&
-    !m.supportsTextToSpeech
+    !m.supportsTextToSpeech &&
+    !m.supportsVoiceAgent
   );
 
   const endpointOptions = [

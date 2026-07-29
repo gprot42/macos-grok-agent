@@ -371,8 +371,17 @@ async fn generate_speech(
     api_key: String,
     voice_id: Option<String>,
     language: Option<String>,
+    model_id: Option<String>,
 ) -> Result<String, String> {
-    api::generate_speech(text, api_key, voice_id, language).await
+    api::generate_speech(text, api_key, voice_id, language, model_id).await
+}
+
+#[tauri::command]
+async fn create_voice_client_secret(
+    api_key: String,
+    expires_after_secs: Option<u64>,
+) -> Result<serde_json::Value, String> {
+    api::create_voice_client_secret(api_key, expires_after_secs).await
 }
 
 #[tauri::command]
@@ -658,6 +667,7 @@ fn main() {
             generate_video,
             extend_video,
             generate_speech,
+            create_voice_client_secret,
             download_video,
             get_default_working_dir,
             delete_file,

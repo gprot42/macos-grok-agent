@@ -26,6 +26,8 @@ export interface ModelConfig {
   supportsImageGeneration?: boolean;
   supportsDeepResearch?: boolean;
   supportsTextToSpeech?: boolean;
+  /** Real-time speech-to-speech (Grok Voice Agent / Think Fast). */
+  supportsVoiceAgent?: boolean;
   supportsVideoGeneration?: boolean;
   supportsSearch?: boolean;
   defaultThinkingLevel?: string;

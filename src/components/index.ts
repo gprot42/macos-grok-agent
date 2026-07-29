@@ -13,4 +13,6 @@ export { SettingsPanel }    from "@features/settings/components/SettingsPanel";
 export { ProjectsPanel }    from "@features/projects/components/ProjectsPanel";
 export { CodingAgentPanel } from "@features/agents/components/CodingAgentPanel";
 export { GrokVoicePanel }   from "@features/voice/components/GrokVoicePanel";
+export { VoiceAgentPanel }  from "@features/voice/components/VoiceAgentPanel";
+export { VoiceTab }         from "@features/voice/components/VoiceTab";
 export { GrokVideoPanel }   from "@features/video/components/GrokVideoPanel";

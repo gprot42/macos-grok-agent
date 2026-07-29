@@ -80,7 +80,7 @@ function parseCodeBlocks(text: string): MessagePart[] {
 }
 
 const CODING_MODELS = Object.values(MODELS).filter(
-  (m: ModelConfig) => m.publisher === "xai" && m.endpointSupport.includes("xai") && !m.supportsImageGeneration && !m.supportsVideoGeneration && !m.supportsTextToSpeech
+  (m: ModelConfig) => m.publisher === "xai" && m.endpointSupport.includes("xai") && !m.supportsImageGeneration && !m.supportsVideoGeneration && !m.supportsTextToSpeech && !m.supportsVoiceAgent
 );
 
 export function CodingAgentPanel({

@@ -1075,9 +1075,14 @@ pub async fn generate_speech(
     api_key: String,
     voice_id: Option<String>,
     language: Option<String>,
+    model_id: Option<String>,
 ) -> Result<String, String> {
     let client = Client::new();
     let url = format!("{}/tts", XAI_ENDPOINT);
+    // Unary TTS is a single model (grok-tts). model_id is accepted for UI
+    // transparency / logging; the REST body does not take a model field today.
+    let model = model_id.unwrap_or_else(|| "grok-tts".to_string());
+    info!("[tts] generate_speech model={} voice={:?} lang={:?}", model, voice_id, language);
     let payload = json!({
         "text": text,
         "voice_id": voice_id.unwrap_or_else(|| "eve".to_string()),
@@ -1104,6 +1109,62 @@ pub async fn generate_speech(
         .map_err(|e| format!("Failed to read audio data: {}", e))?;
 
     Ok(BASE64.encode(bytes))
+}
+
+/// Create a short-lived ephemeral client secret for the Speech-to-Speech
+/// (realtime voice agent) WebSocket. The frontend connects directly to
+/// `wss://api.x.ai/v1/realtime` using this token so the long-lived API key
+/// never leaves the Tauri backend.
+pub async fn create_voice_client_secret(
+    api_key: String,
+    expires_after_secs: Option<u64>,
+) -> Result<Value, String> {
+    let client = Client::new();
+    let url = format!("{}/realtime/client_secrets", XAI_ENDPOINT);
+    let secs = expires_after_secs.unwrap_or(300).clamp(30, 3600);
+    let payload = json!({
+        "expires_after": { "seconds": secs }
+    });
+
+    info!("[voice] Requesting ephemeral client secret (expires_after={}s)", secs);
+
+    let response = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Content-Type", "application/json")
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to request voice client secret: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!(
+            "Voice client secret request failed ({}): {}",
+            status, body
+        ));
+    }
+
+    let data: Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse voice client secret response: {}", e))?;
+
+    // API returns { value, expires_at }. Normalize for the frontend.
+    let value = data
+        .get("value")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| format!("Missing 'value' in client secret response: {}", data))?;
+    let expires_at = data
+        .get("expires_at")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+
+    Ok(json!({
+        "value": value,
+        "expires_at": expires_at,
+    }))
 }
 pub(crate) fn build_url(
     endpoint: &str,

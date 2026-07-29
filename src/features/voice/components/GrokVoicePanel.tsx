@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Button } from "@shared/components/ui/button";
 import { BUILTIN_VOICES } from "@shared/constants/voices";
 import { Mic, Wand2, Info, Copy, Check, X } from "lucide-react";
+import { DEFAULT_TTS_MODEL, TTS_MODELS } from "../lib/realtimeTypes";
 
 interface GrokVoicePanelProps {
   apiKey: string;
@@ -45,6 +46,7 @@ function CopyBtn({ text }: { text: string }) {
 
 export function GrokVoicePanel({ apiKey }: GrokVoicePanelProps) {
   const [text, setText] = useState("");
+  const [modelId, setModelId] = useState(DEFAULT_TTS_MODEL);
   const [voiceMode, setVoiceMode] = useState<"builtin" | "custom">("builtin");
   const [builtinVoice, setBuiltinVoice] = useState("eve");
   const [customVoiceId, setCustomVoiceId] = useState("");
@@ -55,6 +57,7 @@ export function GrokVoicePanel({ apiKey }: GrokVoicePanelProps) {
   const [showTags, setShowTags] = useState(false);
   const [showCloneGuide, setShowCloneGuide] = useState(false);
 
+  const selectedModel = TTS_MODELS.find((m) => m.id === modelId) ?? TTS_MODELS[0];
   const activeVoiceId = voiceMode === "custom" ? customVoiceId.trim() : builtinVoice;
   const canGenerate = !isLoading && text.trim().length > 0 && activeVoiceId.length > 0;
 
@@ -64,7 +67,13 @@ export function GrokVoicePanel({ apiKey }: GrokVoicePanelProps) {
     setError(null);
     setAudioBase64(null);
     try {
-      const b64 = await invoke<string>("generate_speech", { text, apiKey, voiceId: activeVoiceId, language });
+      const b64 = await invoke<string>("generate_speech", {
+        text,
+        apiKey,
+        voiceId: activeVoiceId,
+        language,
+        modelId,
+      });
       setAudioBase64(b64);
     } catch (e: unknown) {
       setError(String(e));
@@ -84,16 +93,47 @@ export function GrokVoicePanel({ apiKey }: GrokVoicePanelProps) {
           <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-400 to-blue-500 shadow-sm flex-shrink-0">
             <Mic className="h-4 w-4 text-white" />
           </div>
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="font-semibold theme-text">Grok Voice</span>
-            <span className="text-sm font-mono text-gray-400 dark:text-gray-400 hidden sm:inline">
-              grok-tts · 26 voices · 20+ languages
-            </span>
+          <div className="flex flex-col min-w-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="font-semibold theme-text">Text to Speech</span>
+              <span className="text-xs theme-text-muted hidden sm:inline">26 voices · 20+ languages</span>
+            </div>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="text-xs theme-text-muted">Using</span>
+              <span className="text-xs font-medium text-blue-600 dark:text-blue-400 truncate">
+                {selectedModel.label}
+              </span>
+              <code className="text-[11px] font-mono px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 truncate">
+                {selectedModel.id}
+              </code>
+            </div>
           </div>
+        </div>
+
+        {/* Model selector */}
+        <div className="flex items-center gap-2">
+          <label htmlFor="tts-model" className="text-sm font-medium theme-text whitespace-nowrap flex-shrink-0">
+            Model
+          </label>
+          <select
+            id="tts-model"
+            value={modelId}
+            onChange={(e) => setModelId(e.target.value)}
+            className="flex-1 min-w-0 rounded-lg border theme-border theme-surface theme-text px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            {TTS_MODELS.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label} — {m.desc} ({m.id})
+              </option>
+            ))}
+          </select>
         </div>
 
         {/* Voice mode toggle + built-in picker OR custom input */}
         <div className="flex items-center gap-2 flex-wrap">
+          <label className="text-sm font-medium theme-text whitespace-nowrap flex-shrink-0">
+            Voice
+          </label>
           {/* Toggle */}
           <div className="flex rounded-lg border theme-border overflow-hidden text-sm flex-shrink-0">
             <button onClick={() => setVoiceMode("builtin")}
@@ -204,7 +244,7 @@ export function GrokVoicePanel({ apiKey }: GrokVoicePanelProps) {
         <div className="flex items-center justify-between px-0.5">
           <span className="text-base font-medium theme-text">Text to speak</span>
           <span className="text-sm font-mono text-gray-400 dark:text-gray-400">
-            {text.length} chars · ≈ ${((text.length / 1_000_000) * 4.20).toFixed(6)}
+            {text.length} chars · ≈ ${((text.length / 1_000_000) * 15).toFixed(6)}
           </span>
         </div>
         <textarea
@@ -231,9 +271,11 @@ export function GrokVoicePanel({ apiKey }: GrokVoicePanelProps) {
           {audioBase64 && (
             <div className="space-y-1.5">
               <div className="flex items-center justify-between text-sm theme-text-muted">
-                <span className="font-mono">{voiceMode === "custom" ? `cloned: ${activeVoiceId}` : activeVoiceId} · {LANGUAGES.find(l => l.value === language)?.label}</span>
+                <span className="font-mono">
+                  {selectedModel.id} · {voiceMode === "custom" ? `cloned: ${activeVoiceId}` : activeVoiceId} · {LANGUAGES.find(l => l.value === language)?.label}
+                </span>
                 <a href={`data:audio/mpeg;base64,${audioBase64}`}
-                  download={`grok-voice-${activeVoiceId}-${Date.now()}.mp3`}
+                  download={`grok-tts-${activeVoiceId}-${Date.now()}.mp3`}
                   className="text-blue-500 hover:underline text-sm">
                   Download MP3
                 </a>

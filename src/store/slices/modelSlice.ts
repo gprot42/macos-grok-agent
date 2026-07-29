@@ -59,7 +59,8 @@ export const createModelSlice: StateCreator<ModelSlice> = (set, get) => ({
           m.endpointSupport.includes(ep) &&
           !m.supportsImageGeneration &&
           !m.supportsVideoGeneration &&
-          !m.supportsTextToSpeech
+          !m.supportsTextToSpeech &&
+          !m.supportsVoiceAgent
       );
       if (first) newModel = first.id;
     }
