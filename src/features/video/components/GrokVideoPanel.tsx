@@ -22,22 +22,33 @@ const VIDEO_ASPECT_RATIOS = [
 
 const VIDEO_DURATIONS = [6, 10, 15] as const;
 
+type VideoResolution = "480p" | "720p" | "1080p";
+
+/** Always listed in the UI. 1080p requires Video 1.5 at request time. */
+const VIDEO_RESOLUTIONS: { value: VideoResolution; label: string; hint: string }[] = [
+  { value: "480p", label: "480p", hint: "Standard definition, faster / cheaper" },
+  { value: "720p", label: "720p", hint: "HD quality" },
+  { value: "1080p", label: "1080p", hint: "Full HD (uses Video 1.5)" },
+];
+
+const VIDEO_15_MODEL = "grok-imagine-video-1.5";
+
 /** Comparison rows for Legacy vs Video 1.5 helper. */
 const MODEL_COMPARE_ROWS: { label: string; legacy: string; v15: string }[] = [
   { label: "API model ID", legacy: "grok-imagine-video", v15: "grok-imagine-video-1.5" },
   { label: "Role", legacy: "Original / classic Imagine video model", v15: "Current generation (successor)" },
-  { label: "Primary strength", legacy: "Flexible modes (text + image + references)", v15: "Stronger image-to-video quality" },
+  { label: "Primary strength", legacy: "Flexible modes (text + image + references)", v15: "Best motion, audio, and quality" },
   {
     label: "Text-to-video",
     legacy: "Yes (prompt only)",
-    v15: "Image-to-video oriented; text-only falls back to Legacy in this app",
+    v15: "Yes — prompt only, native 1080p",
   },
-  { label: "Image-to-video", legacy: "Yes (image as first frame)", v15: "Yes — main intended mode" },
-  { label: "Reference-to-video", legacy: "Yes (up to ~7 reference images)", v15: "No (single source image)" },
+  { label: "Image-to-video", legacy: "Yes (image as first frame)", v15: "Yes — main intended mode, native 1080p" },
+  { label: "Reference-to-video", legacy: "Yes (up to ~7 reference images)", v15: "Yes (up to 7 refs; res capped ~720p)" },
   {
     label: "Video edit / extend",
     legacy: "Supported on classic pipeline",
-    v15: "Edit/extend paths differ; 1.5 focus is I2V",
+    v15: "Supported; focus is generation quality",
   },
   { label: "Quality", legacy: "Solid baseline", v15: "Better motion, physics, faces, audio sync" },
   {
@@ -45,19 +56,19 @@ const MODEL_COMPARE_ROWS: { label: string; legacy: string; v15: string }[] = [
     legacy: "Slower (e.g. ~40s+ for short 720p clips)",
     v15: "Faster (e.g. ~25s for 6s 720p on Fast path)",
   },
-  { label: "Resolutions", legacy: "480p, 720p", v15: "480p, 720p, 1080p (1080p mainly I2V)" },
+  { label: "Resolutions", legacy: "480p, 720p", v15: "480p, 720p, 1080p (T2V + I2V)" },
   { label: "Duration", legacy: "About 1–15s (API range)", v15: "About 1–15s" },
-  { label: "Audio", legacy: "Native video-audio model", v15: "Improved native audio" },
-  { label: "Pricing (approx.)", legacy: "~$0.05 / sec", v15: "~$0.08 / sec" },
+  { label: "Audio", legacy: "Native video-audio model", v15: "Improved native audio; voice refs (API)" },
+  { label: "Pricing (approx.)", legacy: "~$0.05 / sec", v15: "~$0.08 / sec (higher at 1080p)" },
   {
     label: "Best when",
-    legacy: "Text-only clips, multi-reference style, cheaper experiments",
-    v15: "Best quality from a still frame + motion prompt",
+    legacy: "Cheaper experiments, classic pipeline",
+    v15: "Best quality, text-to-video, 1080p, references",
   },
   {
     label: "In this app",
-    legacy: "Default for text-only / no upload",
-    v15: "Prefer when you upload a source image",
+    legacy: "Optional lower-cost path",
+    v15: "Recommended default",
   },
 ];
 
@@ -96,9 +107,10 @@ function VideoModelCompareHelper({
         <div className="border-t border-border px-3 pb-3 pt-2 space-y-2">
           <p className="text-[11px] text-muted-foreground leading-relaxed">
             <span className="font-semibold text-foreground">Rule of thumb:</span>{" "}
-            no image → <span className="font-medium">Legacy</span>
+            use <span className="font-medium">1.5</span> for text-to-video, image-to-video, and{" "}
+            <span className="font-medium">1080p</span>
             {" · "}
-            animate a still for quality → <span className="font-medium">1.5</span>
+            <span className="font-medium">Legacy</span> for cheaper lower-res experiments
           </p>
 
           <div className="overflow-x-auto rounded-lg border border-border">
@@ -167,22 +179,19 @@ interface GrokVideoPanelProps {
   modelDisplayName?: string;
 }
 
-/** Text-to-video model used when the selected model is image-to-video-only and no image is set. */
-const TEXT_TO_VIDEO_MODEL = "grok-imagine-video";
-
 export function GrokVideoPanel({
   apiKey,
-  modelId = "grok-imagine-video",
-  modelDisplayName: _modelDisplayName = "Grok Imagine Video",
+  modelId = VIDEO_15_MODEL,
+  modelDisplayName: _modelDisplayName = "Grok Imagine Video 1.5",
 }: GrokVideoPanelProps) {
   const modelConfig = Object.values(MODELS).find(m => m.modelId === modelId);
-  /** 1.5 is image-to-video oriented; text-only falls back to legacy T2V model. */
-  const isImageToVideoModel = modelId.includes("1.5");
+  /** Video 1.5: text-to-video, image-to-video, native 1080p. */
+  const isVideo15 = modelId.includes("1.5");
   const [prompt, setPrompt] = useState("");
   const [sourceImage, setSourceImage] = useState<SourceImage | null>(null);
   const [aspectRatio, setAspectRatio] = useState<string>("9:16");
   const [duration, setDuration] = useState<number>(15);
-  const [resolution, setResolution] = useState<"480p" | "720p">("720p");
+  const [resolution, setResolution] = useState<VideoResolution>("720p");
   /** Native soundtrack: Grok Imagine is a video-audio model; default on. */
   const [withAudio, setWithAudio] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
@@ -216,15 +225,15 @@ export function GrokVideoPanel({
     setError(null);
     setVideoUrl(null);
 
-    // 1.5 is image-to-video only: for prompt-only, use the legacy T2V model automatically.
     const hasImage = sourceImage !== null;
+    // 1080p is only on Video 1.5 — upgrade the model for that request when needed.
     const effectiveModelId =
-      isImageToVideoModel && !hasImage ? TEXT_TO_VIDEO_MODEL : modelId;
+      resolution === "1080p" && !isVideo15 ? VIDEO_15_MODEL : modelId;
 
     setProgress(
-      isImageToVideoModel && !hasImage
-        ? "Text-to-video (using Legacy model)…"
-        : "Submitting to xAI…"
+      hasImage
+        ? `Submitting image-to-video (${resolution})…`
+        : `Submitting text-to-video (${resolution})…`
     );
 
     // Listen for progress events from the Rust polling loop
@@ -285,11 +294,9 @@ export function GrokVideoPanel({
         {/* One-line context (model selected in toolbar) */}
         <div className="flex items-start justify-between gap-2">
           <div className="text-[11px] text-muted-foreground leading-snug min-w-0">
-            {isImageToVideoModel && !sourceImage
-              ? "Text-to-video ready — type a prompt (image optional; 1.5 uses Legacy for text-only)"
-              : isImageToVideoModel
-                ? "Image-to-video · animate your uploaded still"
-                : "Text-to-video · source image optional"}
+            {sourceImage
+              ? "Image-to-video · animate your uploaded still"
+              : "Text-to-video ready — type a prompt (image optional · 480p / 720p / 1080p)"}
             {modelConfig?.description ? ` · ${modelConfig.description}` : ""}
           </div>
         </div>
@@ -297,7 +304,7 @@ export function GrokVideoPanel({
         <VideoModelCompareHelper
           open={showModelHelp}
           onToggle={() => setShowModelHelp((v) => !v)}
-          highlightV15={isImageToVideoModel}
+          highlightV15={isVideo15}
         />
 
         {/* Settings card — single dense block */}
@@ -363,10 +370,7 @@ export function GrokVideoPanel({
             <div className="flex items-center gap-1.5">
               <span className="text-xs font-semibold shrink-0">Res</span>
               <div className="flex items-center gap-0.5 bg-muted rounded-full p-0.5">
-                {([
-                  { value: "480p" as const, label: "480p", hint: "Standard definition, faster" },
-                  { value: "720p" as const, label: "720p", hint: "HD quality" },
-                ]).map((r) => (
+                {VIDEO_RESOLUTIONS.map((r) => (
                   <button
                     key={r.value}
                     type="button"

@@ -173,7 +173,7 @@ export const MODELS: Record<string, ModelConfig> = {
     maxOutputTokens: 8192,
     icon: "video",
     color: "#6C63FF",
-    description: "Image-to-video — animate a still image, 480p/720p/1080p, $0.08/sec",
+    description: "Text-to-video and image-to-video — 480p/720p/1080p, $0.08/sec",
     pricing: { input: 0, output: 0.08 },
     supportsVideoGeneration: true,
     endpointSupport: ["xai"],

@@ -715,20 +715,22 @@ pub async fn generate_video(
     // Default to native audio on (Grok Imagine is a video-audio model).
     let audio_enabled = with_audio.unwrap_or(true);
 
-    // grok-imagine-video-1.5 is image-to-video oriented. For text-only requests,
-    // automatically fall back to grok-imagine-video (supports text-to-video).
-    let model = if model.contains("1.5") && !has_image {
-        info!(
-            "[generate_video] No source image with 1.5 model — using {} for text-to-video",
-            "grok-imagine-video"
-        );
-        "grok-imagine-video".to_string()
-    } else {
-        model
+    // Imagine Video 1.5 supports text-to-video and native 1080p (T2V + I2V).
+    // Keep the caller's model; only clamp resolution for models that lack 1080p.
+    let res_str = {
+        let requested = resolution.as_deref().unwrap_or("720p");
+        if requested == "1080p" && !model.contains("1.5") {
+            info!(
+                "[generate_video] 1080p requested on {} — clamping to 720p (1080p is Video 1.5 only)",
+                model
+            );
+            "720p"
+        } else {
+            requested
+        }
     };
 
     let url = format!("{}/videos/generations", XAI_ENDPOINT);
-    let res_str = resolution.as_deref().unwrap_or("720p");
     info!(
         "[generate_video] POST {} model={} resolution={} has_image={} with_audio={}",
         url, model, res_str, has_image, audio_enabled

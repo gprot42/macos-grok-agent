@@ -238,7 +238,7 @@ function App() {
            !m.supportsImageGeneration && !m.supportsVideoGeneration &&
            !m.supportsTextToSpeech && !m.supportsVoiceAgent
   );
-  const selectedVideoModelConfig = MODELS[selectedVideoModel] ?? MODELS["grok-imagine-video"];
+  const selectedVideoModelConfig = MODELS[selectedVideoModel] ?? MODELS["grok-imagine-video-1-5"];
 
   return (
     <ErrorBoundary>
