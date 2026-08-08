@@ -60,7 +60,10 @@ export function useSettings() {
     if (theme === "dark") {
       root.classList.add("dark");
     } else if (theme === "tokyo") {
-      root.classList.add("tokyo");
+      // Tokyo Night is a dark palette: keep `.tokyo` for theme tokens and also
+      // enable `.dark` so Tailwind `dark:` utilities (toasts, modals, inputs) apply.
+      // CSS custom properties from `.tokyo` still win over `.dark` where both set them.
+      root.classList.add("tokyo", "dark");
     }
   };
 

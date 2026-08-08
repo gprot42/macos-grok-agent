@@ -30,27 +30,33 @@ function ToastItem({ toast, onDismiss }: { toast: ToastMessage; onDismiss: (id: 
   }, [toast.id, toast.duration, onDismiss]);
 
   const icons = {
-    success: <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />,
-    error: <AlertCircle className="h-4 w-4 text-red-500 flex-shrink-0" />,
-    info: <Info className="h-4 w-4 text-blue-500 flex-shrink-0" />,
+    success: <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />,
+    error: <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />,
+    info: <Info className="h-4 w-4 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />,
   };
-  const borders = {
-    success: "border-green-200 dark:border-green-800",
-    error: "border-red-200 dark:border-red-800",
-    info: "border-blue-200 dark:border-blue-800",
+  // Type-tinted surfaces so body text stays readable in light, dark, and Tokyo Night.
+  // Tokyo also applies `.dark` (see useSettings.applyTheme), so `dark:` covers it.
+  const typeStyles = {
+    success:
+      "border-green-300 bg-green-50 text-green-950 dark:border-green-700 dark:bg-green-950 dark:text-green-50",
+    error:
+      "border-red-300 bg-red-50 text-red-950 dark:border-red-700 dark:bg-red-950 dark:text-red-50",
+    info:
+      "border-blue-300 bg-blue-50 text-blue-950 dark:border-blue-700 dark:bg-blue-950 dark:text-blue-50",
   };
 
   return (
     <div
-      className={`flex items-start gap-3 px-4 py-3 rounded-xl border shadow-lg bg-white dark:bg-tokyo-surface theme-text text-sm max-w-sm transition-all duration-300 ${borders[toast.type]} ${
+      className={`flex items-start gap-3 px-4 py-3 rounded-xl border shadow-lg text-sm max-w-md transition-all duration-300 ${typeStyles[toast.type]} ${
         visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2"
       }`}
     >
       {icons[toast.type]}
-      <span className="flex-1 leading-snug">{toast.message}</span>
+      <span className="flex-1 leading-snug break-words">{toast.message}</span>
       <button
         onClick={() => { setVisible(false); setTimeout(() => onDismiss(toast.id), 300); }}
-        className="theme-text-muted hover:theme-text transition-colors"
+        className="opacity-60 hover:opacity-100 transition-opacity flex-shrink-0"
+        aria-label="Dismiss"
       >
         <X className="h-3.5 w-3.5" />
       </button>
