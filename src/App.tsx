@@ -120,7 +120,7 @@ function App() {
     showAbout, setShowAbout,
     showApiKeyPrompt, setShowApiKeyPrompt,
     selectedModel,
-    selectedImageModel,
+    selectedImageModel, setSelectedImageModel,
     selectedVideoModel, setSelectedVideoModel,
     selectedEndpoint,
     use1MContext,
@@ -238,6 +238,7 @@ function App() {
            !m.supportsImageGeneration && !m.supportsVideoGeneration &&
            !m.supportsTextToSpeech && !m.supportsVoiceAgent
   );
+  const selectedImageModelConfig = MODELS[selectedImageModel] ?? MODELS["grok-imagine-image-2"];
   const selectedVideoModelConfig = MODELS[selectedVideoModel] ?? MODELS["grok-imagine-video-1-5"];
 
   return (
@@ -261,14 +262,29 @@ function App() {
               <ModelSelector />
             </>
           ) : activeTab === "image" ? (
-            <div className="flex items-center gap-4">
-              <span className="text-2xl">🎨</span>
-              <div>
-                <div className="text-lg font-medium theme-text">Grok Imagine</div>
-                <div className="text-sm theme-text italic">
-                  {MODELS[selectedImageModel]?.description}
-                </div>
-              </div>
+            <div className="flex items-center gap-2.5 min-h-0 flex-wrap">
+              <span className="text-lg leading-none">🎨</span>
+              <span className="text-sm font-medium theme-text shrink-0">Imagine</span>
+              <select
+                value={selectedImageModelConfig.id}
+                onChange={(e) => setSelectedImageModel(e.target.value)}
+                className="text-sm rounded border theme-border theme-surface theme-text px-2 py-1 max-w-xs"
+                title={selectedImageModelConfig.description}
+              >
+                {Object.values(MODELS).filter((m) => m.supportsImageGeneration).map((m) => (
+                  <option key={m.id} value={m.id}>{m.displayName}</option>
+                ))}
+              </select>
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-mono theme-text-muted">
+                <span className="px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-600 dark:text-cyan-300 font-semibold not-italic tracking-wide">
+                  {selectedImageModelConfig.id === "grok-imagine-image-2"
+                    ? "2.0"
+                    : selectedImageModelConfig.id === "grok-imagine-quality"
+                      ? "1.x"
+                      : "Legacy"}
+                </span>
+                <span className="truncate hidden sm:inline">{selectedImageModelConfig.modelId}</span>
+              </span>
             </div>
           ) : activeTab === "video" ? (
             <div className="flex items-center gap-2.5 min-h-0">
@@ -362,11 +378,19 @@ function App() {
               activeProject={activeProject}
               onDeleteImage={deleteImage}
               onClearImages={_clearImages}
-              imageModelId={MODELS[selectedImageModel]?.modelId}
-              imageModelName={MODELS[selectedImageModel]?.displayName}
-              imagePerImageCost={MODELS[selectedImageModel]?.pricing?.perImage}
-              altModelId={undefined}
-              altModelName={undefined}
+              imageModelId={selectedImageModelConfig.modelId}
+              imageModelName={selectedImageModelConfig.displayName}
+              imagePerImageCost={selectedImageModelConfig.pricing?.perImage}
+              altModelId={
+                selectedImageModelConfig.id === "grok-imagine-image-2"
+                  ? MODELS["grok-imagine-quality"]?.modelId
+                  : MODELS["grok-imagine-image-2"]?.modelId
+              }
+              altModelName={
+                selectedImageModelConfig.id === "grok-imagine-image-2"
+                  ? MODELS["grok-imagine-quality"]?.displayName
+                  : MODELS["grok-imagine-image-2"]?.displayName
+              }
             />
           </div>
 
@@ -601,7 +625,7 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
                    <li>• Grok 4.3 — xAI flagship, 2M context, built-in reasoning</li>
                    <li>• Grok 4.20 Reasoning / Multi-Agent / Fast — xAI (Beta)</li>
                    <li>• Grok 4.1 — xAI with deep thinking &amp; X search</li>
-                   <li>• Grok Imagine / Video / Voice — image, video, TTS &amp; Think Fast live agent</li>
+                   <li>• Grok Imagine Image 2.0 / Video 1.5 / Voice — image, video, TTS &amp; Think Fast live agent</li>
                  </ul>
              </div>
 
@@ -644,7 +668,7 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
                  <li>• 1M Context - Extended context window for large documents</li>
                  <li>• Memory - Claude models remember across conversations</li>
                  <li>• Deep Thinking - Extended reasoning for complex problems</li>
-                 <li>• Image Generation - Create images with Grok Imagine</li>
+                 <li>• Image Generation - Create images with Grok Imagine Image 2.0 (Quality 1.x &amp; Standard available)</li>
                </ul>
              </div>
 
@@ -697,7 +721,9 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
               <div>
                 <h5 className="text-sm font-semibold text-emerald-800 dark:text-emerald-200 mb-1">Image generation (per image)</h5>
                 <ul className="text-sm text-emerald-700 dark:text-emerald-300 space-y-0.5">
-                  <li>• <strong>grok-imagine-image</strong> — flat fee per image (see pricing page)</li>
+                  <li>• <strong>grok-imagine-image-2</strong> (Image 2.0, default) — next-gen Quality Mode; see pricing page</li>
+                  <li>• <strong>grok-imagine-image-quality</strong> (1.x) — ~$0.05 / image (1K) · ~$0.07 (2K)</li>
+                  <li>• <strong>grok-imagine-image</strong> (legacy standard) — ~$0.02 / image</li>
                   <li>• Input images (editing) are also charged per image</li>
                 </ul>
               </div>

@@ -108,7 +108,7 @@ export function GrokVoicePanel({ apiKey }: GrokVoicePanelProps) {
           <div className="flex flex-col min-w-0">
             <div className="flex items-center gap-2 min-w-0">
               <span className="font-semibold theme-text">Text to Speech</span>
-              <span className="text-xs theme-text-muted hidden sm:inline">26 voices · 20+ languages</span>
+              <span className="text-xs theme-text-muted hidden sm:inline">27 voices · 20+ languages</span>
             </div>
             <div className="flex items-center gap-1.5 min-w-0">
               <span className="text-xs theme-text-muted">Using</span>

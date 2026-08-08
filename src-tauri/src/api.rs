@@ -515,7 +515,7 @@ pub async fn generate_image(
     n: Option<u32>,
 ) -> Result<ImageResponse, String> {
     let client = Client::new();
-    let model = model_id.unwrap_or_else(|| "grok-imagine-image-quality".to_string());
+    let model = model_id.unwrap_or_else(|| "grok-imagine-image-2".to_string());
     let base = xai_image_base(region.as_deref());
     let (width, height) = aspect_ratio_to_dims(aspect_ratio.as_deref().unwrap_or("1:1"));
     // "1k" | "2k" — only send when explicitly provided (API defaults to 1k)

@@ -470,10 +470,17 @@ export function ImageGenerator({
               </defs>
             </svg>
             <div className="text-center">
-              <div className="text-2xl font-semibold">{imageModelName || "Nano Banana Pro"}</div>
-              <div className="text-xl mt-1">Generate and edit images with Grok's image generation capabilities</div>
+              <div className="flex items-center justify-center gap-2 flex-wrap">
+                <div className="text-2xl font-semibold">{imageModelName || "Grok Imagine Image 2.0"}</div>
+                {(imageModelId === "grok-imagine-image-2" || !imageModelId) && (
+                  <span className="px-2 py-0.5 rounded-md text-xs font-bold tracking-wide bg-cyan-500/20 text-cyan-600 dark:text-cyan-300 ring-1 ring-cyan-500/40">
+                    2.0
+                  </span>
+                )}
+              </div>
+              <div className="text-xl mt-1">Generate and edit images with Grok Imagine</div>
               <div className="text-sm font-mono text-gray-400 dark:text-tokyo-muted mt-1.5">
-                model: {imageModelId || "grok-imagine-image-quality"} · {resolution.toUpperCase()}
+                model: {imageModelId || "grok-imagine-image-2"} · {resolution.toUpperCase()}
                 {" · "}{resolution === "2k" ? "~$0.07" : "~$0.05"}/image
                 {region !== "auto" && <> · {region}</>}
               </div>
@@ -579,6 +586,10 @@ export function ImageGenerator({
                     : imageCount !== "auto"
                       ? `Generating ${IMAGE_COUNT_OPTIONS.find((o) => o.value === imageCount)?.n ?? 1} images…`
                       : "Generating image…"}
+                </div>
+                <div className="text-xs font-mono text-cyan-600 dark:text-cyan-400">
+                  {imageModelName || "Grok Imagine Image 2.0"}
+                  {imageModelId ? ` · ${imageModelId}` : ""}
                 </div>
                 <div className="text-sm text-gray-400 dark:text-tokyo-muted tabular-nums">
                   {elapsedSeconds}s elapsed

@@ -11,7 +11,7 @@ const reset = () =>
     showApiKeyPrompt: false,
     selectedModel: "grok-4-3",
     selectedEndpoint: "xai",
-    selectedImageModel: "grok-imagine",
+    selectedImageModel: "grok-imagine-image-2",
     use1MContext: false,
     useMemory: false,
     useGrounding: false,
@@ -66,10 +66,19 @@ describe("ModalSlice", () => {
 // ── ModelSlice ────────────────────────────────────────────────────────────────
 
 describe("ModelSlice", () => {
-  it("defaults to grok-4-3 / xai", () => {
+  it("defaults to grok-4-3 / xai and Imagine Image 2.0", () => {
     const s = useAppStore.getState();
     expect(s.selectedModel).toBe("grok-4-3");
     expect(s.selectedEndpoint).toBe("xai");
+    expect(s.selectedImageModel).toBe("grok-imagine-image-2");
+    expect(MODELS[s.selectedImageModel]?.displayName).toMatch(/2\.0/);
+  });
+
+  it("setSelectedImageModel switches Imagine version", () => {
+    useAppStore.getState().setSelectedImageModel("grok-imagine-image-2");
+    expect(useAppStore.getState().selectedImageModel).toBe("grok-imagine-image-2");
+    useAppStore.getState().setSelectedImageModel("grok-imagine-quality");
+    expect(useAppStore.getState().selectedImageModel).toBe("grok-imagine-quality");
   });
 
   it("setSelectedModel updates model and resets grounding to model default", () => {

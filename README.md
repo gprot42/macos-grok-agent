@@ -21,8 +21,8 @@ A desktop AI assistant for interacting with multiple Large Language Models via *
 ### AI Models
 
 - **Grok 4.x** — xAI flagship models with 2M context, X search, and built-in reasoning
-- **Grok Imagine** — Image generation and editing
-- **Grok Voice** — Text-to-speech (26 voices) and **Voice Think Fast 2.0** live speech-to-speech agent
+- **Grok Imagine Image 2.0** — Image generation and editing (default; Quality 1.x & Standard also available)
+- **Grok Voice** — Text-to-speech (27 voices) and **Voice Think Fast 2.0** live speech-to-speech agent
 - **Grok Video** — Text-to-video generation
 - **Claude 4 Opus / Sonnet / Haiku** — Anthropic's latest models (via OpenRouter or Kilo Code)
 - **GPT-4o** — OpenAI's advanced model (via OpenRouter)
@@ -34,7 +34,7 @@ A desktop AI assistant for interacting with multiple Large Language Models via *
 
 - **Multiple Endpoints**: xAI, OpenRouter, Kilo Code, Anthropic, OpenAI, Custom
 - **X Search**: Real-time search on X.com via Grok models
-- **Image / Voice / Video Generation**: Grok Imagine, Voice TTS, Think Fast live agent, Video
+- **Image / Voice / Video Generation**: Grok Imagine Image 2.0, Voice TTS, Think Fast live agent, Video 1.5
 - **File Attachments**: Text, images, PDFs with analysis
 - **Token Tracking**: Real-time usage with cost estimation
 - **Project Management**: Organize outputs into folders and sessions

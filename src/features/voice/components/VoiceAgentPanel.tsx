@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@shared/components/ui/button";
 import { BUILTIN_VOICES } from "@shared/constants/voices";
 import {
@@ -70,6 +70,8 @@ export function VoiceAgentPanel({ apiKey }: VoiceAgentPanelProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
   const [textInput, setTextInput] = useState("");
+  const transcriptScrollRef = useRef<HTMLDivElement>(null);
+  const transcriptEndRef = useRef<HTMLDivElement>(null);
 
   const selectedModel =
     VOICE_AGENT_MODELS.find((m) => m.id === modelId) ?? VOICE_AGENT_MODELS[0];
@@ -100,6 +102,17 @@ export function VoiceAgentPanel({ apiKey }: VoiceAgentPanelProps) {
     onAudioDelta: playAudio,
     onSpeechStarted: stopPlayback,
   });
+
+  // Keep the latest transcript entry visible as speech streams in.
+  // Instant scroll during streaming deltas; older messages move upward.
+  useEffect(() => {
+    const el = transcriptScrollRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+    } else {
+      transcriptEndRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+    }
+  }, [transcript]);
 
   const handleStart = useCallback(async () => {
     try {
@@ -338,8 +351,11 @@ export function VoiceAgentPanel({ apiKey }: VoiceAgentPanelProps) {
         )}
       </div>
 
-      {/* Transcript */}
-      <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3 scrollbar-thin">
+      {/* Transcript — latest message stays at the bottom; older messages scroll up */}
+      <div
+        ref={transcriptScrollRef}
+        className="flex-1 min-h-0 overflow-y-auto p-4 scrollbar-thin"
+      >
         {transcript.length === 0 && !active && (
           <div className="flex flex-col items-center justify-center h-full theme-text-muted gap-4 py-12">
             <div className="text-6xl">🎙️</div>
@@ -366,25 +382,30 @@ export function VoiceAgentPanel({ apiKey }: VoiceAgentPanelProps) {
           </div>
         )}
 
-        {transcript.map((t) => (
-          <div
-            key={t.id}
-            className={`flex ${t.role === "user" ? "justify-end" : "justify-start"}`}
-          >
-            <div
-              className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
-                t.role === "user"
-                  ? "bg-sky-500 text-white rounded-br-md"
-                  : "theme-surface border theme-border theme-text rounded-bl-md"
-              }`}
-            >
-              <div className="text-[10px] opacity-60 mb-0.5 font-medium uppercase tracking-wide">
-                {t.role === "user" ? "You" : "Grok"}
+        {transcript.length > 0 && (
+          <div className="min-h-full flex flex-col justify-end gap-3">
+            {transcript.map((t) => (
+              <div
+                key={t.id}
+                className={`flex ${t.role === "user" ? "justify-end" : "justify-start"}`}
+              >
+                <div
+                  className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
+                    t.role === "user"
+                      ? "bg-sky-500 text-white rounded-br-md"
+                      : "theme-surface border theme-border theme-text rounded-bl-md"
+                  }`}
+                >
+                  <div className="text-[10px] opacity-60 mb-0.5 font-medium uppercase tracking-wide">
+                    {t.role === "user" ? "You" : "Grok"}
+                  </div>
+                  {t.content}
+                </div>
               </div>
-              {t.content}
-            </div>
+            ))}
+            <div ref={transcriptEndRef} aria-hidden className="h-px w-full shrink-0" />
           </div>
-        ))}
+        )}
       </div>
 
       {/* Text input + debug */}

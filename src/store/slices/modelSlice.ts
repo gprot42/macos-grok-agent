@@ -18,6 +18,7 @@ export interface ModelSlice {
   setSelectedModel: (id: string) => void;
   /** Also auto-switches model when it doesn't support the new endpoint. */
   setSelectedEndpoint: (ep: EndpointType) => void;
+  setSelectedImageModel: (id: string) => void;
   setSelectedVideoModel: (id: string) => void;
   setUse1MContext: (v: boolean) => void;
   setUseMemory: (v: boolean) => void;
@@ -31,7 +32,7 @@ export interface ModelSlice {
 export const createModelSlice: StateCreator<ModelSlice> = (set, get) => ({
   selectedModel: "grok-4-3",
   selectedEndpoint: "xai",
-  selectedImageModel: "grok-imagine-quality",
+  selectedImageModel: "grok-imagine-image-2",
   selectedVideoModel: "grok-imagine-video-1-5",
   use1MContext: false,
   useMemory: false,
@@ -67,6 +68,7 @@ export const createModelSlice: StateCreator<ModelSlice> = (set, get) => ({
     set({ selectedEndpoint: ep, selectedModel: newModel });
   },
 
+  setSelectedImageModel: (id) => set({ selectedImageModel: id }),
   setSelectedVideoModel: (id) => set({ selectedVideoModel: id }),
   setUse1MContext: (v) => set({ use1MContext: v }),
   setUseMemory: (v) => set({ useMemory: v }),

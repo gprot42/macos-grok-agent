@@ -35,9 +35,19 @@ describe("MODELS registry", () => {
   });
 
   it("image generation models are flagged correctly", () => {
+    const image2 = MODELS["grok-imagine-image-2"];
+    expect(image2).toBeDefined();
+    expect(image2.supportsImageGeneration).toBe(true);
+    expect(image2.modelId).toBe("grok-imagine-image-2");
+    expect(image2.displayName).toMatch(/2\.0/);
+
     const imageMod = MODELS["grok-imagine"];
     expect(imageMod).toBeDefined();
     expect(imageMod.supportsImageGeneration).toBe(true);
+
+    const quality = MODELS["grok-imagine-quality"];
+    expect(quality?.supportsImageGeneration).toBe(true);
+    expect(quality?.modelId).toBe("grok-imagine-image-quality");
   });
 
   it("video generation models are flagged correctly", () => {

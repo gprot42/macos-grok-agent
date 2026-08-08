@@ -12,7 +12,7 @@ beforeEach(() => {
     showApiKeyPrompt: false,
     selectedModel: "grok-4-3",
     selectedEndpoint: "xai",
-    selectedImageModel: "grok-imagine",
+    selectedImageModel: "grok-imagine-image-2",
     use1MContext: false,
     useMemory: false,
     useGrounding: false,
