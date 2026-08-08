@@ -1,4 +1,4 @@
-use crate::{codegen, mcp, AttachedFile, ChatResponse, ImageResponse, Message};
+use crate::{codegen, mcp, AttachedFile, ChatResponse, ImageResponse, Message, VideoReferenceImage};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use futures_util::StreamExt;
 use reqwest::Client;
@@ -697,6 +697,9 @@ fn format_video_api_error(context: &str, status: reqwest::StatusCode, body: &str
     }
 }
 
+/// Max reference images for Grok Imagine video (xAI reference-to-video limit).
+const VIDEO_REFERENCE_IMAGES_MAX: usize = 7;
+
 pub async fn generate_video(
     app_handle: tauri::AppHandle,
     prompt: String,
@@ -707,22 +710,53 @@ pub async fn generate_video(
     resolution: Option<String>,
     image: Option<String>,
     image_mime_type: Option<String>,
+    reference_images: Option<Vec<VideoReferenceImage>>,
     with_audio: Option<bool>,
 ) -> Result<Value, String> {
     let client = Client::new();
     let model = model_id.unwrap_or_else(|| "grok-imagine-video".to_string());
     let has_image = image.as_ref().is_some_and(|data| !data.is_empty());
+    let refs: Vec<&VideoReferenceImage> = reference_images
+        .as_ref()
+        .map(|v| {
+            v.iter()
+                .filter(|img| !img.data.is_empty())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let ref_count = refs.len();
+    let has_refs = ref_count > 0;
+
+    // API rejects combining image (I2V) with reference_images (R2V).
+    if has_image && has_refs {
+        return Err(
+            "Cannot use both a start-frame image and reference images. Use one image for image-to-video, or 1–7 references for reference-to-video."
+                .to_string(),
+        );
+    }
+    if ref_count > VIDEO_REFERENCE_IMAGES_MAX {
+        return Err(format!(
+            "Too many reference images ({}). Maximum is {}.",
+            ref_count, VIDEO_REFERENCE_IMAGES_MAX
+        ));
+    }
+
     // Default to native audio on (Grok Imagine is a video-audio model).
     let audio_enabled = with_audio.unwrap_or(true);
 
     // Imagine Video 1.5 supports text-to-video and native 1080p (T2V + I2V).
-    // Keep the caller's model; only clamp resolution for models that lack 1080p.
+    // Reference-to-video is capped at 720p. Legacy models lack 1080p.
     let res_str = {
         let requested = resolution.as_deref().unwrap_or("720p");
-        if requested == "1080p" && !model.contains("1.5") {
+        if requested == "1080p" && (has_refs || !model.contains("1.5")) {
+            let reason = if has_refs {
+                "reference-to-video is capped at 720p"
+            } else {
+                "1080p is Video 1.5 only"
+            };
             info!(
-                "[generate_video] 1080p requested on {} — clamping to 720p (1080p is Video 1.5 only)",
-                model
+                "[generate_video] 1080p requested on {} — clamping to 720p ({})",
+                model, reason
             );
             "720p"
         } else {
@@ -732,8 +766,8 @@ pub async fn generate_video(
 
     let url = format!("{}/videos/generations", XAI_ENDPOINT);
     info!(
-        "[generate_video] POST {} model={} resolution={} has_image={} with_audio={}",
-        url, model, res_str, has_image, audio_enabled
+        "[generate_video] POST {} model={} resolution={} has_image={} ref_images={} with_audio={}",
+        url, model, res_str, has_image, ref_count, audio_enabled
     );
 
     let mut payload = json!({
@@ -757,6 +791,16 @@ pub async fn generate_video(
             "url": format!("data:{};base64,{}", mime, image.as_ref().unwrap()),
             "type": "image_url"
         });
+    } else if has_refs {
+        // Reference-to-video: each entry is { "url": "data:...;base64,..." } (or HTTPS / file_id).
+        let ref_payload: Vec<Value> = refs
+            .iter()
+            .map(|img| {
+                let mime = img.mime_type.as_deref().unwrap_or("image/png");
+                json!({ "url": format!("data:{};base64,{}", mime, img.data) })
+            })
+            .collect();
+        payload["reference_images"] = json!(ref_payload);
     }
 
     // Some API revisions accept with_audio / generate_audio; older ones reject
@@ -1039,7 +1083,11 @@ pub async fn extend_video(
     Err("Video extension timed out".to_string())
 }
 
-pub async fn download_video_to_disk(url: String, filename: String) -> Result<String, String> {
+pub async fn download_video_to_disk(
+    url: String,
+    filename: String,
+    dest_path: Option<String>,
+) -> Result<String, String> {
     let client = Client::new();
     info!("[download_video] GET {}", url);
 
@@ -1058,17 +1106,36 @@ pub async fn download_video_to_disk(url: String, filename: String) -> Result<Str
         .await
         .map_err(|e| format!("Failed to read video bytes: {}", e))?;
 
-    let home = dirs::home_dir().ok_or("Could not find home directory")?;
-    let downloads = home.join("Downloads");
-    std::fs::create_dir_all(&downloads)
-        .map_err(|e| format!("Could not create Downloads directory: {}", e))?;
+    let path = if let Some(p) = dest_path.filter(|s| !s.trim().is_empty()) {
+        let path = std::path::PathBuf::from(p);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Could not create destination directory: {}", e))?;
+        }
+        path
+    } else {
+        let home = dirs::home_dir().ok_or("Could not find home directory")?;
+        let downloads = home.join("Downloads");
+        std::fs::create_dir_all(&downloads)
+            .map_err(|e| format!("Could not create Downloads directory: {}", e))?;
+        // Sanitize filename — keep basename only so path traversal is impossible.
+        let safe_name = std::path::Path::new(&filename)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .filter(|n| !n.is_empty())
+            .unwrap_or("grok-video.mp4");
+        downloads.join(safe_name)
+    };
 
-    let path = downloads.join(&filename);
     std::fs::write(&path, &bytes)
         .map_err(|e| format!("Failed to write video file: {}", e))?;
 
     let path_str = path.to_string_lossy().to_string();
-    info!("[download_video] Saved {} bytes → {}", bytes.len(), path_str);
+    info!(
+        "[download_video] Saved {} bytes → {}",
+        bytes.len(),
+        path_str
+    );
     Ok(path_str)
 }
 

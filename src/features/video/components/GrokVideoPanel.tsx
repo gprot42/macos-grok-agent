@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import { Button } from "@shared/components/ui/button";
 import { Textarea } from "@shared/components/ui/textarea";
 import { MODELS } from "@shared/constants/models";
@@ -10,6 +12,9 @@ interface SourceImage {
   mimeType: string;
   name: string;
 }
+
+/** xAI reference-to-video max images (Grok Imagine Video). */
+const MAX_VIDEO_IMAGES = 7;
 
 // ── Aspect ratio data ──────────────────────────────────────────────────────
 const VIDEO_ASPECT_RATIOS = [
@@ -121,22 +126,26 @@ function VideoModelCompareHelper({
                     Feature
                   </th>
                   <th
-                    className={`text-left font-semibold px-2.5 py-1.5 ${
-                      !highlightV15 ? "bg-sky-500/10 text-sky-700 dark:text-sky-300" : ""
+                    className={`text-left font-semibold px-2.5 py-1.5 text-foreground ${
+                      !highlightV15
+                        ? "bg-sky-500/20 ring-1 ring-inset ring-sky-500/40"
+                        : ""
                     }`}
                   >
                     Legacy
-                    <div className="font-mono font-normal text-[10px] opacity-80">
+                    <div className="font-mono font-normal text-[10px] text-muted-foreground mt-0.5">
                       grok-imagine-video
                     </div>
                   </th>
                   <th
-                    className={`text-left font-semibold px-2.5 py-1.5 ${
-                      highlightV15 ? "bg-violet-500/10 text-violet-700 dark:text-violet-300" : ""
+                    className={`text-left font-semibold px-2.5 py-1.5 text-foreground ${
+                      highlightV15
+                        ? "bg-violet-500/20 ring-1 ring-inset ring-violet-500/40"
+                        : ""
                     }`}
                   >
                     Video 1.5
-                    <div className="font-mono font-normal text-[10px] opacity-80">
+                    <div className="font-mono font-normal text-[10px] text-muted-foreground mt-0.5">
                       grok-imagine-video-1.5
                     </div>
                   </th>
@@ -149,15 +158,15 @@ function VideoModelCompareHelper({
                       {row.label}
                     </td>
                     <td
-                      className={`px-2.5 py-1.5 leading-snug ${
-                        !highlightV15 ? "bg-sky-500/5" : ""
+                      className={`px-2.5 py-1.5 leading-snug text-foreground ${
+                        !highlightV15 ? "bg-sky-500/10" : ""
                       }`}
                     >
                       {row.legacy}
                     </td>
                     <td
-                      className={`px-2.5 py-1.5 leading-snug ${
-                        highlightV15 ? "bg-violet-500/5" : ""
+                      className={`px-2.5 py-1.5 leading-snug text-foreground ${
+                        highlightV15 ? "bg-violet-500/10" : ""
                       }`}
                     >
                       {row.v15}
@@ -188,16 +197,20 @@ export function GrokVideoPanel({
   /** Video 1.5: text-to-video, image-to-video, native 1080p. */
   const isVideo15 = modelId.includes("1.5");
   const [prompt, setPrompt] = useState("");
-  const [sourceImage, setSourceImage] = useState<SourceImage | null>(null);
+  /** 0 = text-to-video; 1 = image-to-video; 2–7 = reference-to-video. */
+  const [sourceImages, setSourceImages] = useState<SourceImage[]>([]);
   const [aspectRatio, setAspectRatio] = useState<string>("9:16");
   const [duration, setDuration] = useState<number>(15);
   const [resolution, setResolution] = useState<VideoResolution>("720p");
   /** Native soundtrack: Grok Imagine is a video-audio model; default on. */
   const [withAudio, setWithAudio] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [progress, setProgress] = useState("");
+  /** Path shown after a successful download (next to the Download button). */
+  const [downloadStatus, setDownloadStatus] = useState<string | null>(null);
   const [showModelHelp, setShowModelHelp] = useState(false);
   const unlistenRef = useRef<(() => void) | null>(null);
 
@@ -205,18 +218,49 @@ export function GrokVideoPanel({
     return () => { unlistenRef.current?.(); };
   }, []);
 
-  const handleImageUpload = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      const [header, base64] = result.split(",");
-      const mimeType = header.match(/data:(.*?);/)?.[1] ?? file.type ?? "image/png";
-      setSourceImage({ data: base64, mimeType, name: file.name });
-    };
-    reader.readAsDataURL(file);
+  const imageCount = sourceImages.length;
+  const isReferenceMode = imageCount >= 2;
+  const canAddMoreImages = imageCount < MAX_VIDEO_IMAGES;
+  /** Reference-to-video is capped at 720p by the API. */
+  const effectiveResolution: VideoResolution =
+    isReferenceMode && resolution === "1080p" ? "720p" : resolution;
+
+  const readFileAsSourceImage = (file: File): Promise<SourceImage> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        const [header, base64] = result.split(",");
+        const mimeType = header.match(/data:(.*?);/)?.[1] ?? file.type ?? "image/png";
+        resolve({ data: base64, mimeType, name: file.name });
+      };
+      reader.onerror = () => reject(new Error(`Failed to read ${file.name}`));
+      reader.readAsDataURL(file);
+    });
+
+  const handleImageUpload = async (files: FileList | File[]) => {
+    const list = Array.from(files).filter((f) => f.type.startsWith("image/"));
+    if (list.length === 0) return;
+    const room = MAX_VIDEO_IMAGES - sourceImages.length;
+    if (room <= 0) {
+      setError(`Maximum ${MAX_VIDEO_IMAGES} images allowed for Grok video.`);
+      return;
+    }
+    const toAdd = list.slice(0, room);
+    try {
+      const loaded = await Promise.all(toAdd.map(readFileAsSourceImage));
+      setSourceImages((prev) => [...prev, ...loaded].slice(0, MAX_VIDEO_IMAGES));
+      setError(null);
+    } catch (e: unknown) {
+      setError(String(e));
+    }
   };
 
-  // Text-to-video needs only a prompt. Image is always optional in the UI.
+  const removeImageAt = (index: number) => {
+    setSourceImages((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  // Text-to-video needs only a prompt. Images are always optional in the UI.
   const canGenerate = prompt.trim().length > 0 && !!apiKey;
 
   const handleGenerate = async () => {
@@ -224,17 +268,21 @@ export function GrokVideoPanel({
     setIsLoading(true);
     setError(null);
     setVideoUrl(null);
+    setDownloadStatus(null);
 
-    const hasImage = sourceImage !== null;
-    // 1080p is only on Video 1.5 — upgrade the model for that request when needed.
+    // 1080p is only on Video 1.5 (T2V + I2V) — upgrade model when needed.
+    // Multi-ref clamps to 720p below.
+    const res = effectiveResolution;
     const effectiveModelId =
-      resolution === "1080p" && !isVideo15 ? VIDEO_15_MODEL : modelId;
+      res === "1080p" && !isVideo15 ? VIDEO_15_MODEL : modelId;
 
-    setProgress(
-      hasImage
-        ? `Submitting image-to-video (${resolution})…`
-        : `Submitting text-to-video (${resolution})…`
-    );
+    const modeLabel =
+      imageCount === 0
+        ? "text-to-video"
+        : imageCount === 1
+          ? "image-to-video"
+          : `reference-to-video (${imageCount} refs)`;
+    setProgress(`Submitting ${modeLabel} (${res})…`);
 
     // Listen for progress events from the Rust polling loop
     unlistenRef.current?.();
@@ -245,17 +293,34 @@ export function GrokVideoPanel({
     unlistenRef.current = unlisten;
 
     try {
-      const result = await invoke<{ url: string; videoId?: string }>("generate_video", {
-        prompt: prompt,
+      // 1 image → image-to-video (start frame); 2–7 → reference_images (cannot mix).
+      const payload: Record<string, unknown> = {
+        prompt,
         apiKey,
         modelId: effectiveModelId,
         durationSeconds: duration,
         aspectRatio,
-        resolution,
-        image: sourceImage?.data ?? null,
-        imageMimeType: sourceImage?.mimeType ?? null,
+        resolution: res,
         withAudio,
-      });
+      };
+      if (imageCount === 1) {
+        payload.image = sourceImages[0].data;
+        payload.imageMimeType = sourceImages[0].mimeType;
+        payload.referenceImages = null;
+      } else if (imageCount >= 2) {
+        payload.image = null;
+        payload.imageMimeType = null;
+        payload.referenceImages = sourceImages.map((img) => ({
+          data: img.data,
+          mimeType: img.mimeType,
+        }));
+      } else {
+        payload.image = null;
+        payload.imageMimeType = null;
+        payload.referenceImages = null;
+      }
+
+      const result = await invoke<{ url: string; videoId?: string }>("generate_video", payload);
       setVideoUrl(result.url);
       setProgress("✅ Video ready!");
     } catch (e: unknown) {
@@ -269,13 +334,65 @@ export function GrokVideoPanel({
   };
 
   const handleDownload = async () => {
-    if (!videoUrl) return;
+    if (!videoUrl || isDownloading) return;
+    setDownloadStatus(null);
+    setError(null);
+
+    const filename = `grok-video-${Date.now()}.mp4`;
+    let destPath: string | undefined;
+    let dialogCancelled = false;
+
     try {
-      const filename = `grok-video-${Date.now()}.mp4`;
-      const savedPath = await invoke<string>("download_video", { url: videoUrl, filename });
+      const picked = await saveDialog({
+        defaultPath: filename,
+        filters: [{ name: "MP4 Video", extensions: ["mp4"] }],
+        title: "Save video",
+      });
+      if (picked === null) {
+        // User cancelled the save dialog — abort.
+        dialogCancelled = true;
+      } else {
+        destPath = picked;
+      }
+    } catch {
+      // Dialog plugin failed — fall back to ~/Downloads via Rust.
+      destPath = undefined;
+    }
+
+    if (dialogCancelled) return;
+
+    setIsDownloading(true);
+    try {
+      const savedPath = await invoke<string>("download_video", {
+        url: videoUrl,
+        filename,
+        destPath: destPath ?? null,
+      });
+      setDownloadStatus(savedPath);
       setProgress(`✅ Saved to ${savedPath}`);
-    } catch (e) {
-      setError("Failed to download video: " + (e as Error).message);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(`Failed to download video: ${msg}`);
+      setDownloadStatus(null);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const handleRevealDownload = async () => {
+    if (!downloadStatus) return;
+    try {
+      await shellOpen(downloadStatus);
+    } catch {
+      // Best-effort: open containing folder if opening the file fails.
+      const parent = downloadStatus.replace(/[/\\][^/\\]+$/, "");
+      if (parent && parent !== downloadStatus) {
+        try {
+          await shellOpen(parent);
+        } catch {
+          /* ignore */
+        }
+      }
     }
   };
 
@@ -294,9 +411,11 @@ export function GrokVideoPanel({
         {/* One-line context (model selected in toolbar) */}
         <div className="flex items-start justify-between gap-2">
           <div className="text-[11px] text-muted-foreground leading-snug min-w-0">
-            {sourceImage
-              ? "Image-to-video · animate your uploaded still"
-              : "Text-to-video ready — type a prompt (image optional · 480p / 720p / 1080p)"}
+            {imageCount === 0
+              ? "Text-to-video ready — type a prompt (images optional · up to 7)"
+              : imageCount === 1
+                ? "Image-to-video · animate your uploaded still as the first frame"
+                : `Reference-to-video · ${imageCount}/${MAX_VIDEO_IMAGES} refs (identity/style locks · max 720p)`}
             {modelConfig?.description ? ` · ${modelConfig.description}` : ""}
           </div>
         </div>
@@ -370,18 +489,40 @@ export function GrokVideoPanel({
             <div className="flex items-center gap-1.5">
               <span className="text-xs font-semibold shrink-0">Res</span>
               <div className="flex items-center gap-0.5 bg-muted rounded-full p-0.5">
-                {VIDEO_RESOLUTIONS.map((r) => (
-                  <button
-                    key={r.value}
-                    type="button"
-                    onClick={() => setResolution(r.value)}
-                    title={r.hint}
-                    className={pillBtn(resolution === r.value)}
-                  >
-                    {r.label}
-                  </button>
-                ))}
+                {VIDEO_RESOLUTIONS.map((r) => {
+                  const disabled1080 = r.value === "1080p" && isReferenceMode;
+                  // Show effective selection: multi-ref clamps 1080p → 720p
+                  const isActive = disabled1080
+                    ? false
+                    : effectiveResolution === r.value;
+                  return (
+                    <button
+                      key={r.value}
+                      type="button"
+                      onClick={() => {
+                        if (disabled1080) return;
+                        setResolution(r.value);
+                      }}
+                      disabled={disabled1080}
+                      title={
+                        disabled1080
+                          ? "1080p not available for reference-to-video (max 720p)"
+                          : r.hint
+                      }
+                      className={`${pillBtn(isActive)} ${
+                        disabled1080 ? "opacity-40 cursor-not-allowed" : ""
+                      }`}
+                    >
+                      {r.label}
+                    </button>
+                  );
+                })}
               </div>
+              {isReferenceMode && resolution === "1080p" && (
+                <span className="text-[10px] text-amber-600 dark:text-amber-400">
+                  → 720p (refs)
+                </span>
+              )}
             </div>
 
             <div className="flex items-center gap-1.5">
@@ -408,51 +549,100 @@ export function GrokVideoPanel({
           </div>
         </div>
 
-        {/* Source image — always optional */}
-        <div className="rounded-xl border border-border bg-card px-3.5 py-2.5">
-          <div className="flex items-center gap-3">
+        {/* Source / reference images — optional, up to 7 */}
+        <div className="rounded-xl border border-border bg-card px-3.5 py-2.5 space-y-2">
+          <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1">
-              <div className="text-xs font-semibold">Source image (optional)</div>
+              <div className="text-xs font-semibold">
+                Images (optional){" "}
+                <span className="font-normal text-muted-foreground">
+                  {imageCount}/{MAX_VIDEO_IMAGES}
+                </span>
+              </div>
               <p className="text-[11px] text-muted-foreground leading-snug mt-0.5">
-                Skip to generate from text only. Upload to animate a still frame.
+                {imageCount === 0
+                  ? "Skip for text-only. 1 image = animate as first frame. 2–7 = reference-to-video (character, product, scene…)."
+                  : imageCount === 1
+                    ? "1 image → image-to-video (start frame). Add more for multi-reference (up to 7)."
+                    : "Multi-reference mode: lock subjects/styles in the prompt with <IMAGE_1>… tags. Max 720p."}
               </p>
             </div>
-            {sourceImage ? (
-              <div className="flex items-center gap-2 shrink-0">
-                <img
-                  src={`data:${sourceImage.mimeType};base64,${sourceImage.data}`}
-                  alt="Source"
-                  className="h-12 w-12 rounded-md border object-cover"
-                />
-                <div className="min-w-0 max-w-[8rem]">
-                  <div className="text-[11px] font-mono truncate">{sourceImage.name}</div>
-                  <button
-                    type="button"
-                    onClick={() => setSourceImage(null)}
-                    className="text-[11px] text-red-500 hover:underline"
-                  >
-                    Remove
-                  </button>
-                </div>
-              </div>
-            ) : (
+            {canAddMoreImages && (
               <label className="shrink-0 flex items-center justify-center rounded-lg border border-dashed border-border px-3 py-2 cursor-pointer hover:bg-muted/40 transition-colors">
                 <span className="text-xs text-muted-foreground whitespace-nowrap">
-                  Upload PNG / JPEG
+                  {imageCount === 0 ? "Upload images" : "Add more"}
                 </span>
                 <input
                   type="file"
                   accept="image/png,image/jpeg,image/jpg,image/webp"
+                  multiple
                   className="hidden"
                   onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) handleImageUpload(file);
+                    if (e.target.files?.length) void handleImageUpload(e.target.files);
                     e.target.value = "";
                   }}
                 />
               </label>
             )}
           </div>
+
+          {imageCount > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {sourceImages.map((img, index) => (
+                <div
+                  key={`${img.name}-${index}`}
+                  className="relative group flex flex-col items-center gap-0.5"
+                >
+                  <div className="relative">
+                    <img
+                      src={`data:${img.mimeType};base64,${img.data}`}
+                      alt={img.name}
+                      className="h-14 w-14 rounded-md border object-cover"
+                    />
+                    <span className="absolute bottom-0 left-0 right-0 bg-black/55 text-white text-[9px] text-center font-mono leading-tight py-px rounded-b-md">
+                      {index + 1}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => removeImageAt(index)}
+                      className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-red-500 text-white text-[11px] leading-none opacity-90 hover:opacity-100 shadow"
+                      title="Remove"
+                      aria-label={`Remove image ${index + 1}`}
+                    >
+                      ×
+                    </button>
+                  </div>
+                  <div className="text-[10px] font-mono text-muted-foreground max-w-[3.5rem] truncate">
+                    {img.name}
+                  </div>
+                </div>
+              ))}
+              {canAddMoreImages && (
+                <label className="h-14 w-14 rounded-md border border-dashed border-border flex items-center justify-center cursor-pointer hover:bg-muted/40 text-muted-foreground text-lg leading-none">
+                  +
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/jpg,image/webp"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => {
+                      if (e.target.files?.length) void handleImageUpload(e.target.files);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+              )}
+              {imageCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSourceImages([])}
+                  className="self-center text-[11px] text-red-500 hover:underline px-1"
+                >
+                  Clear all
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Prompt + generate */}
@@ -460,7 +650,11 @@ export function GrokVideoPanel({
           <Textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Describe the video you want to generate… (image not required)"
+            placeholder={
+              isReferenceMode
+                ? "Describe the shot… reference images as <IMAGE_1>, <IMAGE_2>, …"
+                : "Describe the video you want to generate… (images optional)"
+            }
             rows={3}
             className="min-h-[4.5rem] max-h-28 resize-none text-sm"
             onKeyDown={(e) => {
@@ -509,11 +703,28 @@ export function GrokVideoPanel({
       {/* Result — stays in the scroll area with the form */}
       {videoUrl && (
         <div className="rounded-xl border border-border bg-card p-3 space-y-2">
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="text-xs text-green-600 font-medium">Video ready</div>
-            <Button size="sm" onClick={handleDownload} variant="outline">
-              Download
-            </Button>
+            <div className="flex items-center gap-2 min-w-0">
+              {downloadStatus && (
+                <button
+                  type="button"
+                  onClick={() => void handleRevealDownload()}
+                  className="text-[11px] text-green-600 dark:text-green-400 hover:underline truncate max-w-[14rem]"
+                  title={downloadStatus}
+                >
+                  Saved — open file
+                </button>
+              )}
+              <Button
+                size="sm"
+                onClick={() => void handleDownload()}
+                variant="outline"
+                disabled={isDownloading}
+              >
+                {isDownloading ? "Saving…" : "Download"}
+              </Button>
+            </div>
           </div>
           <video
             controls

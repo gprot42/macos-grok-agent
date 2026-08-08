@@ -119,6 +119,16 @@ pub struct ImageResponse {
     pub cost_usd: f64,
 }
 
+/// One reference image for video generation (base64 body + mime).
+/// Used for reference-to-video (up to 7 images). Single image-to-video still uses `image`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VideoReferenceImage {
+    /// Raw base64 (no data-URI prefix).
+    pub data: String,
+    #[serde(default, rename = "mimeType")]
+    pub mime_type: Option<String>,
+}
+
 #[tauri::command]
 async fn load_settings() -> Result<Option<AppSettings>, String> {
     storage::load_settings().await
@@ -335,6 +345,8 @@ async fn generate_video(
     resolution: Option<String>,
     image: Option<String>,
     image_mime_type: Option<String>,
+    // Reference-to-video: up to 7 images (cannot combine with `image`).
+    reference_images: Option<Vec<VideoReferenceImage>>,
     // When true (default), request native audio with the video. When false, silent video.
     with_audio: Option<bool>,
 ) -> Result<serde_json::Value, String> {
@@ -348,6 +360,7 @@ async fn generate_video(
         resolution,
         image,
         image_mime_type,
+        reference_images,
         with_audio,
     )
     .await
@@ -505,8 +518,13 @@ async fn get_default_working_dir(active_project: Option<String>) -> Result<Strin
 }
 
 #[tauri::command]
-async fn download_video(url: String, filename: String) -> Result<String, String> {
-    api::download_video_to_disk(url, filename).await
+async fn download_video(
+    url: String,
+    filename: String,
+    // Optional full path from a Save dialog. When omitted, saves to ~/Downloads/{filename}.
+    dest_path: Option<String>,
+) -> Result<String, String> {
+    api::download_video_to_disk(url, filename, dest_path).await
 }
 
 #[tauri::command]
