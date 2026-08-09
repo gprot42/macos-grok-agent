@@ -211,7 +211,22 @@ export function SettingsPanel({
               <p className="text-sm text-gray-500 dark:text-tokyo-muted">
                 Choose how Grok Agent authenticates to <code className="text-xs">api.x.ai</code>.
                 SuperGrok OAuth uses your SuperGrok / SuperGrok Heavy subscription (same OIDC flow as Grok Build).
-                It is experimental — xAI may still gate some endpoints by API prepaid credits.
+              </p>
+              <p className="text-xs text-amber-800 dark:text-amber-200/90 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-md px-3 py-2 leading-relaxed">
+                <strong className="font-semibold">Video &amp; Imagine API note:</strong> SuperGrok Heavy
+                covers grok.com / X apps. Developer video calls still go to{" "}
+                <code className="text-[11px]">api.x.ai</code> and may require prepaid API credits or a
+                higher spending limit at{" "}
+                <a
+                  href="https://console.x.ai"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline font-medium"
+                >
+                  console.x.ai
+                </a>
+                . A “team credits / spending limit” error means the API team is out of credits — not that
+                SuperGrok sign-in failed.
               </p>
 
               <div className="flex rounded-lg border border-gray-300 dark:border-tokyo-border overflow-hidden">

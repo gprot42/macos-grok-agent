@@ -260,8 +260,24 @@ export function GrokVideoPanel({
     setSourceImages((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // Text-to-video needs only a prompt. Images are always optional in the UI.
-  const canGenerate = prompt.trim().length > 0 && !!apiKey;
+  // Text-to-video needs only a prompt. Auth is re-resolved on the backend from
+  // Settings (SuperGrok OAuth or API key), so an empty frontend token is OK.
+  const canGenerate = prompt.trim().length > 0;
+
+  const formatInvokeError = (e: unknown): string => {
+    if (e instanceof Error) return e.message;
+    if (typeof e === "string") return e;
+    if (e && typeof e === "object") {
+      const obj = e as Record<string, unknown>;
+      if (typeof obj.message === "string") return obj.message;
+      try {
+        return JSON.stringify(e);
+      } catch {
+        return String(e);
+      }
+    }
+    return String(e);
+  };
 
   const handleGenerate = async () => {
     if (!canGenerate) return;
@@ -294,6 +310,7 @@ export function GrokVideoPanel({
 
     try {
       // 1 image → image-to-video (start frame); 2–7 → reference_images (cannot mix).
+      // Backend re-resolves SuperGrok OAuth from Settings at request time.
       const payload: Record<string, unknown> = {
         prompt,
         apiKey,
@@ -324,7 +341,7 @@ export function GrokVideoPanel({
       setVideoUrl(result.url);
       setProgress("✅ Video ready!");
     } catch (e: unknown) {
-      setError(String(e));
+      setError(formatInvokeError(e));
       setProgress("");
     } finally {
       setIsLoading(false);
@@ -670,32 +687,55 @@ export function GrokVideoPanel({
               onClick={handleGenerate}
               disabled={isLoading || !canGenerate}
               title={
-                !apiKey
-                  ? "Add an xAI API key in Settings"
-                  : !prompt.trim()
-                    ? "Enter a prompt to generate"
-                    : "Generate video from text"
+                !prompt.trim()
+                  ? "Enter a prompt to generate"
+                  : "Generate video (uses SuperGrok or API key from Settings)"
               }
             >
               {isLoading ? "Generating…" : "Generate Video"}
             </Button>
             {!apiKey && (
-              <span className="text-[11px] text-amber-600 dark:text-amber-400">
-                ⚠️ xAI API key required
+              <span className="text-xs text-amber-700 dark:text-amber-300 font-medium">
+                Uses Settings auth (SuperGrok or API key)
               </span>
             )}
-            {prompt.trim().length === 0 && apiKey && (
-              <span className="text-[11px] text-muted-foreground">
+            {prompt.trim().length === 0 && (
+              <span className="text-xs text-muted-foreground">
                 Enter a prompt to enable Generate
               </span>
             )}
             {progress && !error && (
-              <span className="text-xs text-blue-500 truncate min-w-0">{progress}</span>
+              <span className="text-sm text-blue-600 dark:text-blue-400 truncate min-w-0">{progress}</span>
             )}
           </div>
           {error && (
-            <div className="text-red-500 text-xs bg-red-50 dark:bg-red-900/20 p-2.5 rounded max-h-20 overflow-y-auto">
-              {error}
+            <div
+              role="alert"
+              className="rounded-xl border-2 border-red-400/80 dark:border-red-600/80 bg-red-50 dark:bg-red-950/50 p-4 shadow-sm"
+            >
+              <div className="flex items-start justify-between gap-3 mb-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span
+                    className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-red-600 text-white text-sm font-bold"
+                    aria-hidden
+                  >
+                    !
+                  </span>
+                  <h3 className="text-base font-semibold text-red-900 dark:text-red-100">
+                    Video generation failed
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setError(null)}
+                  className="shrink-0 text-sm font-medium text-red-800 dark:text-red-200 hover:underline px-1"
+                >
+                  Dismiss
+                </button>
+              </div>
+              <div className="text-sm sm:text-[15px] leading-relaxed text-red-950 dark:text-red-50 whitespace-pre-wrap break-words max-h-64 overflow-y-auto font-medium">
+                {error}
+              </div>
             </div>
           )}
         </div>

@@ -28,7 +28,8 @@
   --border-color: #334155;
   --text-primary: #f1f5f9;
   --text-secondary: #cbd5e1;
-  --text-muted: #64748b;
+  /* Brighter muted text for WCAG-friendlier contrast on dark surfaces */
+  --text-muted: #94a3b8;
   --accent: #818cf8;
   --accent-hover: #6366f1;
 }
@@ -39,8 +40,9 @@
   --bg-hover: #414868;
   --border-color: #414868;
   --text-primary: #c0caf5;
-  --text-secondary: #9aa5ce;
-  --text-muted: #7982a9;
+  --text-secondary: #a9b1d6;
+  /* Tokyo "comment" tone lifted for readable secondary UI text */
+  --text-muted: #9aa5ce;
   --accent: #7aa2f7;
   --accent-hover: #89b4fa;
 }
@@ -147,7 +149,8 @@ body {
     --secondary: 0 0% 14.9%;
     --secondary-foreground: 0 0% 98%;
     --muted: 0 0% 14.9%;
-    --muted-foreground: 0 0% 63.9%;
+    /* ~slate-400 — readable secondary labels on dark cards */
+    --muted-foreground: 215 20% 72%;
     --accent: 0 0% 14.9%;
     --accent-foreground: 0 0% 98%;
     --destructive: 0 62.8% 30.6%;
@@ -174,7 +177,8 @@ body {
     --secondary: 233 23% 34%;
     --secondary-foreground: 226 100% 93%;
     --muted: 233 23% 34%;
-    --muted-foreground: 228 22% 66%;
+    /* Brighter secondary text (~#a9b1d6) for menu labels / shortcuts */
+    --muted-foreground: 230 25% 75%;
     --accent: 217 92% 76%;
     --accent-foreground: 235 21% 12%;
     --destructive: 0 62.8% 50%;

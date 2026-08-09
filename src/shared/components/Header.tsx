@@ -128,39 +128,39 @@ export function Header({
                 <div className="p-1">
                   <button
                     onClick={() => { onShowSettings(); setMenuOpen(false); }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md hover:bg-gray-100 dark:hover:bg-tokyo-surface theme-text transition-colors"
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md theme-text theme-hover transition-colors"
                   >
-                    <Settings className="h-4 w-4" />
+                    <Settings className="h-4 w-4 shrink-0 opacity-90" />
                     Settings
                   </button>
 
                   <button
                     onClick={() => { onShowProjects(); setMenuOpen(false); }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md hover:bg-gray-100 dark:hover:bg-tokyo-surface theme-text transition-colors"
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md theme-text theme-hover transition-colors"
                   >
-                    <FolderOpen className="h-4 w-4" />
+                    <FolderOpen className="h-4 w-4 shrink-0 opacity-90" />
                     Projects
                   </button>
 
                   <button
                     onClick={() => { onShowAbout(); setMenuOpen(false); }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md hover:bg-gray-100 dark:hover:bg-tokyo-surface theme-text transition-colors"
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md theme-text theme-hover transition-colors"
                   >
-                    <Info className="h-4 w-4" />
+                    <Info className="h-4 w-4 shrink-0 opacity-90" />
                     About
                   </button>
 
-                  <div className="border-t my-1"></div>
+                  <div className="border-t theme-border my-1"></div>
 
-                  <div className="px-3 py-1.5 text-xs text-muted-foreground flex items-center gap-2">
-                    <Keyboard className="h-3 w-3" />
+                  <div className="px-3 py-1.5 text-xs font-medium theme-text-secondary flex items-center gap-2">
+                    <Keyboard className="h-3 w-3 shrink-0" />
                     <span>Keyboard Shortcuts</span>
                   </div>
-                  <div className="px-3 py-1 text-[10px] text-muted-foreground space-y-0.5">
-                    <div className="flex justify-between"><span>Cmd/Ctrl + Enter</span><span>Send</span></div>
-                    <div className="flex justify-between"><span>Cmd/Ctrl + T</span><span>New session</span></div>
-                    <div className="flex justify-between"><span>Cmd/Ctrl + W</span><span>Close session</span></div>
-                    <div className="flex justify-between"><span>Cmd/Ctrl + K</span><span>Focus model</span></div>
+                  <div className="px-3 py-1 pb-2 text-[11px] theme-text-secondary space-y-1">
+                    <div className="flex justify-between gap-3"><span className="font-mono">Cmd/Ctrl + Enter</span><span>Send</span></div>
+                    <div className="flex justify-between gap-3"><span className="font-mono">Cmd/Ctrl + T</span><span>New session</span></div>
+                    <div className="flex justify-between gap-3"><span className="font-mono">Cmd/Ctrl + W</span><span>Close session</span></div>
+                    <div className="flex justify-between gap-3"><span className="font-mono">Cmd/Ctrl + K</span><span>Focus model</span></div>
                   </div>
                 </div>
               </div>

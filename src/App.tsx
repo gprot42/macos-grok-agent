@@ -160,10 +160,15 @@ function App() {
       const resolved = await invoke<ResolvedXaiAuth>("get_xai_bearer");
       setXaiBearer(resolved.bearerToken || "");
     } catch {
-      // Fall back to stored API key fields when SuperGrok is not active / not signed in
-      setXaiBearer(settings.xaiKey || settings.apiKey || "");
+      // SuperGrok mode: do not fall back to a prepaid API key — that yields
+      // confusing "team credits / spending limit" errors on video/image calls.
+      if (settings.authMode === "SUPERGROK_OAUTH") {
+        setXaiBearer("");
+      } else {
+        setXaiBearer(settings.xaiKey || settings.apiKey || "");
+      }
     }
-  }, [settings.xaiKey, settings.apiKey]);
+  }, [settings.xaiKey, settings.apiKey, settings.authMode]);
 
   useEffect(() => {
     if (!loading) {
@@ -268,7 +273,8 @@ function App() {
 
   const getXaiCredential = (): string => {
     if (settings.authMode === "SUPERGROK_OAUTH") {
-      return xaiBearer || settings.xaiKey || settings.apiKey || "";
+      // OAuth only — never substitute a console API key while SuperGrok is active.
+      return xaiBearer || "";
     }
     return settings.xaiKey || settings.apiKey || xaiBearer || "";
   };

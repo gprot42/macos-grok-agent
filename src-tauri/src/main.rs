@@ -239,6 +239,47 @@ async fn get_xai_bearer() -> Result<supergrok_auth::ResolvedAuth, String> {
     .await
 }
 
+/// Resolve the live xAI bearer for media endpoints (video/image).
+///
+/// Prefer Settings auth mode so SuperGrok Heavy OAuth is refreshed at request
+/// time and never silently replaced by a stale/empty prepaid API key.
+/// `frontend_key` is only used as a last resort in API_KEY mode.
+async fn resolve_xai_credential_for_request(frontend_key: &str) -> Result<String, String> {
+    let settings = storage::load_settings()
+        .await?
+        .unwrap_or_default();
+    let mode = supergrok_auth::normalize_auth_mode(Some(&settings.auth_mode));
+
+    if mode == "SUPERGROK_OAUTH" {
+        // Never fall back to an API key in SuperGrok mode — that produces
+        // confusing "team credits" errors on empty prepaid keys.
+        let resolved = supergrok_auth::resolve_xai_auth(
+            &settings.auth_mode,
+            settings.xai_key.as_deref(),
+            &settings.api_key,
+        )
+        .await?;
+        info!(
+            "[auth] Using {} credential for media request",
+            resolved.label
+        );
+        return Ok(resolved.bearer_token);
+    }
+
+    // API key mode: settings first, then whatever the UI passed.
+    match supergrok_auth::resolve_xai_auth(
+        &settings.auth_mode,
+        settings.xai_key.as_deref(),
+        &settings.api_key,
+    )
+    .await
+    {
+        Ok(resolved) => Ok(resolved.bearer_token),
+        Err(_) if !frontend_key.trim().is_empty() => Ok(frontend_key.trim().to_string()),
+        Err(e) => Err(e),
+    }
+}
+
 #[tauri::command]
 async fn send_chat_message(
     prompt: String,
@@ -299,8 +340,9 @@ async fn generate_image(
     // Number of images to generate (1–12 UI; API max per request is 10). None/0 = Auto (1).
     n: Option<u32>,
 ) -> Result<ImageResponse, String> {
+    let bearer = resolve_xai_credential_for_request(&api_key).await?;
     api::generate_image(
-        prompt, api_key, edit_image, edit_image_mime_type,
+        prompt, bearer, edit_image, edit_image_mime_type,
         model_id, search_mode, aspect_ratio, region, resolution, n,
     )
     .await
@@ -445,10 +487,11 @@ async fn generate_video(
     // When true (default), request native audio with the video. When false, silent video.
     with_audio: Option<bool>,
 ) -> Result<serde_json::Value, String> {
+    let bearer = resolve_xai_credential_for_request(&api_key).await?;
     api::generate_video(
         app_handle,
         prompt,
-        api_key,
+        bearer,
         model_id,
         duration_seconds,
         aspect_ratio,
@@ -470,7 +513,8 @@ async fn extend_video(
     duration_seconds: Option<u32>,
     prompt: Option<String>,
 ) -> Result<serde_json::Value, String> {
-    api::extend_video(app_handle, video_id, api_key, model_id, duration_seconds, prompt).await
+    let bearer = resolve_xai_credential_for_request(&api_key).await?;
+    api::extend_video(app_handle, video_id, bearer, model_id, duration_seconds, prompt).await
 }
 
 #[tauri::command]

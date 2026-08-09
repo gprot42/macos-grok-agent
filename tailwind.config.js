@@ -1,7 +1,9 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
-  darkMode: ["class", "class"],
+  // Class strategy: `dark:` applies when an ancestor has `.dark`
+  // (Tokyo Night also adds `.dark` so shared dark utilities work).
+  darkMode: "class",
   theme: {
   	extend: {
   		colors: {

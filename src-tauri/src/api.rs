@@ -647,6 +647,38 @@ pub async fn generate_image(
     }
 }
 
+/// True when the API is rejecting the call for prepaid credits / spend limit.
+fn is_credits_or_spend_limit_error(code: &str, message: &str) -> bool {
+    let code_l = code.to_lowercase();
+    let msg_l = message.to_lowercase();
+    msg_l.contains("available credits")
+        || msg_l.contains("spending limit")
+        || msg_l.contains("used all available credits")
+        || msg_l.contains("purchase more credits")
+        || msg_l.contains("insufficient credits")
+        || msg_l.contains("out of credits")
+        || (code_l.contains("permission-denied")
+            && (msg_l.contains("credit") || msg_l.contains("spend") || msg_l.contains("limit")))
+        || code_l.contains("insufficient_quota")
+        || code_l.contains("billing")
+}
+
+/// Human-readable credits/spend-limit guidance (SuperGrok ≠ API prepaid credits).
+fn credits_limit_user_message(context: &str) -> String {
+    format!(
+        "{context}\n\n\
+         xAI rejected this call: the API team behind this credential has no remaining \
+         prepaid credits, or hit its monthly spending limit.\n\n\
+         What to do:\n\
+         • Open console.x.ai → add credits or raise the spending limit for your API team.\n\
+         • SuperGrok / SuperGrok Heavy covers grok.com and the X apps. It does not \
+         automatically fund developer API video (api.x.ai/v1/videos).\n\
+         • In Settings → Authentication: if you use SuperGrok Heavy, stay signed in and \
+         keep that mode active (do not silently fall back to an empty API key). If you use \
+         an API key, switch to “xAI API key” and paste a key with credits."
+    )
+}
+
 /// Turn a raw xAI video API error body into a short, user-facing message.
 fn format_video_api_error(context: &str, status: reqwest::StatusCode, body: &str) -> String {
     // Try JSON: { "code": "imagine:content-moderated", "error": "..." }
@@ -676,11 +708,17 @@ fn format_video_api_error(context: &str, status: reqwest::StatusCode, body: &str
                 .to_string();
         }
 
+        if is_credits_or_spend_limit_error(code, message) {
+            return credits_limit_user_message(context);
+        }
+
         if !message.is_empty() {
+            // Drop noisy team UUIDs so the message is easier to scan
+            let clean = regex_lite_strip_team_uuid(message);
             if !code.is_empty() {
-                return format!("{}: {} ({})", context, message, code);
+                return format!("{}: {} ({})", context, clean, code);
             }
-            return format!("{}: {}", context, message);
+            return format!("{}: {}", context, clean);
         }
         if !code.is_empty() {
             return format!("{}: {} (HTTP {})", context, code, status);
@@ -688,6 +726,9 @@ fn format_video_api_error(context: &str, status: reqwest::StatusCode, body: &str
     }
 
     let trimmed = body.trim();
+    if is_credits_or_spend_limit_error("", trimmed) {
+        return credits_limit_user_message(context);
+    }
     if trimmed.is_empty() {
         format!("{}: HTTP {}", context, status)
     } else if trimmed.len() > 280 {
@@ -695,6 +736,67 @@ fn format_video_api_error(context: &str, status: reqwest::StatusCode, body: &str
     } else {
         format!("{}: HTTP {} — {}", context, status, trimmed)
     }
+}
+
+/// Replace "team <uuid>" with "your team" so long error strings stay readable.
+fn regex_lite_strip_team_uuid(message: &str) -> String {
+    let lower = message.to_ascii_lowercase();
+    let mut out = String::with_capacity(message.len());
+    let mut i = 0;
+    let chars: Vec<(usize, char)> = message.char_indices().collect();
+    let n = chars.len();
+    while i < n {
+        let (byte_idx, _) = chars[i];
+        // "team " (5 ASCII chars) + 36-char UUID
+        if i + 5 < n
+            && lower.get(byte_idx..).is_some_and(|s| s.starts_with("team "))
+            && is_uuid_str(lower.get(byte_idx + 5..).unwrap_or(""))
+        {
+            out.push_str("your team");
+            // Skip "team " + UUID char count (all ASCII → 5 + 36 chars)
+            i += 5 + 36;
+            continue;
+        }
+        out.push(chars[i].1);
+        i += 1;
+    }
+    // Collapse runs of spaces created by stripping the UUID.
+    let mut collapsed = String::with_capacity(out.len());
+    let mut prev_space = false;
+    for ch in out.chars() {
+        if ch == ' ' {
+            if !prev_space {
+                collapsed.push(' ');
+            }
+            prev_space = true;
+        } else {
+            collapsed.push(ch);
+            prev_space = false;
+        }
+    }
+    collapsed
+}
+
+fn is_uuid_str(s: &str) -> bool {
+    let b = s.as_bytes();
+    if b.len() < 36 {
+        return false;
+    }
+    let segs = [(0usize, 8usize), (9, 4), (14, 4), (19, 4), (24, 12)];
+    let dashes = [8usize, 13, 18, 23];
+    for &d in &dashes {
+        if b[d] != b'-' {
+            return false;
+        }
+    }
+    for &(off, len) in &segs {
+        for j in 0..len {
+            if !b[off + j].is_ascii_hexdigit() {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 /// Max reference images for Grok Imagine video (xAI reference-to-video limit).

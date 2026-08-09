@@ -603,8 +603,24 @@ export function ImageGenerator({
         )}
 
         {error && (
-          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3 text-red-600 dark:text-red-400 text-sm mt-4">
-            {error}
+          <div
+            role="alert"
+            className="mt-4 rounded-xl border-2 border-red-400/80 dark:border-red-600/80 bg-red-50 dark:bg-red-950/50 p-4 shadow-sm"
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <span
+                className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-red-600 text-white text-sm font-bold"
+                aria-hidden
+              >
+                !
+              </span>
+              <h3 className="text-base font-semibold text-red-900 dark:text-red-100">
+                Image generation failed
+              </h3>
+            </div>
+            <div className="text-sm sm:text-[15px] leading-relaxed text-red-950 dark:text-red-50 whitespace-pre-wrap break-words max-h-64 overflow-y-auto font-medium">
+              {error}
+            </div>
           </div>
         )}
       </div>
