@@ -101,6 +101,9 @@ export interface ChatState {
 
 export type ThemeMode = "light" | "tokyo" | "dark";
 
+/** How the app authenticates to api.x.ai for Grok models. */
+export type AuthMode = "API_KEY" | "SUPERGROK_OAUTH";
+
 export interface AppSettings {
   theme: ThemeMode;
   fontSize: number;
@@ -120,11 +123,44 @@ export interface AppSettings {
    *  The agent receives a descriptive message and is directed to use delete_file instead.
    *  Defaults to true (blocking on). */
   blockFileDeletion?: boolean;
+  /**
+   * xAI credential source:
+   * - `API_KEY` — console.x.ai prepaid API key (default)
+   * - `SUPERGROK_OAUTH` — SuperGrok / SuperGrok Heavy subscription via device-code OAuth
+   */
+  authMode?: AuthMode;
+  /** SuperGrok account email when signed in (display only). */
+  oauthEmail?: string;
+  /** True when an encrypted SuperGrok OAuth session exists. */
+  oauthSignedIn?: boolean;
   customColors?: {
     accentColor?: string;
     userMessageBg?: string;
     assistantMessageBg?: string;
   };
+}
+
+/** Device-code response from SuperGrok OAuth start. */
+export interface SuperGrokDeviceCode {
+  deviceCode: string;
+  userCode: string;
+  verificationUri: string;
+  verificationUriComplete?: string | null;
+  expiresInSeconds: number;
+  intervalSeconds: number;
+}
+
+export interface SuperGrokSessionInfo {
+  signedIn: boolean;
+  email?: string | null;
+  expiresAtEpochMs?: number | null;
+  source?: string | null;
+}
+
+export interface ResolvedXaiAuth {
+  bearerToken: string;
+  mode: string;
+  label: string;
 }
 
 export const FONT_OPTIONS = [

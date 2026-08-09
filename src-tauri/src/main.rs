@@ -6,6 +6,7 @@ mod codegen;
 mod mcp;
 mod skills;
 mod storage;
+mod supergrok_auth;
 
 #[macro_use]
 extern crate log;
@@ -61,6 +62,19 @@ pub struct AppSettings {
     pub project_id: String,
     #[serde(rename = "agentTimeout", default, skip_serializing_if = "Option::is_none")]
     pub agent_timeout: Option<u64>,
+    /// Chat credential mode: `API_KEY` (console.x.ai) or `SUPERGROK_OAUTH` (subscription).
+    #[serde(rename = "authMode", default = "default_auth_mode")]
+    pub auth_mode: String,
+    /// Display-only SuperGrok account email (tokens stored encrypted separately).
+    #[serde(rename = "oauthEmail", default, skip_serializing_if = "Option::is_none")]
+    pub oauth_email: Option<String>,
+    /// Derived on load: true when an encrypted SuperGrok session exists.
+    #[serde(rename = "oauthSignedIn", default)]
+    pub oauth_signed_in: bool,
+}
+
+fn default_auth_mode() -> String {
+    "API_KEY".to_string()
 }
 
 impl Default for AppSettings {
@@ -76,6 +90,9 @@ impl Default for AppSettings {
             custom_password: None,
             project_id: String::new(),
             agent_timeout: None,
+            auth_mode: default_auth_mode(),
+            oauth_email: None,
+            oauth_signed_in: false,
         }
     }
 }
@@ -142,6 +159,84 @@ async fn save_settings(settings: AppSettings) -> Result<(), String> {
 #[tauri::command]
 async fn save_api_key(api_key: String) -> Result<(), String> {
     storage::save_api_key(&api_key).await
+}
+
+// ── SuperGrok OAuth commands ──────────────────────────────────────────────────
+
+#[tauri::command]
+async fn supergrok_start_login() -> Result<supergrok_auth::DeviceCodeResponse, String> {
+    supergrok_auth::request_device_code().await
+}
+
+#[tauri::command]
+async fn supergrok_complete_login(
+    device_code: String,
+    interval_seconds: i64,
+) -> Result<supergrok_auth::OAuthSessionInfo, String> {
+    let info = supergrok_auth::complete_device_login(device_code, interval_seconds).await?;
+    // Flip settings to SuperGrok mode after successful sign-in
+    if let Ok(Some(mut settings)) = storage::load_settings().await {
+        settings.auth_mode = "SUPERGROK_OAUTH".into();
+        settings.oauth_email = info.email.clone();
+        settings.oauth_signed_in = true;
+        let _ = storage::save_settings(&settings).await;
+    } else {
+        let mut settings = AppSettings::default();
+        settings.auth_mode = "SUPERGROK_OAUTH".into();
+        settings.oauth_email = info.email.clone();
+        settings.oauth_signed_in = true;
+        let _ = storage::save_settings(&settings).await;
+    }
+    Ok(info)
+}
+
+#[tauri::command]
+async fn supergrok_sign_out() -> Result<(), String> {
+    supergrok_auth::clear_session()?;
+    if let Ok(Some(mut settings)) = storage::load_settings().await {
+        settings.auth_mode = "API_KEY".into();
+        settings.oauth_email = None;
+        settings.oauth_signed_in = false;
+        storage::save_settings(&settings).await?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn supergrok_import_cli_auth(path: Option<String>) -> Result<supergrok_auth::OAuthSessionInfo, String> {
+    let info = supergrok_auth::import_from_cli_auth(path)?;
+    if let Ok(Some(mut settings)) = storage::load_settings().await {
+        settings.auth_mode = "SUPERGROK_OAUTH".into();
+        settings.oauth_email = info.email.clone();
+        settings.oauth_signed_in = true;
+        let _ = storage::save_settings(&settings).await;
+    } else {
+        let mut settings = AppSettings::default();
+        settings.auth_mode = "SUPERGROK_OAUTH".into();
+        settings.oauth_email = info.email.clone();
+        settings.oauth_signed_in = true;
+        let _ = storage::save_settings(&settings).await;
+    }
+    Ok(info)
+}
+
+#[tauri::command]
+async fn supergrok_session_info() -> Result<supergrok_auth::OAuthSessionInfo, String> {
+    supergrok_auth::session_info()
+}
+
+/// Resolve the bearer token for xAI calls (API key or SuperGrok OAuth access token).
+#[tauri::command]
+async fn get_xai_bearer() -> Result<supergrok_auth::ResolvedAuth, String> {
+    let settings = storage::load_settings()
+        .await?
+        .unwrap_or_default();
+    supergrok_auth::resolve_xai_auth(
+        &settings.auth_mode,
+        settings.xai_key.as_deref(),
+        &settings.api_key,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -670,6 +765,12 @@ fn main() {
             load_settings,
             save_settings,
             save_api_key,
+            supergrok_start_login,
+            supergrok_complete_login,
+            supergrok_sign_out,
+            supergrok_import_cli_auth,
+            supergrok_session_info,
+            get_xai_bearer,
             send_chat_message,
             stream_chat_message,
             generate_image,

@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import {
   Header,
   ModelSelector,
@@ -12,17 +13,23 @@ import {
 } from "./components";
 import { useSettings, useChat, useSubAgent } from "./hooks";
 import { MODELS } from "@shared/constants/models";
-import { EndpointType, ThemeMode, ChatSession } from "@shared/types";
+import { EndpointType, ThemeMode, ChatSession, ResolvedXaiAuth } from "@shared/types";
 import { ErrorBoundary } from "@shared/components/ErrorBoundary";
 import { ToastContainer, useToast } from "@shared/components/Toast";
 import { useAppStore } from "./store/appStore";
 
 function ApiKeyPrompt({
   onSave,
+  onImportSuperGrok,
   onSkip,
+  importError,
+  importing,
 }: {
   onSave: (key: string) => void;
+  onImportSuperGrok: () => void;
   onSkip: () => void;
+  importError?: string | null;
+  importing?: boolean;
 }) {
   const [key, setKey] = useState("");
 
@@ -32,10 +39,10 @@ function ApiKeyPrompt({
         <div className="text-center space-y-1">
           <div className="text-3xl">🔑</div>
           <h2 className="text-lg font-semibold text-gray-900 dark:text-tokyo-text">
-            Enter your xAI API Key
+            Connect to xAI
           </h2>
           <p className="text-sm text-gray-500 dark:text-tokyo-muted">
-            An API key is required to use Grok Agent. Get yours at{" "}
+            Use a prepaid API key from{" "}
             <button
               onClick={() =>
                 import("@tauri-apps/plugin-shell").then(({ open }) =>
@@ -46,7 +53,8 @@ function ApiKeyPrompt({
             >
               console.x.ai
             </button>
-            . Your key is encrypted and stored locally.
+            , or sign in with your SuperGrok / SuperGrok Heavy subscription
+            (import from Grok CLI or open Settings after skipping).
           </p>
         </div>
 
@@ -62,14 +70,24 @@ function ApiKeyPrompt({
           className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-tokyo-border bg-white dark:bg-tokyo-bg text-gray-900 dark:text-tokyo-text text-sm outline-none focus:ring-2 focus:ring-indigo-500"
         />
 
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2">
           <button
             onClick={() => { if (key.trim()) onSave(key.trim()); }}
             disabled={!key.trim()}
-            className="flex-1 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="w-full px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            Save & Continue
+            Save API key & Continue
           </button>
+          <button
+            onClick={onImportSuperGrok}
+            disabled={importing}
+            className="w-full px-4 py-2 rounded-lg border border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300 text-sm font-medium hover:bg-indigo-50 dark:hover:bg-indigo-950/40 disabled:opacity-40 transition-colors"
+          >
+            {importing ? "Importing…" : "Use SuperGrok (import Grok CLI login)"}
+          </button>
+          {importError && (
+            <p className="text-xs text-red-600 dark:text-red-400 text-left">{importError}</p>
+          )}
           <button
             onClick={onSkip}
             className="px-4 py-2 rounded-lg border border-gray-300 dark:border-tokyo-border text-gray-600 dark:text-tokyo-muted text-sm hover:bg-gray-50 dark:hover:bg-tokyo-hover transition-colors"
@@ -132,9 +150,53 @@ function App() {
     activeProject, setActiveProject,
   } = useAppStore();
 
-  // Show API key prompt once settings have loaded and no key is configured
+  // Resolved SuperGrok OAuth access token (or empty). Refreshed when auth mode / session changes.
+  const [xaiBearer, setXaiBearer] = useState("");
+  const [promptImportError, setPromptImportError] = useState<string | null>(null);
+  const [promptImporting, setPromptImporting] = useState(false);
+
+  const refreshXaiBearer = useCallback(async () => {
+    try {
+      const resolved = await invoke<ResolvedXaiAuth>("get_xai_bearer");
+      setXaiBearer(resolved.bearerToken || "");
+    } catch {
+      // Fall back to stored API key fields when SuperGrok is not active / not signed in
+      setXaiBearer(settings.xaiKey || settings.apiKey || "");
+    }
+  }, [settings.xaiKey, settings.apiKey]);
+
   useEffect(() => {
-    if (!loading && !settings.xaiKey && !settings.openrouterKey && !settings.apiKey) {
+    if (!loading) {
+      void refreshXaiBearer();
+    }
+  }, [
+    loading,
+    settings.authMode,
+    settings.oauthSignedIn,
+    settings.xaiKey,
+    settings.apiKey,
+    refreshXaiBearer,
+  ]);
+
+  // Periodically refresh SuperGrok token so long sessions stay valid
+  useEffect(() => {
+    if (settings.authMode !== "SUPERGROK_OAUTH" || !settings.oauthSignedIn) return;
+    const id = window.setInterval(() => {
+      void refreshXaiBearer();
+    }, 5 * 60 * 1000);
+    return () => window.clearInterval(id);
+  }, [settings.authMode, settings.oauthSignedIn, refreshXaiBearer]);
+
+  // Show API key prompt once settings have loaded and no xAI credential is configured
+  useEffect(() => {
+    if (loading) return;
+    const hasXai =
+      !!settings.xaiKey ||
+      !!settings.apiKey ||
+      (settings.authMode === "SUPERGROK_OAUTH" && !!settings.oauthSignedIn) ||
+      !!xaiBearer;
+    const hasOther = !!settings.openrouterKey;
+    if (!hasXai && !hasOther) {
       setShowApiKeyPrompt(true);
     }
   }, [loading]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -204,12 +266,19 @@ function App() {
     updateSettings({ theme });
   };
 
+  const getXaiCredential = (): string => {
+    if (settings.authMode === "SUPERGROK_OAUTH") {
+      return xaiBearer || settings.xaiKey || settings.apiKey || "";
+    }
+    return settings.xaiKey || settings.apiKey || xaiBearer || "";
+  };
+
   const getApiKeyForEndpoint = (endpoint: EndpointType): string => {
     switch (endpoint) {
       case "openrouter":
         return settings.openrouterKey || settings.apiKey;
       case "xai":
-        return settings.xaiKey || settings.apiKey;
+        return getXaiCredential();
       case "kilocode":
         return settings.kilocodeKey || settings.apiKey;
       case "custom":
@@ -369,7 +438,7 @@ function App() {
           {/* Image — always mounted to preserve generated images */}
           <div className={`flex flex-col flex-1 min-h-0 overflow-hidden ${activeTab === "image" ? "" : "hidden"}`}>
             <ImageGenerator
-              apiKey={settings.xaiKey || settings.apiKey}
+              apiKey={getXaiCredential()}
               onGenerateImage={generateImage}
               generatedImages={generatedImages}
               imageCosts={imageCosts}
@@ -397,7 +466,7 @@ function App() {
           {/* Video — always mounted to preserve generation state */}
           <div className={`flex flex-col flex-1 min-h-0 overflow-hidden ${activeTab === "video" ? "" : "hidden"}`}>
             <GrokVideoPanel
-              apiKey={settings.xaiKey || settings.apiKey}
+              apiKey={getXaiCredential()}
               modelId={selectedVideoModelConfig.modelId}
               modelDisplayName={selectedVideoModelConfig.displayName}
             />
@@ -405,7 +474,7 @@ function App() {
 
           {/* Voice — always mounted to preserve audio state */}
           <div className={`flex flex-col flex-1 min-h-0 overflow-hidden ${activeTab === "voice" ? "" : "hidden"}`}>
-            <VoiceTab apiKey={settings.xaiKey || settings.apiKey} />
+            <VoiceTab apiKey={getXaiCredential()} />
           </div>
 
           {/* Code — always mounted to preserve agent conversation and working dir */}
@@ -446,10 +515,33 @@ function App() {
         {showApiKeyPrompt && (
           <ApiKeyPrompt
             onSave={(key) => {
-              updateSettings({ xaiKey: key });
+              updateSettings({ xaiKey: key, authMode: "API_KEY" });
               setShowApiKeyPrompt(false);
             }}
+            onImportSuperGrok={async () => {
+              setPromptImporting(true);
+              setPromptImportError(null);
+              try {
+                const info = await invoke<{
+                  signedIn: boolean;
+                  email?: string | null;
+                }>("supergrok_import_cli_auth", { path: null });
+                await updateSettings({
+                  authMode: "SUPERGROK_OAUTH",
+                  oauthSignedIn: true,
+                  oauthEmail: info.email ?? undefined,
+                });
+                await refreshXaiBearer();
+                setShowApiKeyPrompt(false);
+              } catch (e) {
+                setPromptImportError(String(e));
+              } finally {
+                setPromptImporting(false);
+              }
+            }}
             onSkip={() => setShowApiKeyPrompt(false)}
+            importError={promptImportError}
+            importing={promptImporting}
           />
         )}
 

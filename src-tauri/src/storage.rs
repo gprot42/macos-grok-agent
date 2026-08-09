@@ -138,6 +138,17 @@ pub async fn load_settings() -> Result<Option<AppSettings>, String> {
         }
     }
 
+    // Normalize auth mode and attach SuperGrok session display fields (tokens stay encrypted).
+    settings.auth_mode = crate::supergrok_auth::normalize_auth_mode(Some(&settings.auth_mode));
+    if let Ok(Some(oauth)) = load_oauth_session() {
+        settings.oauth_signed_in = !oauth.access_token.is_empty();
+        if settings.oauth_email.is_none() {
+            settings.oauth_email = oauth.email;
+        }
+    } else {
+        settings.oauth_signed_in = false;
+    }
+
     Ok(Some(settings))
 }
 
@@ -147,6 +158,9 @@ pub async fn save_settings(settings: &AppSettings) -> Result<(), String> {
 
     let mut save_settings = settings.clone();
     save_settings.api_key = String::new();
+    // oauthSignedIn is derived on load; don't require it for persistence correctness
+    save_settings.auth_mode =
+        crate::supergrok_auth::normalize_auth_mode(Some(&save_settings.auth_mode));
 
     let content = serde_json::to_string_pretty(&save_settings)
         .map_err(|e| format!("Failed to serialize settings: {}", e))?;
@@ -171,6 +185,44 @@ pub async fn save_api_key(api_key: &str) -> Result<(), String> {
     let encrypted = encrypt(api_key)?;
     fs::write(&api_key_path, encrypted).map_err(|e| format!("Failed to write API key: {}", e))?;
 
+    Ok(())
+}
+
+// ── SuperGrok OAuth session (encrypted) ───────────────────────────────────────
+
+pub fn load_oauth_session() -> Result<Option<crate::supergrok_auth::OAuthSession>, String> {
+    let dir = get_storage_dir()?;
+    let path = dir.join("oauth_session.enc");
+    if !path.exists() {
+        return Ok(None);
+    }
+    let encrypted =
+        fs::read_to_string(&path).map_err(|e| format!("Failed to read OAuth session: {}", e))?;
+    let decrypted = decrypt(&encrypted)?;
+    let session: crate::supergrok_auth::OAuthSession = serde_json::from_str(&decrypted)
+        .map_err(|e| format!("Failed to parse OAuth session: {}", e))?;
+    if session.access_token.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(session))
+}
+
+pub fn save_oauth_session(session: &crate::supergrok_auth::OAuthSession) -> Result<(), String> {
+    let dir = get_storage_dir()?;
+    let path = dir.join("oauth_session.enc");
+    let json = serde_json::to_string(session)
+        .map_err(|e| format!("Failed to serialize OAuth session: {}", e))?;
+    let encrypted = encrypt(&json)?;
+    fs::write(&path, encrypted).map_err(|e| format!("Failed to write OAuth session: {}", e))?;
+    Ok(())
+}
+
+pub fn clear_oauth_session() -> Result<(), String> {
+    let dir = get_storage_dir()?;
+    let path = dir.join("oauth_session.enc");
+    if path.exists() {
+        fs::remove_file(&path).map_err(|e| format!("Failed to remove OAuth session: {}", e))?;
+    }
     Ok(())
 }
 

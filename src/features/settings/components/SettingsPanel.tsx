@@ -1,7 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-shell";
 import { Button, Input, Select } from "@shared/components";
-import { AppSettings, FONT_OPTIONS } from "@shared/types";
+import {
+  AppSettings,
+  AuthMode,
+  FONT_OPTIONS,
+  SuperGrokDeviceCode,
+  SuperGrokSessionInfo,
+} from "@shared/types";
 
 interface SettingsPanelProps {
   settings: AppSettings;
@@ -52,6 +59,14 @@ export function SettingsPanel({
   const [customPassword, setCustomPassword] = useState(settings.customPassword || "");
   const [projectId, setProjectId] = useState(settings.projectId || "");
 
+  const authMode: AuthMode = settings.authMode === "SUPERGROK_OAUTH" ? "SUPERGROK_OAUTH" : "API_KEY";
+  const [oauthLoginInProgress, setOauthLoginInProgress] = useState(false);
+  const [oauthUserCode, setOauthUserCode] = useState<string | null>(null);
+  const [oauthVerificationUri, setOauthVerificationUri] = useState<string | null>(null);
+  const [oauthLoginMessage, setOauthLoginMessage] = useState<string | null>(null);
+  const [oauthBusy, setOauthBusy] = useState(false);
+  const loginAbortRef = useRef(false);
+
   useEffect(() => {
     setOpenrouterKey(settings.openrouterKey || "");
     setXaiKey(settings.xaiKey || "");
@@ -62,7 +77,7 @@ export function SettingsPanel({
   }, [settings]);
 
   const handleSave = () => {
-    onUpdateSettings({ 
+    onUpdateSettings({
       projectId,
       openrouterKey,
       xaiKey,
@@ -71,6 +86,105 @@ export function SettingsPanel({
       customPassword,
     });
     onClose();
+  };
+
+  const setAuthMode = (mode: AuthMode) => {
+    if (mode === "SUPERGROK_OAUTH" && !settings.oauthSignedIn) {
+      onUpdateSettings({ authMode: mode });
+      setOauthLoginMessage("Sign in with SuperGrok below, or import from Grok CLI (`grok login`).");
+      return;
+    }
+    onUpdateSettings({ authMode: mode });
+    setOauthLoginMessage(null);
+  };
+
+  const startSuperGrokLogin = async () => {
+    if (oauthLoginInProgress) return;
+    loginAbortRef.current = false;
+    setOauthLoginInProgress(true);
+    setOauthLoginMessage("Requesting device code…");
+    setOauthUserCode(null);
+    setOauthVerificationUri(null);
+    try {
+      const device = await invoke<SuperGrokDeviceCode>("supergrok_start_login");
+      if (loginAbortRef.current) return;
+      const openUri = device.verificationUriComplete || device.verificationUri;
+      setOauthUserCode(device.userCode);
+      setOauthVerificationUri(openUri);
+      setOauthLoginMessage(`Open the link, approve access, then wait — code ${device.userCode}`);
+      if (openUri) {
+        try {
+          await open(openUri);
+        } catch {
+          /* user can click Open browser */
+        }
+      }
+      const info = await invoke<SuperGrokSessionInfo>("supergrok_complete_login", {
+        deviceCode: device.deviceCode,
+        intervalSeconds: device.intervalSeconds,
+      });
+      if (loginAbortRef.current) return;
+      setOauthLoginInProgress(false);
+      setOauthUserCode(null);
+      setOauthVerificationUri(null);
+      setOauthLoginMessage(null);
+      onUpdateSettings({
+        authMode: "SUPERGROK_OAUTH",
+        oauthSignedIn: true,
+        oauthEmail: info.email ?? undefined,
+      });
+    } catch (e) {
+      if (loginAbortRef.current) return;
+      setOauthLoginInProgress(false);
+      setOauthLoginMessage(String(e));
+    }
+  };
+
+  const cancelSuperGrokLogin = () => {
+    loginAbortRef.current = true;
+    setOauthLoginInProgress(false);
+    setOauthUserCode(null);
+    setOauthVerificationUri(null);
+    setOauthLoginMessage("Sign-in cancelled.");
+  };
+
+  const signOutSuperGrok = async () => {
+    setOauthBusy(true);
+    try {
+      await invoke("supergrok_sign_out");
+      onUpdateSettings({
+        authMode: "API_KEY",
+        oauthSignedIn: false,
+        oauthEmail: undefined,
+      });
+      setOauthLoginMessage("Signed out of SuperGrok. Using API key mode.");
+    } catch (e) {
+      setOauthLoginMessage(String(e));
+    } finally {
+      setOauthBusy(false);
+    }
+  };
+
+  const importCliAuth = async () => {
+    setOauthBusy(true);
+    setOauthLoginMessage("Importing from ~/.grok/auth.json…");
+    try {
+      const info = await invoke<SuperGrokSessionInfo>("supergrok_import_cli_auth", { path: null });
+      onUpdateSettings({
+        authMode: "SUPERGROK_OAUTH",
+        oauthSignedIn: true,
+        oauthEmail: info.email ?? undefined,
+      });
+      setOauthLoginMessage(
+        info.email
+          ? `Imported SuperGrok session for ${info.email}.`
+          : "Imported SuperGrok session from Grok CLI."
+      );
+    } catch (e) {
+      setOauthLoginMessage(String(e));
+    } finally {
+      setOauthBusy(false);
+    }
   };
 
   return (
@@ -88,27 +202,151 @@ export function SettingsPanel({
         </div>
 
         <div className="p-6 overflow-y-auto flex-1">
+          {/* ── Authentication (API key vs SuperGrok Heavy) ───────────────── */}
           <div className="mb-6">
             <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-2">
-              API Keys
+              Authentication
+            </h3>
+            <div className="bg-gray-50 dark:bg-tokyo-bg rounded-lg p-4 space-y-4">
+              <p className="text-sm text-gray-500 dark:text-tokyo-muted">
+                Choose how Grok Agent authenticates to <code className="text-xs">api.x.ai</code>.
+                SuperGrok OAuth uses your SuperGrok / SuperGrok Heavy subscription (same OIDC flow as Grok Build).
+                It is experimental — xAI may still gate some endpoints by API prepaid credits.
+              </p>
+
+              <div className="flex rounded-lg border border-gray-300 dark:border-tokyo-border overflow-hidden">
+                {(
+                  [
+                    { mode: "API_KEY" as AuthMode, label: "xAI API key" },
+                    { mode: "SUPERGROK_OAUTH" as AuthMode, label: "SuperGrok Heavy" },
+                  ] as const
+                ).map(({ mode, label }) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    disabled={oauthLoginInProgress}
+                    onClick={() => setAuthMode(mode)}
+                    className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
+                      authMode === mode
+                        ? "bg-indigo-600 text-white"
+                        : "bg-white dark:bg-tokyo-surface text-gray-700 dark:text-tokyo-text hover:bg-gray-100 dark:hover:bg-tokyo-hover"
+                    } disabled:opacity-50`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="border-t border-gray-200 dark:border-tokyo-border pt-4">
+                <h4 className="font-medium text-gray-800 dark:text-tokyo-text mb-1">
+                  SuperGrok sign-in
+                </h4>
+                <p className="text-xs text-gray-500 dark:text-tokyo-muted mb-3">
+                  Device-code login via auth.x.ai, or import an existing{" "}
+                  <code className="text-[11px]">grok login</code> session from{" "}
+                  <code className="text-[11px]">~/.grok/auth.json</code>.
+                </p>
+
+                {settings.oauthSignedIn ? (
+                  <div className="space-y-3">
+                    <p className="text-sm font-medium text-indigo-600 dark:text-indigo-400">
+                      Signed in{settings.oauthEmail ? ` · ${settings.oauthEmail}` : ""}
+                      {authMode === "SUPERGROK_OAUTH" ? " · active for xAI" : " · not active (switch mode above)"}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <Button onClick={signOutSuperGrok} disabled={oauthBusy}>
+                        Sign out
+                      </Button>
+                      <Button onClick={importCliAuth} disabled={oauthBusy || oauthLoginInProgress}>
+                        Re-import Grok CLI
+                      </Button>
+                    </div>
+                  </div>
+                ) : oauthLoginInProgress ? (
+                  <div className="space-y-3">
+                    {oauthUserCode && (
+                      <p className="text-2xl font-bold tracking-widest text-indigo-600 dark:text-indigo-400">
+                        {oauthUserCode}
+                      </p>
+                    )}
+                    {oauthLoginMessage && (
+                      <p className="text-sm text-gray-500 dark:text-tokyo-muted">{oauthLoginMessage}</p>
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        variant="primary"
+                        disabled={!oauthVerificationUri}
+                        onClick={() => oauthVerificationUri && open(oauthVerificationUri)}
+                      >
+                        Open browser
+                      </Button>
+                      <Button onClick={cancelSuperGrokLogin}>Cancel</Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap gap-2">
+                      <Button variant="primary" onClick={startSuperGrokLogin} disabled={oauthBusy}>
+                        Sign in with SuperGrok
+                      </Button>
+                      <Button onClick={importCliAuth} disabled={oauthBusy}>
+                        Import Grok CLI login
+                      </Button>
+                    </div>
+                    {oauthLoginMessage && (
+                      <p className="text-sm text-red-600 dark:text-red-400">{oauthLoginMessage}</p>
+                    )}
+                  </div>
+                )}
+
+                {settings.oauthSignedIn && oauthLoginMessage && (
+                  <p className="text-sm text-gray-500 dark:text-tokyo-muted mt-2">{oauthLoginMessage}</p>
+                )}
+              </div>
+
+              {authMode === "API_KEY" && (
+                <div className="border-t border-gray-200 dark:border-tokyo-border pt-4">
+                  <SettingRow
+                    title="xAI API key"
+                    description={
+                      <>
+                        Prepaid developer API key from{" "}
+                        <ExternalLink href="https://console.x.ai">console.x.ai</ExternalLink>.
+                        Required when mode is <strong>xAI API key</strong>. SuperGrok subscription alone does not
+                        replace this unless you switch mode above.
+                      </>
+                    }
+                  >
+                    <Input
+                      type="password"
+                      value={xaiKey}
+                      onChange={(e) => setXaiKey(e.target.value)}
+                      placeholder="xai-..."
+                    />
+                  </SettingRow>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="mb-6">
+            <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-2">
+              Other API Keys
             </h3>
             <div className="bg-gray-50 dark:bg-tokyo-bg rounded-lg p-4">
-              <SettingRow
-                title="xAI"
-                description={
-                  <>
-                    Required for <strong>Grok models</strong> with real-time X (Twitter) data access.
-                    <p className="mt-1 text-xs">Get your key from <ExternalLink href="https://console.x.ai">console.x.ai</ExternalLink></p>
-                  </>
-                }
-              >
-                <Input
-                  type="password"
-                  value={xaiKey}
-                  onChange={(e) => setXaiKey(e.target.value)}
-                  placeholder="xAI API key"
-                />
-              </SettingRow>
+              {authMode === "SUPERGROK_OAUTH" && (
+                <SettingRow
+                  title="xAI API key (optional)"
+                  description="Still stored if you switch back to API key mode. Not used while SuperGrok is active."
+                >
+                  <Input
+                    type="password"
+                    value={xaiKey}
+                    onChange={(e) => setXaiKey(e.target.value)}
+                    placeholder="xai-..."
+                  />
+                </SettingRow>
+              )}
 
               <SettingRow
                 title="OpenRouter"
@@ -169,7 +407,7 @@ export function SettingsPanel({
               </SettingRow>
 
               <p className="text-xs text-gray-400 dark:text-tokyo-muted mt-2 italic">
-                All keys are encrypted and stored locally on this device.
+                Keys and SuperGrok tokens are stored locally on this device (OAuth session encrypted).
               </p>
             </div>
           </div>

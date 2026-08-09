@@ -10,6 +10,8 @@ export const PublisherSchema = z.enum(["anthropic", "openrouter", "xai", "kiloco
 
 // ── AppSettings ───────────────────────────────────────────────────────────────
 
+export const AuthModeSchema = z.enum(["API_KEY", "SUPERGROK_OAUTH"]);
+
 export const AppSettingsSchema = z.object({
   theme: ThemeModeSchema.default("light"),
   fontSize: z.number().int().min(8).max(32).default(14),
@@ -26,6 +28,9 @@ export const AppSettingsSchema = z.object({
   showCosts: z.boolean().optional().default(true),
   agentTimeout: z.number().int().positive().optional(),
   blockFileDeletion: z.boolean().optional().default(false),
+  authMode: AuthModeSchema.optional().default("API_KEY"),
+  oauthEmail: z.string().optional(),
+  oauthSignedIn: z.boolean().optional().default(false),
   customColors: z
     .object({
       accentColor: z.string().optional(),

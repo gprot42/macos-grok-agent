@@ -12,6 +12,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   projectId: "",
   showCosts: true,
   blockFileDeletion: false,
+  authMode: "API_KEY",
+  oauthSignedIn: false,
 };
 
 const FONT_FAMILIES: Record<string, string> = {

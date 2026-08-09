@@ -33,6 +33,7 @@ A desktop AI assistant for interacting with multiple Large Language Models via *
 ### Capabilities
 
 - **Multiple Endpoints**: xAI, OpenRouter, Kilo Code, Anthropic, OpenAI, Custom
+- **xAI auth choice**: prepaid **API key** from [console.x.ai](https://console.x.ai) **or** **SuperGrok / SuperGrok Heavy** subscription via device-code OAuth (same OIDC client as Grok Build). Import an existing `grok login` session from `~/.grok/auth.json`, or sign in from Settings. OAuth tokens are AES-encrypted locally.
 - **X Search**: Real-time search on X.com via Grok models
 - **Image / Voice / Video Generation**: Grok Imagine Image 2.0, Voice TTS, Think Fast live agent, Video 1.5
 - **File Attachments**: Text, images, PDFs with analysis
