@@ -1,4 +1,62 @@
-import { ModelConfig } from "@shared/types";
+import type { EndpointType, ModelConfig } from "@shared/types";
+
+/** Grok 4.6 consumer modes (grok.com Auto / Fast / Expert / Heavy) → API reasoning.effort. */
+export const GROK_46_THINKING_OPTIONS = [
+  { value: "medium", label: "Auto" },
+  { value: "low", label: "Fast" },
+  { value: "high", label: "Expert" },
+  { value: "xhigh", label: "Heavy" },
+] as const;
+
+export function isGrok46(model?: ModelConfig | null): boolean {
+  return model?.modelId === "grok-4.6" || model?.id === "grok-4-6";
+}
+
+export function getThinkingOptions(
+  model: ModelConfig | undefined,
+  endpoint: EndpointType | string,
+): { value: string; label: string }[] {
+  const isXai = endpoint === "xai";
+  if (isXai && isGrok46(model)) {
+    return GROK_46_THINKING_OPTIONS.map((o) => ({ value: o.value, label: o.label }));
+  }
+  if (isXai && model?.id === "grok-4-20-multi-agent") {
+    return [
+      { value: "none", label: "None" },
+      { value: "low", label: "Fast (4 agents)" },
+      { value: "medium", label: "Balanced (4 agents)" },
+      { value: "high", label: "Expert (16 agents)" },
+      { value: "xhigh", label: "Ultra (16 agents)" },
+    ];
+  }
+  if (isXai) {
+    return [
+      { value: "none", label: "None" },
+      { value: "low", label: "Fast" },
+      { value: "high", label: "Expert" },
+    ];
+  }
+  return [
+    { value: "none", label: "None" },
+    { value: "low", label: "Low" },
+    { value: "medium", label: "Medium" },
+    { value: "high", label: "High" },
+  ];
+}
+
+/** Coerce a stored think-level so it is valid for the selected model. */
+export function resolveThinkingLevel(
+  model: ModelConfig | undefined,
+  current: string,
+): string {
+  if (isGrok46(model)) {
+    const allowed = new Set<string>(GROK_46_THINKING_OPTIONS.map((o) => o.value));
+    return allowed.has(current) ? current : (model?.defaultThinkingLevel ?? "medium");
+  }
+  if (!model?.supportsDeepThinking) return "none";
+  if (current && current !== "none") return current;
+  return model.defaultThinkingLevel ?? "low";
+}
 
 export const MODELS: Record<string, ModelConfig> = {
   "claude-haiku-4-5": {
@@ -61,6 +119,23 @@ export const MODELS: Record<string, ModelConfig> = {
     supportsMemory: true,
     endpointSupport: ["openrouter"],
   },
+  "grok-4-6": {
+    id: "grok-4-6",
+    publisher: "xai",
+    modelId: "grok-4.6",
+    displayName: "Grok 4.6",
+    maxInputTokens: 500000,
+    maxOutputTokens: 131072,
+    icon: "crown",
+    color: "#F59E0B",
+    description:
+      "xAI flagship — 500k context, Auto / Fast / Expert / Heavy reasoning. Best for code, agents, and knowledge work",
+    pricing: { input: 0.002, output: 0.006, inputPremium: 0.004, outputPremium: 0.012 },
+    supportsSearch: true,
+    supportsDeepThinking: true,
+    defaultThinkingLevel: "medium",
+    endpointSupport: ["xai"],
+  },
   "grok-4-3": {
     id: "grok-4-3",
     publisher: "xai",
@@ -70,7 +145,7 @@ export const MODELS: Record<string, ModelConfig> = {
     maxOutputTokens: 32768,
     icon: "crown",
     color: "#FF6B00",
-    description: "xAI's latest flagship — 2M context, native video understanding, document output, built-in reasoning",
+    description: "Previous flagship — 2M context, native video understanding, document output, built-in reasoning",
     pricing: { input: 0.00125, output: 0.0025 },
     supportsSearch: true,
     supportsDeepThinking: false, // reasons automatically — reasoning_effort param not supported, returns error

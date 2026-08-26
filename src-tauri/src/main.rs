@@ -463,7 +463,7 @@ async fn deep_research(
     agent_chain::deep_research(
         prompt,
         api_key,
-        model_id.unwrap_or_else(|| "grok-4.3".to_string()),
+        model_id.unwrap_or_else(|| "grok-4.6".to_string()),
         publisher.unwrap_or_else(|| "xai".to_string()),
         endpoint.unwrap_or_else(|| "xai".to_string()),
         app_handle,
@@ -525,7 +525,64 @@ async fn generate_speech(
     language: Option<String>,
     model_id: Option<String>,
 ) -> Result<String, String> {
-    api::generate_speech(text, api_key, voice_id, language, model_id).await
+    let bearer = resolve_xai_credential_for_request(&api_key).await?;
+    api::generate_speech(text, bearer, voice_id, language, model_id).await
+}
+
+#[tauri::command]
+async fn create_custom_voice(
+    api_key: String,
+    audio_base64: String,
+    filename: String,
+    mime_type: String,
+    name: Option<String>,
+    language: Option<String>,
+    gender: Option<String>,
+    tone: Option<String>,
+    use_case: Option<String>,
+    description: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let bearer = resolve_xai_credential_for_request(&api_key).await?;
+    api::create_custom_voice(
+        bearer,
+        audio_base64,
+        filename,
+        mime_type,
+        name,
+        language,
+        gender,
+        tone,
+        use_case,
+        description,
+    )
+    .await
+}
+
+#[tauri::command]
+async fn list_custom_voices(
+    api_key: String,
+    limit: Option<u32>,
+) -> Result<serde_json::Value, String> {
+    let bearer = resolve_xai_credential_for_request(&api_key).await?;
+    api::list_custom_voices(bearer, limit).await
+}
+
+#[tauri::command]
+async fn get_custom_voice(
+    api_key: String,
+    voice_id: String,
+) -> Result<serde_json::Value, String> {
+    let bearer = resolve_xai_credential_for_request(&api_key).await?;
+    api::get_custom_voice(bearer, voice_id).await
+}
+
+#[tauri::command]
+async fn delete_custom_voice(
+    api_key: String,
+    voice_id: String,
+) -> Result<serde_json::Value, String> {
+    let bearer = resolve_xai_credential_for_request(&api_key).await?;
+    api::delete_custom_voice(bearer, voice_id).await
 }
 
 #[tauri::command]
@@ -533,7 +590,8 @@ async fn create_voice_client_secret(
     api_key: String,
     expires_after_secs: Option<u64>,
 ) -> Result<serde_json::Value, String> {
-    api::create_voice_client_secret(api_key, expires_after_secs).await
+    let bearer = resolve_xai_credential_for_request(&api_key).await?;
+    api::create_voice_client_secret(bearer, expires_after_secs).await
 }
 
 #[tauri::command]
@@ -830,6 +888,10 @@ fn main() {
             generate_video,
             extend_video,
             generate_speech,
+            create_custom_voice,
+            list_custom_voices,
+            get_custom_voice,
+            delete_custom_voice,
             create_voice_client_secret,
             download_video,
             get_default_working_dir,

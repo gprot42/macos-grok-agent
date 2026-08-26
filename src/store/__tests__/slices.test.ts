@@ -9,14 +9,14 @@ const reset = () =>
     showProjects: false,
     showAbout: false,
     showApiKeyPrompt: false,
-    selectedModel: "grok-4-3",
+    selectedModel: "grok-4-6",
     selectedEndpoint: "xai",
     selectedImageModel: "grok-imagine-image-2",
     use1MContext: false,
     useMemory: false,
     useGrounding: false,
     useSearch: false,
-    thinkingLevel: "none",
+    thinkingLevel: "medium",
     customUrl: "",
     activeProject: null,
   });
@@ -66,9 +66,9 @@ describe("ModalSlice", () => {
 // ── ModelSlice ────────────────────────────────────────────────────────────────
 
 describe("ModelSlice", () => {
-  it("defaults to grok-4-3 / xai and Imagine Image 2.0", () => {
+  it("defaults to grok-4-6 / xai and Imagine Image 2.0", () => {
     const s = useAppStore.getState();
-    expect(s.selectedModel).toBe("grok-4-3");
+    expect(s.selectedModel).toBe("grok-4-6");
     expect(s.selectedEndpoint).toBe("xai");
     expect(s.selectedImageModel).toBe("grok-imagine-image-2");
     expect(MODELS[s.selectedImageModel]?.displayName).toMatch(/2\.0/);
@@ -86,8 +86,26 @@ describe("ModelSlice", () => {
     expect(useAppStore.getState().selectedModel).toBe("grok-4-1");
   });
 
+  it("setSelectedModel on Grok 4.6 applies Auto when think-level is none", () => {
+    useAppStore.setState({ thinkingLevel: "none" });
+    useAppStore.getState().setSelectedModel("grok-4-6");
+    expect(useAppStore.getState().thinkingLevel).toBe("medium");
+  });
+
+  it("setSelectedModel on Grok 4.6 keeps Fast/Expert/Heavy", () => {
+    useAppStore.setState({ thinkingLevel: "xhigh" });
+    useAppStore.getState().setSelectedModel("grok-4-6");
+    expect(useAppStore.getState().thinkingLevel).toBe("xhigh");
+  });
+
+  it("setSelectedModel on Grok 4.3 clears thinking (auto-reasoning)", () => {
+    useAppStore.getState().setSelectedModel("grok-4-3");
+    expect(useAppStore.getState().selectedModel).toBe("grok-4-3");
+    expect(useAppStore.getState().thinkingLevel).toBe("none");
+  });
+
   it("setSelectedEndpoint auto-selects a compatible model", () => {
-    useAppStore.getState().setSelectedModel("grok-4-3"); // xai only
+    useAppStore.getState().setSelectedModel("grok-4-6"); // xai only
     useAppStore.getState().setSelectedEndpoint("openrouter");
     const s = useAppStore.getState();
     expect(s.selectedEndpoint).toBe("openrouter");

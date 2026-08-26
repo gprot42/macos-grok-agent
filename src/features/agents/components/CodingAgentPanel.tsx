@@ -13,7 +13,7 @@ import { DebugLogPanel } from "./DebugLogPanel";
 import { McpPanel } from "./McpPanel";
 import { FileHistoryPanel, FileHistory, FileVersion } from "./FileHistoryPanel";
 import { SkillsPanel } from "./SkillsPanel";
-import { MODELS } from "@shared/constants/models";
+import { MODELS, GROK_46_THINKING_OPTIONS, isGrok46 } from "@shared/constants/models";
 import type { ModelConfig, EndpointType } from "@shared/types";
 
 interface ToolCallEntry {
@@ -100,7 +100,7 @@ export function CodingAgentPanel({
   const [stopping, setStopping] = useState(false);
   const [workingDir, setWorkingDir] = useState("");
   const [model, setModel] = useState<ModelConfig>(
-    CODING_MODELS.find((m: ModelConfig) => m.id === "grok-4-3") || CODING_MODELS[0]
+    CODING_MODELS.find((m: ModelConfig) => m.id === "grok-4-6") || CODING_MODELS[0]
   );
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
   const [attachedImage, setAttachedImage] = useState<{ data: string; mimeType: string; name: string } | null>(null);
@@ -931,6 +931,26 @@ export function CodingAgentPanel({
                   >
                     16 agents
                   </button>
+                </div>
+              );
+            }
+            if (isGrok46(model)) {
+              return (
+                <div className="flex items-center rounded-lg border theme-border overflow-hidden" title="Grok 4.6 mode">
+                  {GROK_46_THINKING_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      onClick={() => setThinkingLevel(opt.value)}
+                      title={`Grok 4.6 ${opt.label}`}
+                      className={`px-2 py-1.5 text-xs font-medium transition-colors ${
+                        thinkingLevel === opt.value
+                          ? "bg-purple-500 text-white"
+                          : "theme-surface theme-text-muted hover:theme-text"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
                 </div>
               );
             }

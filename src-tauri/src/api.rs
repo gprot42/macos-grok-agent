@@ -1271,6 +1271,46 @@ pub async fn generate_speech(
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
+        let body_l = body.to_lowercase();
+        // Prepaid / monthly spend exhausted on the xAI team behind this credential.
+        if status.as_u16() == 403
+            && (body_l.contains("spending limit")
+                || body_l.contains("available credits")
+                || body_l.contains("purchase more credits"))
+        {
+            return Err(format!(
+                "xAI team credits / spending limit reached (HTTP 403).\n\n\
+                 The API key or SuperGrok account this app is using has no remaining \
+                 credits (or hit its monthly spending cap). Voice cloning, TTS, and other \
+                 paid endpoints will fail until you top up or raise the limit.\n\n\
+                 What to do:\n\
+                 • Open https://console.x.ai → Billing / Usage for this team\n\
+                 • Purchase credits or raise the monthly spending limit\n\
+                 • Confirm Settings uses the intended team’s key (not an empty prepaid team)\n\
+                 • Built-in SuperGrok chat may still work on a different plan — media/TTS often bills the API team\n\n\
+                 API: {body}"
+            ));
+        }
+        // Custom voice exists on another team / wrong auth (common: SuperGrok OAuth
+        // vs console API-key team where the voice was cloned).
+        if status.as_u16() == 404
+            || body_l.contains("not found")
+            || body_l.contains("unknown voice")
+        {
+            let vid = payload
+                .get("voice_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
+            return Err(format!(
+                "Voice “{vid}” was not found for the credentials this app is using.\n\n\
+                 Custom voices are scoped to the xAI team that created them.\n\
+                 • Your console team (where you cloned Daz) may not match SuperGrok OAuth.\n\
+                 • Fix: Settings → switch to API key mode and paste an API key from the same \
+                 console team (e.g. reimburse-jokingly-knapsack) that owns the voice.\n\
+                 • Or use a Built-in voice (Eve, Ara, …) which works with SuperGrok.\n\n\
+                 API: {status} {body}"
+            ));
+        }
         return Err(format!("API error {}: {}", status, body));
     }
 
@@ -1280,6 +1320,255 @@ pub async fn generate_speech(
         .map_err(|e| format!("Failed to read audio data: {}", e))?;
 
     Ok(BASE64.encode(bytes))
+}
+
+// ── Custom Voices (clone) ─────────────────────────────────────────────────────
+
+/// Map xAI Custom Voices HTTP errors into actionable UI messages.
+fn format_custom_voice_error(context: &str, status: reqwest::StatusCode, body: &str) -> String {
+    let code = status.as_u16();
+    // Surface geo / plan gates clearly (official docs: US-only except Illinois;
+    // POST create is Enterprise-gated; console create is self-serve in region).
+    if code == 403 {
+        return format!(
+            "{context}: Custom Voices unavailable for this account or region.\n\n\
+             • Region: xAI Custom Voices is currently only available in the United States \
+             (excluding Illinois) — not in Europe or other regions.\n\
+             • API create: POST /v1/custom-voices requires an Enterprise plan. \
+             Non-Enterprise teams can clone in the console (US) and paste the voice ID here.\n\
+             • Console: https://console.x.ai/team/default/voice/voice-library\n\n\
+             API response: {body}"
+        );
+    }
+    if code == 400 && body.to_lowercase().contains("limit") {
+        return format!(
+            "{context}: team custom-voice limit reached (default 30). \
+             Delete a voice or request a higher limit from xAI.\n\nAPI: {body}"
+        );
+    }
+    format!("{context} (HTTP {code}): {body}")
+}
+
+/// Create a custom voice from a reference audio clip (max 120s).
+///
+/// `POST /v1/custom-voices` multipart. API create is Enterprise-gated; region
+/// is US-only (not Illinois) per xAI docs.
+pub async fn create_custom_voice(
+    api_key: String,
+    audio_base64: String,
+    filename: String,
+    mime_type: String,
+    name: Option<String>,
+    language: Option<String>,
+    gender: Option<String>,
+    tone: Option<String>,
+    use_case: Option<String>,
+    description: Option<String>,
+) -> Result<Value, String> {
+    let audio_bytes = BASE64
+        .decode(audio_base64.trim())
+        .map_err(|e| format!("Invalid audio base64: {e}"))?;
+    if audio_bytes.is_empty() {
+        return Err("Audio file is empty".to_string());
+    }
+    // Soft guard: ~25 MB — clips are max 120s so this is generous
+    if audio_bytes.len() > 25 * 1024 * 1024 {
+        return Err("Audio file too large (max ~25 MB)".to_string());
+    }
+
+    let safe_name = if filename.trim().is_empty() {
+        "reference.wav".to_string()
+    } else {
+        filename.trim().to_string()
+    };
+    let mime = if mime_type.trim().is_empty() {
+        "application/octet-stream".to_string()
+    } else {
+        mime_type.trim().to_string()
+    };
+
+    info!(
+        "[custom-voices] create name={:?} lang={:?} file={} bytes={} mime={}",
+        name,
+        language,
+        safe_name,
+        audio_bytes.len(),
+        mime
+    );
+
+    let part = reqwest::multipart::Part::bytes(audio_bytes)
+        .file_name(safe_name)
+        .mime_str(&mime)
+        .map_err(|e| format!("Invalid audio MIME type: {e}"))?;
+
+    let mut form = reqwest::multipart::Form::new().part("file", part);
+    if let Some(v) = name.filter(|s| !s.trim().is_empty()) {
+        form = form.text("name", v);
+    }
+    if let Some(v) = language.filter(|s| !s.trim().is_empty()) {
+        form = form.text("language", v);
+    }
+    if let Some(v) = gender.filter(|s| !s.trim().is_empty()) {
+        form = form.text("gender", v);
+    }
+    if let Some(v) = tone.filter(|s| !s.trim().is_empty()) {
+        form = form.text("tone", v);
+    }
+    if let Some(v) = use_case.filter(|s| !s.trim().is_empty()) {
+        form = form.text("use_case", v);
+    }
+    if let Some(v) = description.filter(|s| !s.trim().is_empty()) {
+        form = form.text("description", v);
+    }
+
+    let client = Client::new();
+    let url = format!("{}/custom-voices", XAI_ENDPOINT);
+    let response = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|e| format!("Custom voice create request failed: {e}"))?;
+
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(format_custom_voice_error(
+            "Failed to create custom voice",
+            status,
+            &body,
+        ));
+    }
+
+    serde_json::from_str(&body).map_err(|e| {
+        format!("Failed to parse create custom voice response: {e}; body={body}")
+    })
+}
+
+/// List custom voices owned by the team.
+pub async fn list_custom_voices(
+    api_key: String,
+    limit: Option<u32>,
+) -> Result<Value, String> {
+    let client = Client::new();
+    let lim = limit.unwrap_or(100).clamp(1, 1000);
+    let url = format!("{}/custom-voices?limit={}", XAI_ENDPOINT, lim);
+    info!("[custom-voices] list limit={}", lim);
+
+    let response = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .send()
+        .await
+        .map_err(|e| format!("List custom voices failed: {e}"))?;
+
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    if !status.is_success() {
+        warn!(
+            "[custom-voices] list failed status={} body={}",
+            status,
+            body.chars().take(500).collect::<String>()
+        );
+        return Err(format_custom_voice_error(
+            "Failed to list custom voices",
+            status,
+            &body,
+        ));
+    }
+
+    let parsed: Value = serde_json::from_str(&body).map_err(|e| {
+        format!("Failed to parse list custom voices response: {e}; body={body}")
+    })?;
+
+    // Log count so we can diagnose empty libraries in the field
+    let count = parsed
+        .get("voices")
+        .and_then(|v| v.as_array())
+        .map(|a| a.len())
+        .or_else(|| parsed.as_array().map(|a| a.len()))
+        .or_else(|| {
+            parsed
+                .get("data")
+                .and_then(|d| d.as_array().map(|a| a.len()).or_else(|| {
+                    d.get("voices").and_then(|v| v.as_array()).map(|a| a.len())
+                }))
+        })
+        .unwrap_or(0);
+    info!(
+        "[custom-voices] list ok count={} body_preview={}",
+        count,
+        body.chars().take(300).collect::<String>()
+    );
+
+    Ok(parsed)
+}
+
+/// Fetch metadata for a single custom voice.
+pub async fn get_custom_voice(api_key: String, voice_id: String) -> Result<Value, String> {
+    let id = voice_id.trim();
+    if id.is_empty() {
+        return Err("voice_id is required".to_string());
+    }
+    let client = Client::new();
+    let url = format!("{}/custom-voices/{}", XAI_ENDPOINT, id);
+    info!("[custom-voices] get {}", id);
+
+    let response = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .send()
+        .await
+        .map_err(|e| format!("Get custom voice failed: {e}"))?;
+
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(format_custom_voice_error(
+            "Failed to get custom voice",
+            status,
+            &body,
+        ));
+    }
+
+    serde_json::from_str(&body)
+        .map_err(|e| format!("Failed to parse get custom voice response: {e}; body={body}"))
+}
+
+/// Delete a custom voice and its reference audio.
+pub async fn delete_custom_voice(api_key: String, voice_id: String) -> Result<Value, String> {
+    let id = voice_id.trim();
+    if id.is_empty() {
+        return Err("voice_id is required".to_string());
+    }
+    let client = Client::new();
+    let url = format!("{}/custom-voices/{}", XAI_ENDPOINT, id);
+    info!("[custom-voices] delete {}", id);
+
+    let response = client
+        .delete(&url)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .send()
+        .await
+        .map_err(|e| format!("Delete custom voice failed: {e}"))?;
+
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(format_custom_voice_error(
+            "Failed to delete custom voice",
+            status,
+            &body,
+        ));
+    }
+
+    if body.trim().is_empty() {
+        return Ok(json!({ "deleted": true, "voice_id": id }));
+    }
+    Ok(serde_json::from_str(&body).unwrap_or_else(|_| {
+        json!({ "deleted": true, "voice_id": id })
+    }))
 }
 
 /// Create a short-lived ephemeral client secret for the Speech-to-Speech

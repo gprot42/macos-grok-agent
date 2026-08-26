@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { MODELS } from "@shared/constants/models";
+import { MODELS, resolveThinkingLevel } from "@shared/constants/models";
 import {
   createNavigationSlice,
   createModalSlice,
@@ -62,8 +62,12 @@ export const useAppStore = create<AppState>()(
               !m.supportsTextToSpeech &&
               !m.supportsVoiceAgent
           );
-          state.selectedModel = fallback?.id ?? "grok-4-3";
+          state.selectedModel = fallback?.id ?? "grok-4-6";
         }
+        state.thinkingLevel = resolveThinkingLevel(
+          MODELS[state.selectedModel],
+          state.thinkingLevel,
+        );
       },
     }
   )

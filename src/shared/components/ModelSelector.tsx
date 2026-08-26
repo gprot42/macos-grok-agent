@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MODELS } from "@shared/constants/models";
+import { MODELS, getThinkingOptions, isGrok46 } from "@shared/constants/models";
 import { Select, Checkbox, Input } from "./index";
 import { useAppStore } from "@store/appStore";
 import { useSettings } from "@/hooks";
@@ -50,31 +50,11 @@ export function ModelSelector() {
     label: `${ICONS[m.icon] || "🤖"} ${m.displayName}`,
   }));
 
-  // xAI uses "Fast" / "Expert" terminology; multi-agent adds "Ultra" (xhigh = 16 agents)
-  const isXai = selectedEndpoint === "xai";
+  // xAI uses grok.com labels on 4.6 (Auto / Fast / Expert / Heavy);
+  // other xAI models use Fast / Expert; multi-agent adds Ultra (xhigh = 16 agents)
   const isMultiAgent = model?.id === "grok-4-20-multi-agent";
-  const thinkingOptions = isXai
-    ? isMultiAgent
-      ? [
-          { value: "none",   label: "None" },
-          { value: "low",    label: "Fast (4 agents)" },
-          { value: "medium", label: "Balanced (4 agents)" },
-          { value: "high",   label: "Expert (16 agents)" },
-          { value: "xhigh",  label: "Ultra (16 agents)" },
-        ]
-      : [
-          { value: "none",  label: "None" },
-          { value: "low",   label: "Fast" },
-          { value: "high",  label: "Expert" },
-        ]
-    : [
-        { value: "none",   label: "None" },
-        { value: "low",    label: "Low" },
-        { value: "medium", label: "Medium" },
-        { value: "high",   label: "High" },
-      ];
-
-
+  const grok46 = isGrok46(model);
+  const thinkingOptions = getThinkingOptions(model, selectedEndpoint);
 
   return (
     <div className="relative">
@@ -151,7 +131,7 @@ export function ModelSelector() {
 
         {model?.supportsDeepThinking && selectedEndpoint !== "custom" && (
           <Select
-            label={isMultiAgent ? "Agents" : "Think Level"}
+            label={isMultiAgent ? "Agents" : grok46 ? "Mode" : "Think Level"}
             options={thinkingOptions}
             value={thinkingLevel}
             onChange={(e) => setThinkingLevel(e.target.value)}
@@ -202,7 +182,8 @@ export function ModelSelector() {
                <h4 className="font-semibold text-blue-500 mb-1">Model</h4>
                <p>Available models depend on the selected endpoint. Current xAI models:</p>
                <ul className="mt-1 ml-4 space-y-1 list-disc">
-                 <li><strong>Grok 4.3</strong> — Latest flagship. 2M context, native video understanding, auto-reasoning.</li>
+                 <li><strong>Grok 4.6</strong> — Current flagship. 500k context, Auto / Fast / Expert / Heavy modes. Best for code and agents.</li>
+                 <li><strong>Grok 4.3</strong> — Previous flagship. 2M context, native video understanding, auto-reasoning.</li>
                  <li><strong>Grok 4.20 Reasoning</strong> — Reasons automatically before every response. Best for complex tasks.</li>
                  <li><strong>Grok 4.20 Non-Reasoning</strong> — Fast, no chain-of-thought. Good for chat &amp; quick answers.</li>
                  <li><strong>Grok 4.20 Multi-Agent</strong> — Council of agents (4 or 16). Best for deep research.</li>
@@ -216,15 +197,23 @@ export function ModelSelector() {
              </div>
 
              <div>
-               <h4 className="font-semibold text-blue-500 mb-1">Think Level / Agents</h4>
-               <p>Controls reasoning depth. Shown only on models that support it:</p>
+               <h4 className="font-semibold text-blue-500 mb-1">Mode / Think Level / Agents</h4>
+               <p>Controls reasoning depth. Shown only on models that support it.</p>
+               <p className="mt-1"><strong>Grok 4.6</strong> modes (same labels as grok.com):</p>
+               <ul className="mt-1 ml-4 space-y-1 list-disc">
+                 <li><strong>Auto</strong> — Practical balanced reasoning. Default. Good for most queries.</li>
+                 <li><strong>Fast</strong> — Lowest latency. Simple questions and quick tool calls.</li>
+                 <li><strong>Expert</strong> — Deep reasoning. Math, code, multi-step problems.</li>
+                 <li><strong>Heavy</strong> — Maximum reasoning depth. Hardest problems; slower and more tokens.</li>
+               </ul>
+               <p className="mt-2">Other models:</p>
                <ul className="mt-1 ml-4 space-y-1 list-disc">
                  <li><strong>None</strong> — No reasoning. Fastest and cheapest.</li>
                  <li><strong>Fast</strong> (xAI) / <strong>Low</strong> (Anthropic) — Brief internal reasoning.</li>
-                 <li><strong>Expert</strong> (xAI) / <strong>High</strong> (Anthropic) — Deep reasoning. Best for math, code, multi-step problems.</li>
+                 <li><strong>Expert</strong> (xAI) / <strong>High</strong> (Anthropic) — Deep reasoning.</li>
                </ul>
                <p className="mt-1">For <strong>Grok 4.20 Multi-Agent</strong>, this controls agent count: Fast/Balanced = 4 agents, Expert/Ultra = 16 agents ($$$).</p>
-               <p className="mt-1 text-xs theme-text-muted">Reasoning tokens count toward output usage.</p>
+               <p className="mt-1 text-xs theme-text-muted">Reasoning tokens count toward output usage. Grok 4.6 cannot disable reasoning.</p>
              </div>
 
              <div>

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { Button } from "@shared/components/ui/button";
 import { BUILTIN_VOICES } from "@shared/constants/voices";
 import {
@@ -21,6 +22,11 @@ import {
   VOICE_AGENT_MODELS,
   type VoiceAgentStatus,
 } from "../lib/realtimeTypes";
+import {
+  type CustomVoice,
+  displayVoiceName,
+  normalizeCustomVoiceList,
+} from "../lib/customVoices";
 
 interface VoiceAgentPanelProps {
   apiKey: string;
@@ -63,6 +69,7 @@ function statusDotClass(status: VoiceAgentStatus): string {
 export function VoiceAgentPanel({ apiKey }: VoiceAgentPanelProps) {
   const [modelId, setModelId] = useState(DEFAULT_VOICE_AGENT_MODEL);
   const [voice, setVoice] = useState("eve");
+  const [customVoices, setCustomVoices] = useState<CustomVoice[]>([]);
   const [instructions, setInstructions] = useState(DEFAULT_VOICE_INSTRUCTIONS);
   const [reasoningEffort, setReasoningEffort] = useState<"high" | "none">("high");
   const [webSearch, setWebSearch] = useState(false);
@@ -72,6 +79,26 @@ export function VoiceAgentPanel({ apiKey }: VoiceAgentPanelProps) {
   const [textInput, setTextInput] = useState("");
   const transcriptScrollRef = useRef<HTMLDivElement>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
+
+  // Load team custom voices so cloned IDs work in speech-to-speech sessions.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await invoke<unknown>("list_custom_voices", {
+          apiKey,
+          limit: 100,
+        });
+        if (!cancelled) setCustomVoices(normalizeCustomVoiceList(res));
+      } catch {
+        // Region/plan may block listing — built-ins still work.
+        if (!cancelled) setCustomVoices([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [apiKey]);
 
   const selectedModel =
     VOICE_AGENT_MODELS.find((m) => m.id === modelId) ?? VOICE_AGENT_MODELS[0];
@@ -246,7 +273,24 @@ export function VoiceAgentPanel({ apiKey }: VoiceAgentPanelProps) {
                 </option>
               ))}
             </optgroup>
+            {customVoices.length > 0 && (
+              <optgroup label="Cloned (custom)">
+                {customVoices.map((v) => (
+                  <option key={v.voice_id} value={v.voice_id}>
+                    {displayVoiceName(v)}
+                    {v.name?.trim() ? ` — ${v.voice_id}` : ""}
+                  </option>
+                ))}
+              </optgroup>
+            )}
           </select>
+          {customVoices.some((v) => v.voice_id === voice) && (
+            <span className="text-xs font-semibold text-indigo-700 dark:text-indigo-300 truncate max-w-[10rem]" title={voice}>
+              {displayVoiceName(
+                customVoices.find((v) => v.voice_id === voice)!
+              )}
+            </span>
+          )}
 
           {!active ? (
             <Button

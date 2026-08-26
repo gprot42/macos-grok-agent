@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { MODELS, ENDPOINT_URLS } from "../models";
+import {
+  MODELS,
+  ENDPOINT_URLS,
+  GROK_46_THINKING_OPTIONS,
+  getThinkingOptions,
+  isGrok46,
+  resolveThinkingLevel,
+} from "../models";
 
 describe("MODELS registry", () => {
   it("contains at least one model", () => {
@@ -18,6 +25,30 @@ describe("MODELS registry", () => {
       expect(model.endpointSupport, `${id}: endpointSupport`).toBeInstanceOf(Array);
       expect(model.endpointSupport.length, `${id}: endpointSupport not empty`).toBeGreaterThan(0);
     }
+  });
+
+  it("includes Grok 4.6 as the flagship with Auto/Fast/Expert/Heavy modes", () => {
+    const grok46 = MODELS["grok-4-6"];
+    expect(grok46).toBeDefined();
+    expect(grok46.modelId).toBe("grok-4.6");
+    expect(grok46.displayName).toBe("Grok 4.6");
+    expect(grok46.supportsDeepThinking).toBe(true);
+    expect(grok46.supportsSearch).toBe(true);
+    expect(grok46.defaultThinkingLevel).toBe("medium");
+    expect(grok46.maxInputTokens).toBe(500000);
+    expect(grok46.endpointSupport).toEqual(["xai"]);
+    expect(isGrok46(grok46)).toBe(true);
+
+    const labels = GROK_46_THINKING_OPTIONS.map((o) => o.label);
+    expect(labels).toEqual(["Auto", "Fast", "Expert", "Heavy"]);
+
+    const options = getThinkingOptions(grok46, "xai");
+    expect(options.map((o) => o.label)).toEqual(["Auto", "Fast", "Expert", "Heavy"]);
+    expect(options.map((o) => o.value)).toEqual(["medium", "low", "high", "xhigh"]);
+
+    expect(resolveThinkingLevel(grok46, "none")).toBe("medium");
+    expect(resolveThinkingLevel(grok46, "high")).toBe("high");
+    expect(resolveThinkingLevel(grok46, "xhigh")).toBe("xhigh");
   });
 
   it("xAI models only support the xai endpoint", () => {

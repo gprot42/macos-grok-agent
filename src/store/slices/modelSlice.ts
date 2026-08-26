@@ -1,5 +1,5 @@
 import type { StateCreator } from "zustand";
-import { MODELS } from "@shared/constants/models";
+import { MODELS, resolveThinkingLevel } from "@shared/constants/models";
 import type { EndpointType } from "@shared/types";
 
 export interface ModelSlice {
@@ -30,7 +30,7 @@ export interface ModelSlice {
 }
 
 export const createModelSlice: StateCreator<ModelSlice> = (set, get) => ({
-  selectedModel: "grok-4-3",
+  selectedModel: "grok-4-6",
   selectedEndpoint: "xai",
   selectedImageModel: "grok-imagine-image-2",
   selectedVideoModel: "grok-imagine-video-1-5",
@@ -38,7 +38,7 @@ export const createModelSlice: StateCreator<ModelSlice> = (set, get) => ({
   useMemory: false,
   useGrounding: false,
   useSearch: false,
-  thinkingLevel: "none",
+  thinkingLevel: "medium",
   customUrl: "",
   activeProject: null,
 
@@ -47,6 +47,7 @@ export const createModelSlice: StateCreator<ModelSlice> = (set, get) => ({
     set({
       selectedModel: id,
       useGrounding: model?.defaultGrounding ?? false,
+      thinkingLevel: resolveThinkingLevel(model, get().thinkingLevel),
     });
   },
 
@@ -65,7 +66,11 @@ export const createModelSlice: StateCreator<ModelSlice> = (set, get) => ({
       );
       if (first) newModel = first.id;
     }
-    set({ selectedEndpoint: ep, selectedModel: newModel });
+    set({
+      selectedEndpoint: ep,
+      selectedModel: newModel,
+      thinkingLevel: resolveThinkingLevel(MODELS[newModel], get().thinkingLevel),
+    });
   },
 
   setSelectedImageModel: (id) => set({ selectedImageModel: id }),

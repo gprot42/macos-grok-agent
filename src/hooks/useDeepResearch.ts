@@ -54,7 +54,7 @@ export function useDeepResearch() {
         invoke<ChatResponse>("deep_research", {
             prompt: query,
             apiKey,
-            modelId: modelId ?? "grok-4.3",
+            modelId: modelId ?? "grok-4.6",
             publisher: "xai",
             endpoint: "xai",
             taskId,

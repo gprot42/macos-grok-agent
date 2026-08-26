@@ -10,14 +10,14 @@ beforeEach(() => {
     showProjects: false,
     showAbout: false,
     showApiKeyPrompt: false,
-    selectedModel: "grok-4-3",
+    selectedModel: "grok-4-6",
     selectedEndpoint: "xai",
     selectedImageModel: "grok-imagine-image-2",
     use1MContext: false,
     useMemory: false,
     useGrounding: false,
     useSearch: false,
-    thinkingLevel: "none",
+    thinkingLevel: "medium",
     customUrl: "",
     activeProject: null,
   });
@@ -57,9 +57,9 @@ describe("useAppStore – modal flags", () => {
 });
 
 describe("useAppStore – model/endpoint config", () => {
-  it("defaults to grok-4-3 on xai endpoint", () => {
+  it("defaults to grok-4-6 on xai endpoint", () => {
     const s = useAppStore.getState();
-    expect(s.selectedModel).toBe("grok-4-3");
+    expect(s.selectedModel).toBe("grok-4-6");
     expect(s.selectedEndpoint).toBe("xai");
   });
 
@@ -70,13 +70,13 @@ describe("useAppStore – model/endpoint config", () => {
 
   it("setSelectedEndpoint switches to openrouter and auto-selects a compatible model", () => {
     // Start on xai with a grok model
-    useAppStore.getState().setSelectedModel("grok-4-3");
+    useAppStore.getState().setSelectedModel("grok-4-6");
     useAppStore.getState().setSelectedEndpoint("openrouter");
 
     const s = useAppStore.getState();
     expect(s.selectedEndpoint).toBe("openrouter");
     // The model must now support openrouter
-    // (grok-4-3 only supports xai, so it should have switched)
+    // (grok-4-6 only supports xai, so it should have switched)
     const model = MODELS[s.selectedModel];
     expect(model?.endpointSupport).toContain("openrouter");
   });

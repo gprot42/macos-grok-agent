@@ -20,7 +20,8 @@ A desktop AI assistant for interacting with multiple Large Language Models via *
 
 ### AI Models
 
-- **Grok 4.x** — xAI flagship models with 2M context, X search, and built-in reasoning
+- **Grok 4.6** — xAI flagship with Auto / Fast / Expert / Heavy modes, 500k context, X search, and reasoning
+- **Grok 4.x** — earlier Grok models (4.3, 4.20, 4.1) with X search and built-in reasoning
 - **Grok Imagine Image 2.0** — Image generation and editing (default; Quality 1.x & Standard also available)
 - **Grok Voice** — Text-to-speech (27 voices) and **Voice Think Fast 2.0** live speech-to-speech agent
 - **Grok Video** — Text-to-video generation

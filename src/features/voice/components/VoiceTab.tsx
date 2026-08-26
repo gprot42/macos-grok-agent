@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Mic, Radio } from "lucide-react";
+import { Mic, Radio, Wand2 } from "lucide-react";
 import { GrokVoicePanel } from "./GrokVoicePanel";
 import { VoiceAgentPanel } from "./VoiceAgentPanel";
 
@@ -7,7 +7,7 @@ interface VoiceTabProps {
   apiKey: string;
 }
 
-type VoiceMode = "agent" | "tts";
+type VoiceMode = "agent" | "tts" | "clone";
 
 const MODES: {
   id: VoiceMode;
@@ -19,6 +19,8 @@ const MODES: {
   activeBg: string;
   activeIcon: string;
   activeDot: string;
+  codeClass: string;
+  borderSelected: string;
 }[] = [
   {
     id: "agent",
@@ -30,6 +32,8 @@ const MODES: {
     activeBg: "bg-sky-50 dark:bg-sky-950/40",
     activeIcon: "bg-sky-500 text-white",
     activeDot: "bg-sky-500",
+    codeClass: "text-sky-700 dark:text-sky-300",
+    borderSelected: "border-sky-500",
   },
   {
     id: "tts",
@@ -41,6 +45,21 @@ const MODES: {
     activeBg: "bg-blue-50 dark:bg-blue-950/40",
     activeIcon: "bg-blue-500 text-white",
     activeDot: "bg-blue-500",
+    codeClass: "text-blue-700 dark:text-blue-300",
+    borderSelected: "border-blue-500",
+  },
+  {
+    id: "clone",
+    title: "Voice Clone",
+    subtitle: "Record or upload a sample and clone your voice",
+    model: "custom-voices",
+    icon: Wand2,
+    activeRing: "border-indigo-500 ring-2 ring-indigo-500/30",
+    activeBg: "bg-indigo-50 dark:bg-indigo-950/40",
+    activeIcon: "bg-indigo-500 text-white",
+    activeDot: "bg-indigo-500",
+    codeClass: "text-indigo-700 dark:text-indigo-300",
+    borderSelected: "border-indigo-500",
   },
 ];
 
@@ -49,7 +68,7 @@ export function VoiceTab({ apiKey }: VoiceTabProps) {
 
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
-      {/* Mode picker — two clear selectable cards */}
+      {/* Mode picker — three clear selectable cards */}
       <div className="flex-shrink-0 border-b theme-border theme-surface px-4 pt-3 pb-3 space-y-2">
         <div className="flex items-center justify-between gap-2">
           <span className="text-xs font-semibold uppercase tracking-wide theme-text-muted">
@@ -61,7 +80,7 @@ export function VoiceTab({ apiKey }: VoiceTabProps) {
         </div>
 
         <div
-          className="grid grid-cols-2 gap-2"
+          className="grid grid-cols-1 sm:grid-cols-3 gap-2"
           role="radiogroup"
           aria-label="Voice mode"
         >
@@ -117,30 +136,21 @@ export function VoiceTab({ apiKey }: VoiceTabProps) {
                   </p>
                   <code
                     className={`mt-1 inline-block text-[10px] font-mono ${
-                      selected
-                        ? "text-sky-700 dark:text-sky-300"
-                        : "text-gray-400 dark:text-gray-500"
+                      selected ? m.codeClass : "text-gray-400 dark:text-gray-500"
                     }`}
                   >
                     {m.model}
                   </code>
                 </div>
 
-                {/* Radio indicator */}
                 <span
                   className={`mt-1 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border-2 ${
-                    selected
-                      ? m.id === "agent"
-                        ? "border-sky-500"
-                        : "border-blue-500"
-                      : "border-gray-300 dark:border-gray-600"
+                    selected ? m.borderSelected : "border-gray-300 dark:border-gray-600"
                   }`}
                   aria-hidden
                 >
                   {selected && (
-                    <span
-                      className={`h-2 w-2 rounded-full ${m.activeDot}`}
-                    />
+                    <span className={`h-2 w-2 rounded-full ${m.activeDot}`} />
                   )}
                 </span>
               </button>
@@ -153,7 +163,12 @@ export function VoiceTab({ apiKey }: VoiceTabProps) {
         {mode === "agent" ? (
           <VoiceAgentPanel apiKey={apiKey} />
         ) : (
-          <GrokVoicePanel apiKey={apiKey} />
+          <GrokVoicePanel
+            apiKey={apiKey}
+            initialVoiceMode={mode === "clone" ? "custom" : "builtin"}
+            initialShowClonePanel={mode === "clone"}
+            key={mode === "clone" ? "clone" : "tts"}
+          />
         )}
       </div>
     </div>

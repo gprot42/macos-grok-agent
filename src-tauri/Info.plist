@@ -3,6 +3,6 @@
 <plist version="1.0">
 <dict>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Cortex Agent needs microphone access for Gemini Live real-time voice conversations.</string>
+	<string>Grok Agent needs microphone access for live voice conversations and voice cloning samples.</string>
 </dict>
 </plist>

@@ -385,7 +385,7 @@ function App() {
               <div>
                 <div className="text-lg font-medium theme-text">Grok Voice</div>
                 <div className="text-sm theme-text">
-                  Live Agent (default: Think Fast 2.0) · Text to Speech (grok-tts)
+                  Live Agent · Text to Speech · Voice Clone
                 </div>
               </div>
             </div>
@@ -720,7 +720,8 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
              <div>
                <h4 className="font-semibold text-gray-800 dark:text-tokyo-text mb-2">AI Models</h4>
                 <ul className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
-                   <li>• Grok 4.3 — xAI flagship, 2M context, built-in reasoning</li>
+                   <li>• Grok 4.6 — xAI flagship, Auto / Fast / Expert / Heavy, 500k context</li>
+                   <li>• Grok 4.3 — previous flagship, 2M context, built-in reasoning</li>
                    <li>• Grok 4.20 Reasoning / Multi-Agent / Fast — xAI (Beta)</li>
                    <li>• Grok 4.1 — xAI with deep thinking &amp; X search</li>
                    <li>• Grok Imagine Image 2.0 / Video 1.5 / Voice — image, video, TTS &amp; Think Fast live agent</li>
@@ -765,6 +766,7 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
                <ul className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
                  <li>• 1M Context - Extended context window for large documents</li>
                  <li>• Memory - Claude models remember across conversations</li>
+                 <li>• Grok 4.6 Mode — Auto, Fast, Expert, or Heavy reasoning</li>
                  <li>• Deep Thinking - Extended reasoning for complex problems</li>
                  <li>• Image Generation - Create images with Grok Imagine Image 2.0 (Quality 1.x &amp; Standard available)</li>
                </ul>
@@ -810,6 +812,7 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
               <div>
                 <h5 className="text-sm font-semibold text-emerald-800 dark:text-emerald-200 mb-1">Chat models (per million tokens)</h5>
                  <ul className="text-sm text-emerald-700 dark:text-emerald-300 space-y-0.5">
+                   <li>• <strong>Grok 4.6</strong> — $2.00 in / $6.00 out (doubles above 200k prompt tokens)</li>
                    <li>• <strong>Grok 4.3</strong> — $1.25 in / $2.50 out</li>
                    <li>• <strong>Grok 4.20 Reasoning / Multi-Agent / Fast</strong> — $2.00 in / $6.00 out</li>
                    <li>• <strong>Grok 4.1</strong> — see <AboutLink href="https://x.ai/api">x.ai/api</AboutLink> for current pricing</li>
