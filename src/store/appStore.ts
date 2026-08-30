@@ -1,6 +1,10 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { MODELS, resolveThinkingLevel } from "@shared/constants/models";
+import {
+  MODELS,
+  defaultChatModelId,
+  resolveThinkingLevel,
+} from "@shared/constants/models";
 import {
   createNavigationSlice,
   createModalSlice,
@@ -15,7 +19,7 @@ export type { TabType };
 type AppState = NavigationSlice & ModalSlice & ModelSlice;
 
 // ── Persisted keys (user preferences only — no ephemeral modal state) ─────────
-type PersistedState = Pick<
+export type PersistedState = Pick<
   AppState,
   | "activeTab"
   | "selectedModel"
@@ -28,6 +32,28 @@ type PersistedState = Pick<
   | "activeProject"
 >;
 
+/** Persist schema version. v1 promotes the previous xAI chat default (Grok 4.3) to Grok 4.6. */
+export const APP_STATE_VERSION = 1;
+
+const PREVIOUS_XAI_CHAT_DEFAULT = "grok-4-3";
+
+export function migratePersistedAppState(
+  persistedState: unknown,
+  version: number,
+): PersistedState {
+  const state = { ...(persistedState as PersistedState) };
+  if (version < 1) {
+    const endpoint = state.selectedEndpoint ?? "xai";
+    const modelMissing = !state.selectedModel || !MODELS[state.selectedModel];
+    const oldXaiDefault =
+      endpoint === "xai" && state.selectedModel === PREVIOUS_XAI_CHAT_DEFAULT;
+    if (modelMissing || oldXaiDefault) {
+      state.selectedModel = defaultChatModelId(endpoint);
+    }
+  }
+  return state;
+}
+
 export const useAppStore = create<AppState>()(
   persist(
     (...args) => ({
@@ -37,6 +63,8 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: "cortex-app-state",
+      version: APP_STATE_VERSION,
+      migrate: migratePersistedAppState,
 
       partialize: (s): PersistedState => ({
         activeTab: s.activeTab,
@@ -54,15 +82,7 @@ export const useAppStore = create<AppState>()(
       onRehydrateStorage: () => (state) => {
         if (!state) return;
         if (!MODELS[state.selectedModel]) {
-          const fallback = Object.values(MODELS).find(
-            (m) =>
-              m.endpointSupport.includes(state.selectedEndpoint) &&
-              !m.supportsImageGeneration &&
-              !m.supportsVideoGeneration &&
-              !m.supportsTextToSpeech &&
-              !m.supportsVoiceAgent
-          );
-          state.selectedModel = fallback?.id ?? "grok-4-6";
+          state.selectedModel = defaultChatModelId(state.selectedEndpoint);
         }
         state.thinkingLevel = resolveThinkingLevel(
           MODELS[state.selectedModel],

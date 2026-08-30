@@ -515,9 +515,10 @@ pub async fn generate_image(
     n: Option<u32>,
 ) -> Result<ImageResponse, String> {
     let client = Client::new();
-    let model = model_id.unwrap_or_else(|| "grok-imagine-image-2".to_string());
+    let model = model_id.unwrap_or_else(|| "grok-imagine-image-2.0".to_string());
     let base = xai_image_base(region.as_deref());
-    let (width, height) = aspect_ratio_to_dims(aspect_ratio.as_deref().unwrap_or("1:1"));
+    let ratio = aspect_ratio.as_deref().unwrap_or("1:1");
+    let (width, height) = aspect_ratio_to_dims(ratio);
     // "1k" | "2k" — only send when explicitly provided (API defaults to 1k)
     let res_str = resolution.as_deref().unwrap_or("1k");
     let total_n = resolve_image_n(n);
@@ -533,7 +534,7 @@ pub async fn generate_image(
                 "[generate_image] POST {} model={} {}x{} res={} n={} region={:?}",
                 url, model, width, height, res_str, chunk_n, region
             );
-            let payload = json!({
+            let mut payload = json!({
                 "model": model,
                 "prompt": prompt,
                 "image": {
@@ -541,11 +542,16 @@ pub async fn generate_image(
                     "type": "image_url"
                 },
                 "n": chunk_n,
-                "width": width,
-                "height": height,
+                "aspect_ratio": ratio,
                 "resolution": res_str,
                 "response_format": "b64_json",
             });
+            // Official Imagine API uses aspect_ratio; width/height are a fallback.
+            // Omit pixel size when auto so the model can pick the ratio.
+            if ratio != "auto" {
+                payload["width"] = json!(width);
+                payload["height"] = json!(height);
+            }
 
             let response = client
                 .post(&url)
@@ -596,15 +602,18 @@ pub async fn generate_image(
                 "[generate_image] POST {} model={} {}x{} res={} n={} region={:?}",
                 url, model, width, height, res_str, chunk_n, region
             );
-            let payload = json!({
+            let mut payload = json!({
                 "model": model,
                 "prompt": prompt,
                 "n": chunk_n,
-                "width": width,
-                "height": height,
+                "aspect_ratio": ratio,
                 "resolution": res_str,
                 "response_format": "b64_json",
             });
+            if ratio != "auto" {
+                payload["width"] = json!(width);
+                payload["height"] = json!(height);
+            }
 
             let response = client
                 .post(&url)

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MODELS, getThinkingOptions, isGrok46 } from "@shared/constants/models";
+import { MODELS, getThinkingOptions, isChatModel, isGrok46 } from "@shared/constants/models";
 import { Select, Checkbox, Input } from "./index";
 import { useAppStore } from "@store/appStore";
 import { useSettings } from "@/hooks";
@@ -30,12 +30,8 @@ export function ModelSelector() {
 
   const model = MODELS[selectedModel];
 
-  const availableModels = Object.values(MODELS).filter(m =>
-    m.endpointSupport.includes(selectedEndpoint) &&
-    !m.supportsImageGeneration &&
-    !m.supportsVideoGeneration &&
-    !m.supportsTextToSpeech &&
-    !m.supportsVoiceAgent
+  const availableModels = Object.values(MODELS).filter(
+    (m) => m.endpointSupport.includes(selectedEndpoint) && isChatModel(m),
   );
 
   const endpointOptions = [

@@ -3,8 +3,18 @@ import {
   MODELS,
   ENDPOINT_URLS,
   GROK_46_THINKING_OPTIONS,
+  DEFAULT_CHAT_MODEL_ID,
+  DEFAULT_IMAGE_MODEL_ID,
+  IMAGINE_IMAGE_15_API_ID,
+  IMAGINE_IMAGE_20_API_ID,
+  defaultChatModelId,
   getThinkingOptions,
+  imagineImageAltModel,
+  imagineImageVersionLabel,
+  isChatModel,
   isGrok46,
+  resolveImageModel,
+  resolveImageModelId,
   resolveThinkingLevel,
 } from "../models";
 
@@ -25,6 +35,15 @@ describe("MODELS registry", () => {
       expect(model.endpointSupport, `${id}: endpointSupport`).toBeInstanceOf(Array);
       expect(model.endpointSupport.length, `${id}: endpointSupport not empty`).toBeGreaterThan(0);
     }
+  });
+
+  it("defaults chat to Grok 4.6", () => {
+    expect(DEFAULT_CHAT_MODEL_ID).toBe("grok-4-6");
+    expect(defaultChatModelId()).toBe("grok-4-6");
+    expect(defaultChatModelId("xai")).toBe("grok-4-6");
+    expect(defaultChatModelId("openrouter")).toBe("claude-haiku-4-5");
+    expect(isChatModel(MODELS["grok-4-6"])).toBe(true);
+    expect(isChatModel(MODELS["grok-imagine-image-2"])).toBe(false);
   });
 
   it("includes Grok 4.6 as the flagship with Auto/Fast/Expert/Heavy modes", () => {
@@ -66,19 +85,31 @@ describe("MODELS registry", () => {
   });
 
   it("image generation models are flagged correctly", () => {
-    const image2 = MODELS["grok-imagine-image-2"];
+    const image2 = MODELS[DEFAULT_IMAGE_MODEL_ID];
     expect(image2).toBeDefined();
     expect(image2.supportsImageGeneration).toBe(true);
-    expect(image2.modelId).toBe("grok-imagine-image-2");
+    expect(image2.modelId).toBe(IMAGINE_IMAGE_20_API_ID);
     expect(image2.displayName).toMatch(/2\.0/);
+    expect(image2.pricing.perImage).toBe(0.04);
+
+    const image15 = MODELS["grok-imagine-image-1-5"];
+    expect(image15).toBeDefined();
+    expect(image15.supportsImageGeneration).toBe(true);
+    expect(image15.modelId).toBe(IMAGINE_IMAGE_15_API_ID);
+    expect(image15.displayName).toMatch(/1\.5/);
+    expect(image15.pricing.perImage).toBe(0.05);
+    expect(isChatModel(image15)).toBe(false);
 
     const imageMod = MODELS["grok-imagine"];
     expect(imageMod).toBeDefined();
     expect(imageMod.supportsImageGeneration).toBe(true);
 
-    const quality = MODELS["grok-imagine-quality"];
-    expect(quality?.supportsImageGeneration).toBe(true);
-    expect(quality?.modelId).toBe("grok-imagine-image-quality");
+    expect(resolveImageModelId("grok-imagine-quality")).toBe("grok-imagine-image-1-5");
+    expect(resolveImageModel("grok-imagine-quality").id).toBe("grok-imagine-image-1-5");
+    expect(imagineImageVersionLabel(image2)).toBe("2.0");
+    expect(imagineImageVersionLabel(image15)).toBe("1.5");
+    expect(imagineImageAltModel(image2)?.id).toBe("grok-imagine-image-1-5");
+    expect(imagineImageAltModel(image15)?.id).toBe(DEFAULT_IMAGE_MODEL_ID);
   });
 
   it("video generation models are flagged correctly", () => {

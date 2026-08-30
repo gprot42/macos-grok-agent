@@ -8,8 +8,29 @@ export const GROK_46_THINKING_OPTIONS = [
   { value: "xhigh", label: "Heavy" },
 ] as const;
 
+/** Chat tab default — xAI flagship. Used for first launch and persist fallbacks. */
+export const DEFAULT_CHAT_MODEL_ID = "grok-4-6";
+
+/** Image tab default — Imagine Image 2.0 (store id). */
+export const DEFAULT_IMAGE_MODEL_ID = "grok-imagine-image-2";
+
+/** Official xAI API model id for Imagine Image 2.0. */
+export const IMAGINE_IMAGE_20_API_ID = "grok-imagine-image-2.0";
+
+/** Official xAI API model id for Imagine Image 1.5 (Quality Mode). */
+export const IMAGINE_IMAGE_15_API_ID = "grok-imagine-image-quality";
+
 export function isGrok46(model?: ModelConfig | null): boolean {
   return model?.modelId === "grok-4.6" || model?.id === "grok-4-6";
+}
+
+export function isChatModel(model: ModelConfig): boolean {
+  return (
+    !model.supportsImageGeneration &&
+    !model.supportsVideoGeneration &&
+    !model.supportsTextToSpeech &&
+    !model.supportsVoiceAgent
+  );
 }
 
 export function getThinkingOptions(
@@ -214,29 +235,29 @@ export const MODELS: Record<string, ModelConfig> = {
   "grok-imagine-image-2": {
     id: "grok-imagine-image-2",
     publisher: "xai",
-    modelId: "grok-imagine-image-2",
+    modelId: IMAGINE_IMAGE_20_API_ID,
     displayName: "Grok Imagine Image 2.0",
     maxInputTokens: 32768,
     maxOutputTokens: 8192,
     icon: "image",
     color: "#00CFFF",
     description:
-      "Imagine Image 2.0 — next-gen generation & editing: precise instruction following, crisp text/layout, multi-ref edits (default)",
-    pricing: { input: 0, output: 0, perImage: 0.05 },
+      "Imagine Image 2.0 — next-gen generation & editing: precise instruction following, crisp text/layout, multi-ref edits (default, $0.04/image)",
+    pricing: { input: 0, output: 0, perImage: 0.04 },
     supportsImageGeneration: true,
     endpointSupport: ["xai"],
   },
-  "grok-imagine-quality": {
-    id: "grok-imagine-quality",
+  "grok-imagine-image-1-5": {
+    id: "grok-imagine-image-1-5",
     publisher: "xai",
-    modelId: "grok-imagine-image-quality",
-    displayName: "Grok Imagine Quality (1.x)",
+    modelId: IMAGINE_IMAGE_15_API_ID,
+    displayName: "Grok Imagine Image 1.5",
     maxInputTokens: 32768,
     maxOutputTokens: 8192,
     icon: "image",
     color: "#7C3AED",
     description:
-      "Previous Quality Mode (1.x) — higher fidelity generation & edit (~$0.05/image 1K, ~$0.07 2K). Prefer Image 2.0 for new work.",
+      "Imagine Image 1.5 — previous Quality Mode (API: grok-imagine-image-quality, ~$0.05/image). Prefer Image 2.0 for new work.",
     pricing: { input: 0, output: 0, perImage: 0.05 },
     supportsImageGeneration: true,
     endpointSupport: ["xai"],
@@ -468,3 +489,46 @@ export const ENDPOINT_URLS = {
   xai: "https://api.x.ai/v1",
   kilocode: "https://api.kilocode.ai/v1",
 };
+
+/** Default chat model for an endpoint. xAI always lands on Grok 4.6. */
+export function defaultChatModelId(endpoint?: string): string {
+  if (!endpoint || endpoint === "xai") return DEFAULT_CHAT_MODEL_ID;
+  const first = Object.values(MODELS).find(
+    (m) => m.endpointSupport.includes(endpoint as EndpointType) && isChatModel(m),
+  );
+  return first?.id ?? DEFAULT_CHAT_MODEL_ID;
+}
+
+const IMAGE_MODEL_ALIASES: Record<string, string> = {
+  "grok-imagine-quality": "grok-imagine-image-1-5",
+};
+
+export function resolveImageModelId(id?: string | null): string {
+  const mapped = id ? (IMAGE_MODEL_ALIASES[id] ?? id) : DEFAULT_IMAGE_MODEL_ID;
+  return MODELS[mapped] ? mapped : DEFAULT_IMAGE_MODEL_ID;
+}
+
+export function resolveImageModel(id?: string | null): ModelConfig {
+  return MODELS[resolveImageModelId(id)] ?? MODELS[DEFAULT_IMAGE_MODEL_ID];
+}
+
+export function imagineImageVersionLabel(model?: ModelConfig | null): "2.0" | "1.5" | "Legacy" {
+  if (!model) return "2.0";
+  if (model.id === DEFAULT_IMAGE_MODEL_ID || model.modelId === IMAGINE_IMAGE_20_API_ID) {
+    return "2.0";
+  }
+  if (
+    model.id === "grok-imagine-image-1-5" ||
+    model.id === "grok-imagine-quality" ||
+    model.modelId === IMAGINE_IMAGE_15_API_ID
+  ) {
+    return "1.5";
+  }
+  return "Legacy";
+}
+
+/** Alt Imagine model for "redraw with…" — 2.0 ↔ 1.5. */
+export function imagineImageAltModel(model?: ModelConfig | null): ModelConfig | undefined {
+  if (imagineImageVersionLabel(model) === "2.0") return MODELS["grok-imagine-image-1-5"];
+  return MODELS[DEFAULT_IMAGE_MODEL_ID];
+}

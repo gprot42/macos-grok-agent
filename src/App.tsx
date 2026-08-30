@@ -12,7 +12,14 @@ import {
   GrokVideoPanel,
 } from "./components";
 import { useSettings, useChat, useSubAgent } from "./hooks";
-import { MODELS } from "@shared/constants/models";
+import {
+  DEFAULT_CHAT_MODEL_ID,
+  MODELS,
+  defaultChatModelId,
+  imagineImageAltModel,
+  imagineImageVersionLabel,
+  resolveImageModel,
+} from "@shared/constants/models";
 import { EndpointType, ThemeMode, ChatSession, ResolvedXaiAuth } from "@shared/types";
 import { ErrorBoundary } from "@shared/components/ErrorBoundary";
 import { ToastContainer, useToast } from "@shared/components/Toast";
@@ -308,13 +315,14 @@ function App() {
   }
 
   // Guard: persisted model ID may no longer exist after a model was removed/renamed
-  const currentModel = MODELS[selectedModel] ?? Object.values(MODELS).find(
-    (m) => m.endpointSupport.includes(selectedEndpoint) &&
-           !m.supportsImageGeneration && !m.supportsVideoGeneration &&
-           !m.supportsTextToSpeech && !m.supportsVoiceAgent
-  );
-  const selectedImageModelConfig = MODELS[selectedImageModel] ?? MODELS["grok-imagine-image-2"];
+  const currentModel =
+    MODELS[selectedModel] ??
+    MODELS[defaultChatModelId(selectedEndpoint)] ??
+    MODELS[DEFAULT_CHAT_MODEL_ID];
+  const selectedImageModelConfig = resolveImageModel(selectedImageModel);
   const selectedVideoModelConfig = MODELS[selectedVideoModel] ?? MODELS["grok-imagine-video-1-5"];
+  const imageVersionLabel = imagineImageVersionLabel(selectedImageModelConfig);
+  const imageAltModel = imagineImageAltModel(selectedImageModelConfig);
 
   return (
     <ErrorBoundary>
@@ -352,11 +360,7 @@ function App() {
               </select>
               <span className="inline-flex items-center gap-1.5 text-[11px] font-mono theme-text-muted">
                 <span className="px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-600 dark:text-cyan-300 font-semibold not-italic tracking-wide">
-                  {selectedImageModelConfig.id === "grok-imagine-image-2"
-                    ? "2.0"
-                    : selectedImageModelConfig.id === "grok-imagine-quality"
-                      ? "1.x"
-                      : "Legacy"}
+                  {imageVersionLabel}
                 </span>
                 <span className="truncate hidden sm:inline">{selectedImageModelConfig.modelId}</span>
               </span>
@@ -456,16 +460,9 @@ function App() {
               imageModelId={selectedImageModelConfig.modelId}
               imageModelName={selectedImageModelConfig.displayName}
               imagePerImageCost={selectedImageModelConfig.pricing?.perImage}
-              altModelId={
-                selectedImageModelConfig.id === "grok-imagine-image-2"
-                  ? MODELS["grok-imagine-quality"]?.modelId
-                  : MODELS["grok-imagine-image-2"]?.modelId
-              }
-              altModelName={
-                selectedImageModelConfig.id === "grok-imagine-image-2"
-                  ? MODELS["grok-imagine-quality"]?.displayName
-                  : MODELS["grok-imagine-image-2"]?.displayName
-              }
+              imageModelVersion={imageVersionLabel}
+              altModelId={imageAltModel?.modelId}
+              altModelName={imageAltModel?.displayName}
             />
           </div>
 
@@ -768,7 +765,7 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
                  <li>• Memory - Claude models remember across conversations</li>
                  <li>• Grok 4.6 Mode — Auto, Fast, Expert, or Heavy reasoning</li>
                  <li>• Deep Thinking - Extended reasoning for complex problems</li>
-                 <li>• Image Generation - Create images with Grok Imagine Image 2.0 (Quality 1.x &amp; Standard available)</li>
+                 <li>• Image Generation - Create images with Grok Imagine Image 2.0 (Image 1.5 &amp; Standard available)</li>
                </ul>
              </div>
 
@@ -822,9 +819,9 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
               <div>
                 <h5 className="text-sm font-semibold text-emerald-800 dark:text-emerald-200 mb-1">Image generation (per image)</h5>
                 <ul className="text-sm text-emerald-700 dark:text-emerald-300 space-y-0.5">
-                  <li>• <strong>grok-imagine-image-2</strong> (Image 2.0, default) — next-gen Quality Mode; see pricing page</li>
-                  <li>• <strong>grok-imagine-image-quality</strong> (1.x) — ~$0.05 / image (1K) · ~$0.07 (2K)</li>
-                  <li>• <strong>grok-imagine-image</strong> (legacy standard) — ~$0.02 / image</li>
+                  <li>• <strong>grok-imagine-image-2.0</strong> (Image 2.0, default) — $0.04 / image</li>
+                  <li>• <strong>grok-imagine-image-quality</strong> (Image 1.5) — $0.05 / image</li>
+                  <li>• <strong>grok-imagine-image</strong> (legacy standard) — $0.02 / image</li>
                   <li>• Input images (editing) are also charged per image</li>
                 </ul>
               </div>

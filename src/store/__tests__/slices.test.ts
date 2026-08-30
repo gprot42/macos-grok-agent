@@ -77,8 +77,10 @@ describe("ModelSlice", () => {
   it("setSelectedImageModel switches Imagine version", () => {
     useAppStore.getState().setSelectedImageModel("grok-imagine-image-2");
     expect(useAppStore.getState().selectedImageModel).toBe("grok-imagine-image-2");
+    useAppStore.getState().setSelectedImageModel("grok-imagine-image-1-5");
+    expect(useAppStore.getState().selectedImageModel).toBe("grok-imagine-image-1-5");
     useAppStore.getState().setSelectedImageModel("grok-imagine-quality");
-    expect(useAppStore.getState().selectedImageModel).toBe("grok-imagine-quality");
+    expect(useAppStore.getState().selectedImageModel).toBe("grok-imagine-image-1-5");
   });
 
   it("setSelectedModel updates model and resets grounding to model default", () => {

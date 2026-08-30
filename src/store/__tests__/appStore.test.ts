@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { useAppStore } from "../appStore";
+import { useAppStore, migratePersistedAppState } from "../appStore";
 import { MODELS } from "@shared/constants/models";
 
 // Reset Zustand store state between tests
@@ -104,5 +104,52 @@ describe("useAppStore – model/endpoint config", () => {
   it("setCustomUrl updates custom URL", () => {
     useAppStore.getState().setCustomUrl("http://localhost:11434");
     expect(useAppStore.getState().customUrl).toBe("http://localhost:11434");
+  });
+});
+
+describe("migratePersistedAppState", () => {
+  it("promotes the previous xAI chat default (Grok 4.3) to Grok 4.6", () => {
+    const next = migratePersistedAppState(
+      {
+        selectedModel: "grok-4-3",
+        selectedEndpoint: "xai",
+        thinkingLevel: "none",
+      },
+      0,
+    );
+    expect(next.selectedModel).toBe("grok-4-6");
+  });
+
+  it("keeps an explicit non-default xAI model", () => {
+    const next = migratePersistedAppState(
+      {
+        selectedModel: "grok-4-1",
+        selectedEndpoint: "xai",
+      },
+      0,
+    );
+    expect(next.selectedModel).toBe("grok-4-1");
+  });
+
+  it("falls back to Grok 4.6 when the stored model no longer exists", () => {
+    const next = migratePersistedAppState(
+      {
+        selectedModel: "grok-deleted",
+        selectedEndpoint: "xai",
+      },
+      0,
+    );
+    expect(next.selectedModel).toBe("grok-4-6");
+  });
+
+  it("does not re-migrate after version 1", () => {
+    const next = migratePersistedAppState(
+      {
+        selectedModel: "grok-4-3",
+        selectedEndpoint: "xai",
+      },
+      1,
+    );
+    expect(next.selectedModel).toBe("grok-4-3");
   });
 });

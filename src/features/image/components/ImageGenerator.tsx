@@ -8,6 +8,7 @@ import { ArrowRight, UploadCloud } from "lucide-react";
 
 // ── Aspect ratio data ─────────────────────────────────────────────────────────
 const ASPECT_RATIOS = [
+  { value: "auto", name: "Auto",           bestFor: "Model picks the best ratio",   dims: "API default" },
   { value: "1:1",  name: "Square",         bestFor: "General use, social media",    dims: "1024×1024" },
   { value: "16:9", name: "Landscape",      bestFor: "Wallpapers, YouTube",          dims: "1344×768"  },
   { value: "9:16", name: "Portrait",       bestFor: "Instagram Stories, TikTok",    dims: "768×1344"  },
@@ -138,6 +139,8 @@ interface ImageGeneratorProps {
   imageModelName?: string;
   /** Estimated per-image cost from the model config (shown in empty state). */
   imagePerImageCost?: number;
+  /** Short version label shown in empty/loading states ("2.0" | "1.5" | "Legacy"). */
+  imageModelVersion?: string;
   altModelId?: string;
   altModelName?: string;
 }
@@ -154,7 +157,8 @@ export function ImageGenerator({
   onClearImages,
   imageModelId,
   imageModelName,
-  imagePerImageCost: _imagePerImageCost,
+  imagePerImageCost,
+  imageModelVersion,
   altModelId,
   altModelName,
 }: ImageGeneratorProps) {
@@ -261,7 +265,7 @@ export function ImageGenerator({
       editImageMimeType: sourceImage?.mimeType,
       modelId: imageModelId,
       searchMode: isRatioMode ? undefined : (searchMode === "none" ? undefined : searchMode),
-      aspectRatio: aspectRatio !== "1:1" ? aspectRatio : undefined,
+      aspectRatio,
       region: region !== "auto" ? region : undefined,
       resolution,
       n: countOpt.n,
@@ -472,16 +476,18 @@ export function ImageGenerator({
             <div className="text-center">
               <div className="flex items-center justify-center gap-2 flex-wrap">
                 <div className="text-2xl font-semibold">{imageModelName || "Grok Imagine Image 2.0"}</div>
-                {(imageModelId === "grok-imagine-image-2" || !imageModelId) && (
+                {imageModelVersion && imageModelVersion !== "Legacy" && (
                   <span className="px-2 py-0.5 rounded-md text-xs font-bold tracking-wide bg-cyan-500/20 text-cyan-600 dark:text-cyan-300 ring-1 ring-cyan-500/40">
-                    2.0
+                    {imageModelVersion}
                   </span>
                 )}
               </div>
               <div className="text-xl mt-1">Generate and edit images with Grok Imagine</div>
               <div className="text-sm font-mono text-gray-400 dark:text-tokyo-muted mt-1.5">
-                model: {imageModelId || "grok-imagine-image-2"} · {resolution.toUpperCase()}
-                {" · "}{resolution === "2k" ? "~$0.07" : "~$0.05"}/image
+                model: {imageModelId || "grok-imagine-image-2.0"} · {resolution.toUpperCase()}
+                {imagePerImageCost != null && (
+                  <> · ~${imagePerImageCost.toFixed(2)}/image</>
+                )}
                 {region !== "auto" && <> · {region}</>}
               </div>
               <div className="text-base mt-4 max-w-lg text-center leading-relaxed text-gray-500">
@@ -745,10 +751,13 @@ export function ImageGenerator({
                 <div className="flex flex-col items-center gap-1 min-w-0">
                   <div className="text-xs font-semibold theme-text-muted uppercase tracking-wider">After</div>
                   {(() => {
-                    const r = ASPECT_RATIOS.find((x) => x.value === aspectRatio) ?? ASPECT_RATIOS[0];
+                    const r = ASPECT_RATIOS.find((x) => x.value === aspectRatio) ?? ASPECT_RATIOS[1];
                     const [wPart, hPart] = r.value.split(":").map(Number);
                     const boxH = 80;
-                    const boxW = Math.round((wPart / hPart) * boxH);
+                    const ratioW = Number.isFinite(wPart) && Number.isFinite(hPart) && hPart > 0
+                      ? wPart / hPart
+                      : 1;
+                    const boxW = Math.round(ratioW * boxH);
                     return (
                       <div
                         className="rounded-lg border-2 border-dashed border-indigo-400 dark:border-indigo-500 bg-indigo-100/50 dark:bg-indigo-900/20 flex items-center justify-center"

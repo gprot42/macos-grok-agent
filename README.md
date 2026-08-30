@@ -22,7 +22,7 @@ A desktop AI assistant for interacting with multiple Large Language Models via *
 
 - **Grok 4.6** — xAI flagship with Auto / Fast / Expert / Heavy modes, 500k context, X search, and reasoning
 - **Grok 4.x** — earlier Grok models (4.3, 4.20, 4.1) with X search and built-in reasoning
-- **Grok Imagine Image 2.0** — Image generation and editing (default; Quality 1.x & Standard also available)
+- **Grok Imagine Image 2.0** — Image generation and editing (default; Image 1.5 & Standard also available)
 - **Grok Voice** — Text-to-speech (27 voices) and **Voice Think Fast 2.0** live speech-to-speech agent
 - **Grok Video** — Text-to-video generation
 - **Claude 4 Opus / Sonnet / Haiku** — Anthropic's latest models (via OpenRouter or Kilo Code)
@@ -36,7 +36,7 @@ A desktop AI assistant for interacting with multiple Large Language Models via *
 - **Multiple Endpoints**: xAI, OpenRouter, Kilo Code, Anthropic, OpenAI, Custom
 - **xAI auth choice**: prepaid **API key** from [console.x.ai](https://console.x.ai) **or** **SuperGrok / SuperGrok Heavy** subscription via device-code OAuth (same OIDC client as Grok Build). Import an existing `grok login` session from `~/.grok/auth.json`, or sign in from Settings. OAuth tokens are AES-encrypted locally.
 - **X Search**: Real-time search on X.com via Grok models
-- **Image / Voice / Video Generation**: Grok Imagine Image 2.0, Voice TTS, Think Fast live agent, Video 1.5
+- **Image / Voice / Video Generation**: Grok Imagine Image 2.0 / 1.5, Voice TTS, Think Fast live agent, Video 1.5
 - **File Attachments**: Text, images, PDFs with analysis
 - **Token Tracking**: Real-time usage with cost estimation
 - **Project Management**: Organize outputs into folders and sessions

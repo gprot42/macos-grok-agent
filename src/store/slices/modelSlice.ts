@@ -1,5 +1,12 @@
 import type { StateCreator } from "zustand";
-import { MODELS, resolveThinkingLevel } from "@shared/constants/models";
+import {
+  DEFAULT_CHAT_MODEL_ID,
+  DEFAULT_IMAGE_MODEL_ID,
+  MODELS,
+  defaultChatModelId,
+  resolveImageModelId,
+  resolveThinkingLevel,
+} from "@shared/constants/models";
 import type { EndpointType } from "@shared/types";
 
 export interface ModelSlice {
@@ -30,9 +37,9 @@ export interface ModelSlice {
 }
 
 export const createModelSlice: StateCreator<ModelSlice> = (set, get) => ({
-  selectedModel: "grok-4-6",
+  selectedModel: DEFAULT_CHAT_MODEL_ID,
   selectedEndpoint: "xai",
-  selectedImageModel: "grok-imagine-image-2",
+  selectedImageModel: DEFAULT_IMAGE_MODEL_ID,
   selectedVideoModel: "grok-imagine-video-1-5",
   use1MContext: false,
   useMemory: false,
@@ -56,15 +63,7 @@ export const createModelSlice: StateCreator<ModelSlice> = (set, get) => ({
     const current = MODELS[selectedModel];
     let newModel = selectedModel;
     if (current && !current.endpointSupport.includes(ep)) {
-      const first = Object.values(MODELS).find(
-        (m) =>
-          m.endpointSupport.includes(ep) &&
-          !m.supportsImageGeneration &&
-          !m.supportsVideoGeneration &&
-          !m.supportsTextToSpeech &&
-          !m.supportsVoiceAgent
-      );
-      if (first) newModel = first.id;
+      newModel = defaultChatModelId(ep);
     }
     set({
       selectedEndpoint: ep,
@@ -73,7 +72,7 @@ export const createModelSlice: StateCreator<ModelSlice> = (set, get) => ({
     });
   },
 
-  setSelectedImageModel: (id) => set({ selectedImageModel: id }),
+  setSelectedImageModel: (id) => set({ selectedImageModel: resolveImageModelId(id) }),
   setSelectedVideoModel: (id) => set({ selectedVideoModel: id }),
   setUse1MContext: (v) => set({ use1MContext: v }),
   setUseMemory: (v) => set({ useMemory: v }),
