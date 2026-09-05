@@ -33,7 +33,7 @@ type VideoResolution = "480p" | "720p" | "1080p";
 const VIDEO_RESOLUTIONS: { value: VideoResolution; label: string; hint: string }[] = [
   { value: "480p", label: "480p", hint: "Standard definition, faster / cheaper" },
   { value: "720p", label: "720p", hint: "HD quality" },
-  { value: "1080p", label: "1080p", hint: "Full HD (uses Video 1.5)" },
+  { value: "1080p", label: "1080p", hint: "Full HD (uses Video 1.5). SuperGrok: depends on your plan — Heavy includes it" },
 ];
 
 const VIDEO_15_MODEL = "grok-imagine-video-1.5";
@@ -61,7 +61,7 @@ const MODEL_COMPARE_ROWS: { label: string; legacy: string; v15: string }[] = [
     legacy: "Slower (e.g. ~40s+ for short 720p clips)",
     v15: "Faster (e.g. ~25s for 6s 720p on Fast path)",
   },
-  { label: "Resolutions", legacy: "480p, 720p", v15: "480p, 720p, 1080p (T2V + I2V)" },
+  { label: "Resolutions", legacy: "480p, 720p", v15: "480p, 720p, 1080p (T2V + I2V; 1080p on SuperGrok is plan-gated — Heavy includes it)" },
   { label: "Duration", legacy: "About 1–15s (API range)", v15: "About 1–15s" },
   { label: "Audio", legacy: "Native video-audio model", v15: "Improved native audio; voice refs (API)" },
   { label: "Pricing (approx.)", legacy: "~$0.05 / sec", v15: "~$0.08 / sec (higher at 1080p)" },
@@ -186,12 +186,15 @@ interface GrokVideoPanelProps {
   apiKey: string;
   modelId?: string;
   modelDisplayName?: string;
+  /** True when Settings auth is SuperGrok / SuperGrok Heavy OAuth (1080p is plan-gated). */
+  isSuperGrok?: boolean;
 }
 
 export function GrokVideoPanel({
   apiKey,
   modelId = VIDEO_15_MODEL,
   modelDisplayName: _modelDisplayName = "Grok Imagine Video 1.5",
+  isSuperGrok = false,
 }: GrokVideoPanelProps) {
   const modelConfig = Object.values(MODELS).find(m => m.modelId === modelId);
   /** Video 1.5: text-to-video, image-to-video, native 1080p. */
@@ -204,6 +207,13 @@ export function GrokVideoPanel({
   const [resolution, setResolution] = useState<VideoResolution>("720p");
   /** Native soundtrack: Grok Imagine is a video-audio model; default on. */
   const [withAudio, setWithAudio] = useState(true);
+  /**
+   * 1080p trial: always try 1080p first so plans that include it get it; if xAI rejects
+   * it as not included in the plan (SuperGrok non-Heavy), retry at 720p instead of failing.
+   */
+  const [fallback720, setFallback720] = useState(true);
+  /** Set when the last result was served at a different resolution than requested. */
+  const [servedNote, setServedNote] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -285,6 +295,7 @@ export function GrokVideoPanel({
     setError(null);
     setVideoUrl(null);
     setDownloadStatus(null);
+    setServedNote(null);
 
     // 1080p is only on Video 1.5 (T2V + I2V) — upgrade model when needed.
     // Multi-ref clamps to 720p below.
@@ -319,6 +330,8 @@ export function GrokVideoPanel({
         aspectRatio,
         resolution: res,
         withAudio,
+        // Only meaningful for 1080p: retry at 720p when the plan doesn't include 1080p.
+        fallback720p: res === "1080p" ? fallback720 : false,
       };
       if (imageCount === 1) {
         payload.image = sourceImages[0].data;
@@ -337,9 +350,19 @@ export function GrokVideoPanel({
         payload.referenceImages = null;
       }
 
-      const result = await invoke<{ url: string; videoId?: string }>("generate_video", payload);
+      const result = await invoke<{
+        url: string;
+        videoId?: string;
+        resolutionServed?: string;
+        fallbackNote?: string | null;
+      }>("generate_video", payload);
       setVideoUrl(result.url);
-      setProgress("✅ Video ready!");
+      if (result.fallbackNote) {
+        setServedNote(result.fallbackNote);
+        setProgress(`✅ Video ready (served at ${result.resolutionServed ?? "720p"})`);
+      } else {
+        setProgress("✅ Video ready!");
+      }
     } catch (e: unknown) {
       setError(formatInvokeError(e));
       setProgress("");
@@ -542,6 +565,29 @@ export function GrokVideoPanel({
               )}
             </div>
 
+            {/* 1080p on SuperGrok is plan-gated (Heavy includes it). Offer a 720p safety net. */}
+            {resolution === "1080p" && !isReferenceMode && (
+              <div className="flex items-center gap-2 flex-wrap text-[11px] text-muted-foreground">
+                {isSuperGrok ? (
+                  <span>
+                    <span className="font-medium text-foreground">SuperGrok:</span> 1080p depends on your plan —
+                    SuperGrok Heavy includes it. We try 1080p first.
+                  </span>
+                ) : (
+                  <span>1080p is tried first; API-key billing includes it.</span>
+                )}
+                <label className="inline-flex items-center gap-1 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={fallback720}
+                    onChange={(e) => setFallback720(e.target.checked)}
+                    className="h-3 w-3 accent-current"
+                  />
+                  <span>Fall back to 720p if 1080p isn't included</span>
+                </label>
+              </div>
+            )}
+
             <div className="flex items-center gap-1.5">
               <span className="text-xs font-semibold shrink-0">Audio</span>
               <div className="flex items-center gap-0.5 bg-muted rounded-full p-0.5">
@@ -743,6 +789,11 @@ export function GrokVideoPanel({
       {/* Result — stays in the scroll area with the form */}
       {videoUrl && (
         <div className="rounded-xl border border-border bg-card p-3 space-y-2">
+          {servedNote && (
+            <div className="rounded-lg border border-amber-300/70 dark:border-amber-700/70 bg-amber-50 dark:bg-amber-950/40 px-3 py-2 text-xs text-amber-900 dark:text-amber-100">
+              {servedNote}
+            </div>
+          )}
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="text-xs text-green-600 font-medium">Video ready</div>
             <div className="flex items-center gap-2 min-w-0">

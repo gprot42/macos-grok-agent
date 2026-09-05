@@ -339,11 +339,16 @@ async fn generate_image(
     resolution: Option<String>,
     // Number of images to generate (1–12 UI; API max per request is 10). None/0 = Auto (1).
     n: Option<u32>,
+    // "auto" (default, omitted) | "low" | "medium" — billed at the tier served.
+    quality: Option<String>,
+    // Multi-reference editing (Imagine Image 2.0): up to 5 images; overrides `edit_image`.
+    reference_images: Option<Vec<VideoReferenceImage>>,
 ) -> Result<ImageResponse, String> {
     let bearer = resolve_xai_credential_for_request(&api_key).await?;
     api::generate_image(
         prompt, bearer, edit_image, edit_image_mime_type,
         model_id, search_mode, aspect_ratio, region, resolution, n,
+        quality, reference_images,
     )
     .await
 }
@@ -486,8 +491,14 @@ async fn generate_video(
     reference_images: Option<Vec<VideoReferenceImage>>,
     // When true (default), request native audio with the video. When false, silent video.
     with_audio: Option<bool>,
+    // When true and the plan rejects 1080p, retry the same request at 720p.
+    fallback_720p: Option<bool>,
 ) -> Result<serde_json::Value, String> {
     let bearer = resolve_xai_credential_for_request(&api_key).await?;
+    let is_supergrok = {
+        let settings = storage::load_settings().await?.unwrap_or_default();
+        supergrok_auth::normalize_auth_mode(Some(&settings.auth_mode)) == "SUPERGROK_OAUTH"
+    };
     api::generate_video(
         app_handle,
         prompt,
@@ -500,6 +511,8 @@ async fn generate_video(
         image_mime_type,
         reference_images,
         with_audio,
+        fallback_720p,
+        is_supergrok,
     )
     .await
 }

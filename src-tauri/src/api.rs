@@ -437,6 +437,8 @@ fn aspect_ratio_to_dims(ratio: &str) -> (u32, u32) {
         "2:3"   => (768, 1152),
         "4:3"   => (1152, 864),
         "3:4"   => (864, 1152),
+        "21:9"  => (1344, 576),  // ultrawide / cinematic
+        "5:2"   => (1280, 512),  // banner
         _       => (1024, 1024), // 1:1 default
     }
 }
@@ -502,17 +504,68 @@ fn image_n_chunks(total: u32) -> Vec<u32> {
     chunks
 }
 
+/// Max reference images per `/images/edits` request (Imagine Image 2.0 multi-image editing).
+pub const IMAGE_REFERENCE_IMAGES_MAX: usize = 5;
+
+/// Normalise the UI quality value to what the API accepts.
+/// `None` / "" / "auto" → omit the field (API default is `auto`, billed at the tier served).
+fn resolve_image_quality(quality: Option<&str>) -> Option<&'static str> {
+    match quality.map(|q| q.trim().to_ascii_lowercase()).as_deref() {
+        Some("low") => Some("low"),
+        Some("medium") => Some("medium"),
+        Some("high") => Some("high"),
+        _ => None,
+    }
+}
+
+/// POST a JSON payload to an xAI images endpoint and return all b64 images + cost.
+async fn post_images_request(
+    client: &Client,
+    url: &str,
+    api_key: &str,
+    payload: &Value,
+) -> Result<(Vec<String>, f64), String> {
+    let response = client
+        .post(url)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .json(payload)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("API error {}: {}", status, body));
+    }
+
+    let body: Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse response: {}", e))?;
+
+    let cost = ticks_to_usd(&body);
+    let imgs = extract_b64_images(&body);
+    if imgs.is_empty() {
+        return Err("No image data in response".to_string());
+    }
+    Ok((imgs, cost))
+}
+
+#[allow(clippy::too_many_arguments)]
 pub async fn generate_image(
     prompt: String,
     api_key: String,
     edit_image: Option<String>,
-    _edit_image_mime_type: Option<String>,
+    edit_image_mime_type: Option<String>,
     model_id: Option<String>,
     _search_mode: Option<String>,
     aspect_ratio: Option<String>,
     region: Option<String>,
     resolution: Option<String>,
     n: Option<u32>,
+    quality: Option<String>,
+    reference_images: Option<Vec<VideoReferenceImage>>,
 ) -> Result<ImageResponse, String> {
     let client = Client::new();
     let model = model_id.unwrap_or_else(|| "grok-imagine-image-2.0".to_string());
@@ -522,138 +575,109 @@ pub async fn generate_image(
     // "1k" | "2k" — only send when explicitly provided (API defaults to 1k)
     let res_str = resolution.as_deref().unwrap_or("1k");
     let total_n = resolve_image_n(n);
+    // "auto" (default) is omitted; "low" | "medium" are sent explicitly.
+    let quality_str = resolve_image_quality(quality.as_deref());
 
-    if let Some(image_data) = edit_image {
-        // Image editing endpoint — batch when n > 10
-        let url = format!("{}/images/edits", base);
-        let mut all_images: Vec<String> = Vec::new();
-        let mut total_cost = 0.0f64;
-
-        for chunk_n in image_n_chunks(total_n) {
-            info!(
-                "[generate_image] POST {} model={} {}x{} res={} n={} region={:?}",
-                url, model, width, height, res_str, chunk_n, region
-            );
-            let mut payload = json!({
-                "model": model,
-                "prompt": prompt,
-                "image": {
-                    "url": format!("data:image/png;base64,{}", image_data),
-                    "type": "image_url"
-                },
-                "n": chunk_n,
-                "aspect_ratio": ratio,
-                "resolution": res_str,
-                "response_format": "b64_json",
-            });
-            // Official Imagine API uses aspect_ratio; width/height are a fallback.
-            // Omit pixel size when auto so the model can pick the ratio.
-            if ratio != "auto" {
-                payload["width"] = json!(width);
-                payload["height"] = json!(height);
+    // Collect source images: explicit multi-reference list wins, otherwise the
+    // single edit image (if any). Each entry becomes a data-URI.
+    let mut sources: Vec<String> = Vec::new();
+    match reference_images {
+        Some(refs) if !refs.is_empty() => {
+            for img in refs.iter().filter(|r| !r.data.is_empty()) {
+                let mime = img.mime_type.as_deref().unwrap_or("image/png");
+                sources.push(format!("data:{};base64,{}", mime, img.data));
             }
-
-            let response = client
-                .post(&url)
-                .header("Authorization", format!("Bearer {}", api_key))
-                .json(&payload)
-                .send()
-                .await
-                .map_err(|e| format!("Request failed: {}", e))?;
-
-            if !response.status().is_success() {
-                let status = response.status();
-                let body = response.text().await.unwrap_or_default();
-                return Err(format!("API error {}: {}", status, body));
-            }
-
-            let body: Value = response
-                .json()
-                .await
-                .map_err(|e| format!("Failed to parse response: {}", e))?;
-
-            total_cost += ticks_to_usd(&body);
-            let imgs = extract_b64_images(&body);
-            if imgs.is_empty() {
-                return Err("No image data in response".to_string());
-            }
-            all_images.extend(imgs);
         }
-
-        info!(
-            "[generate_image] edit done count={} cost=${:.4}",
-            all_images.len(),
-            total_cost
-        );
-        let first = all_images.first().cloned().unwrap_or_default();
-        Ok(ImageResponse {
-            image: first,
-            images: all_images,
-            cost_usd: total_cost,
-        })
-    } else {
-        // Image generation endpoint — batch when n > 10
-        let url = format!("{}/images/generations", base);
-        let mut all_images: Vec<String> = Vec::new();
-        let mut total_cost = 0.0f64;
-
-        for chunk_n in image_n_chunks(total_n) {
-            info!(
-                "[generate_image] POST {} model={} {}x{} res={} n={} region={:?}",
-                url, model, width, height, res_str, chunk_n, region
-            );
-            let mut payload = json!({
-                "model": model,
-                "prompt": prompt,
-                "n": chunk_n,
-                "aspect_ratio": ratio,
-                "resolution": res_str,
-                "response_format": "b64_json",
-            });
-            if ratio != "auto" {
-                payload["width"] = json!(width);
-                payload["height"] = json!(height);
+        _ => {
+            if let Some(data) = edit_image.filter(|d| !d.is_empty()) {
+                let mime = edit_image_mime_type.as_deref().unwrap_or("image/png");
+                sources.push(format!("data:{};base64,{}", mime, data));
             }
-
-            let response = client
-                .post(&url)
-                .header("Authorization", format!("Bearer {}", api_key))
-                .json(&payload)
-                .send()
-                .await
-                .map_err(|e| format!("Request failed: {}", e))?;
-
-            if !response.status().is_success() {
-                let status = response.status();
-                let body = response.text().await.unwrap_or_default();
-                return Err(format!("API error {}: {}", status, body));
-            }
-
-            let body: Value = response
-                .json()
-                .await
-                .map_err(|e| format!("Failed to parse response: {}", e))?;
-
-            total_cost += ticks_to_usd(&body);
-            let imgs = extract_b64_images(&body);
-            if imgs.is_empty() {
-                return Err("No image data in response".to_string());
-            }
-            all_images.extend(imgs);
         }
-
-        info!(
-            "[generate_image] generation done count={} cost=${:.4}",
-            all_images.len(),
-            total_cost
-        );
-        let first = all_images.first().cloned().unwrap_or_default();
-        Ok(ImageResponse {
-            image: first,
-            images: all_images,
-            cost_usd: total_cost,
-        })
     }
+    if sources.len() > IMAGE_REFERENCE_IMAGES_MAX {
+        return Err(format!(
+            "Too many reference images ({}). Maximum is {} per edit request.",
+            sources.len(),
+            IMAGE_REFERENCE_IMAGES_MAX
+        ));
+    }
+
+    let is_edit = !sources.is_empty();
+    let url = if is_edit {
+        format!("{}/images/edits", base)
+    } else {
+        format!("{}/images/generations", base)
+    };
+
+    let mut all_images: Vec<String> = Vec::new();
+    let mut total_cost = 0.0f64;
+
+    // Batch when n > 10 (API max per request).
+    for chunk_n in image_n_chunks(total_n) {
+        info!(
+            "[generate_image] POST {} model={} {}x{} res={} quality={} n={} refs={} region={:?}",
+            url,
+            model,
+            width,
+            height,
+            res_str,
+            quality_str.unwrap_or("auto"),
+            chunk_n,
+            sources.len(),
+            region
+        );
+        let mut payload = json!({
+            "model": model,
+            "prompt": prompt,
+            "n": chunk_n,
+            "aspect_ratio": ratio,
+            "resolution": res_str,
+            "response_format": "b64_json",
+        });
+        if let Some(q) = quality_str {
+            payload["quality"] = json!(q);
+        }
+        // Official Imagine API uses aspect_ratio; width/height are a fallback.
+        // Omit pixel size when auto so the model can pick the ratio.
+        if ratio != "auto" {
+            payload["width"] = json!(width);
+            payload["height"] = json!(height);
+        }
+        if is_edit {
+            if sources.len() == 1 {
+                payload["image"] = json!({
+                    "url": sources[0],
+                    "type": "image_url"
+                });
+            } else {
+                // Multi-reference editing: `images` is mutually exclusive with `image`.
+                // Prompts refer to entries as <IMAGE_0>, <IMAGE_1>, …
+                let refs: Vec<Value> = sources
+                    .iter()
+                    .map(|u| json!({ "url": u, "type": "image_url" }))
+                    .collect();
+                payload["images"] = json!(refs);
+            }
+        }
+
+        let (imgs, cost) = post_images_request(&client, &url, &api_key, &payload).await?;
+        total_cost += cost;
+        all_images.extend(imgs);
+    }
+
+    info!(
+        "[generate_image] {} done count={} cost=${:.4}",
+        if is_edit { "edit" } else { "generation" },
+        all_images.len(),
+        total_cost
+    );
+    let first = all_images.first().cloned().unwrap_or_default();
+    Ok(ImageResponse {
+        image: first,
+        images: all_images,
+        cost_usd: total_cost,
+    })
 }
 
 /// True when the API is rejecting the call for prepaid credits / spend limit.
@@ -811,6 +835,141 @@ fn is_uuid_str(s: &str) -> bool {
 /// Max reference images for Grok Imagine video (xAI reference-to-video limit).
 const VIDEO_REFERENCE_IMAGES_MAX: usize = 7;
 
+enum VideoSubmitError {
+    /// Network / transport failure (already formatted for the user).
+    Transport(String),
+    /// Non-2xx response: status + raw body.
+    Api(reqwest::StatusCode, String),
+}
+
+/// POST one video generation request. Handles the "audio flags rejected → retry
+/// without them" dance so callers only see the final outcome.
+async fn submit_video_request(
+    client: &Client,
+    url: &str,
+    api_key: &str,
+    payload: Value,
+) -> Result<Value, VideoSubmitError> {
+    let send = |p: Value| async move {
+        client
+            .post(url)
+            .header("Authorization", format!("Bearer {}", api_key))
+            .json(&p)
+            .send()
+            .await
+            .map_err(|e| VideoSubmitError::Transport(format!("Request failed: {}", e)))
+    };
+
+    let mut response = send(payload.clone()).await?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        let body_lower = body.to_lowercase();
+        let audio_field_rejected = status.as_u16() == 400
+            && (body_lower.contains("with_audio")
+                || body_lower.contains("generate_audio")
+                || body_lower.contains("unknown field")
+                || body_lower.contains("extra field"));
+        if !audio_field_rejected {
+            return Err(VideoSubmitError::Api(status, body));
+        }
+        info!(
+            "[generate_video] Audio flags rejected ({}), retrying without them",
+            status
+        );
+        let mut retry_payload = payload;
+        if let Some(obj) = retry_payload.as_object_mut() {
+            obj.remove("with_audio");
+            obj.remove("generate_audio");
+        }
+        response = send(retry_payload).await?;
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(VideoSubmitError::Api(status, body));
+        }
+    }
+    response
+        .json::<Value>()
+        .await
+        .map_err(|e| VideoSubmitError::Transport(format!("Failed to parse response: {}", e)))
+}
+
+/// True when the API refused the request because the account's plan / entitlement
+/// does not include the requested resolution (as opposed to moderation, credits, or
+/// a malformed request).
+fn is_plan_resolution_error(status: reqwest::StatusCode, body: &str) -> bool {
+    let (code, message) = extract_api_error_parts(body);
+    if is_credits_or_spend_limit_error(&code, &message) {
+        return false;
+    }
+    let l = format!("{} {} {}", code, message, body).to_lowercase();
+    if l.contains("moderat") {
+        return false;
+    }
+    let plan_words = [
+        "plan",
+        "upgrade",
+        "subscription",
+        "entitle",
+        "tier",
+        "not available",
+        "not allowed",
+        "not permitted",
+        "not supported for",
+        "permission",
+        "resolution",
+        "1080",
+    ];
+    let mentions_plan = plan_words.iter().any(|w| l.contains(w));
+    matches!(status.as_u16(), 402 | 403) || (status.as_u16() == 400 && mentions_plan)
+}
+
+/// Pull `code` / `message` from an xAI error body (either shape).
+fn extract_api_error_parts(body: &str) -> (String, String) {
+    if let Ok(v) = serde_json::from_str::<Value>(body) {
+        let code = v
+            .get("code")
+            .and_then(|c| c.as_str())
+            .or_else(|| v.get("error").and_then(|e| e.get("code")).and_then(|c| c.as_str()))
+            .unwrap_or("")
+            .to_string();
+        let message = v
+            .get("error")
+            .and_then(|e| e.as_str())
+            .or_else(|| v.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str()))
+            .or_else(|| v.get("message").and_then(|m| m.as_str()))
+            .unwrap_or("")
+            .to_string();
+        return (code, message);
+    }
+    (String::new(), body.to_string())
+}
+
+fn hd_fallback_note(is_supergrok: bool) -> String {
+    if is_supergrok {
+        "1080p isn't included in your current SuperGrok plan — this video was served at 720p. \
+         SuperGrok Heavy (or an xAI API key with prepaid credits) includes 1080p."
+            .to_string()
+    } else {
+        "1080p was rejected for this account — this video was served at 720p.".to_string()
+    }
+}
+
+fn hd_plan_user_message(is_supergrok: bool) -> String {
+    if is_supergrok {
+        "1080p isn't included in your current SuperGrok plan.\n\n\
+         • Switch Res to 720p, or turn on \"Fall back to 720p\" next to the 1080p option.\n\
+         • SuperGrok Heavy includes 1080p Grok Imagine video.\n\
+         • Or use an xAI API key (console.x.ai) — API billing includes 1080p."
+            .to_string()
+    } else {
+        "1080p was rejected for this account. Switch Res to 720p, or turn on \
+         \"Fall back to 720p\" next to the 1080p option."
+            .to_string()
+    }
+}
+
 pub async fn generate_video(
     app_handle: tauri::AppHandle,
     prompt: String,
@@ -823,6 +982,10 @@ pub async fn generate_video(
     image_mime_type: Option<String>,
     reference_images: Option<Vec<VideoReferenceImage>>,
     with_audio: Option<bool>,
+    // When true and 1080p is rejected as not included in the plan, retry at 720p.
+    fallback_720p: Option<bool>,
+    // True when the bearer is a SuperGrok / SuperGrok Heavy OAuth token (plan-gated 1080p).
+    is_supergrok: bool,
 ) -> Result<Value, String> {
     let client = Client::new();
     let model = model_id.unwrap_or_else(|| "grok-imagine-video".to_string());
@@ -876,16 +1039,11 @@ pub async fn generate_video(
     };
 
     let url = format!("{}/videos/generations", XAI_ENDPOINT);
-    info!(
-        "[generate_video] POST {} model={} resolution={} has_image={} ref_images={} with_audio={}",
-        url, model, res_str, has_image, ref_count, audio_enabled
-    );
 
-    let mut payload = json!({
+    let mut base_payload = json!({
         "model": model,
         "prompt": prompt,
         "duration": duration_seconds.unwrap_or(10),
-        "resolution": res_str,
         // Native soundtrack: with_audio is the product-facing name; generate_audio is
         // the field used by several xAI video wrappers. Send both for compatibility.
         "with_audio": audio_enabled,
@@ -893,12 +1051,12 @@ pub async fn generate_video(
     });
     if let Some(ref ar) = aspect_ratio {
         if !ar.is_empty() {
-            payload["aspect_ratio"] = json!(ar);
+            base_payload["aspect_ratio"] = json!(ar);
         }
     }
     if has_image {
         let mime = image_mime_type.as_deref().unwrap_or("image/png");
-        payload["image"] = json!({
+        base_payload["image"] = json!({
             "url": format!("data:{};base64,{}", mime, image.as_ref().unwrap()),
             "type": "image_url"
         });
@@ -911,63 +1069,57 @@ pub async fn generate_video(
                 json!({ "url": format!("data:{};base64,{}", mime, img.data) })
             })
             .collect();
-        payload["reference_images"] = json!(ref_payload);
+        base_payload["reference_images"] = json!(ref_payload);
     }
 
-    // Some API revisions accept with_audio / generate_audio; older ones reject
-    // unknown fields. Submit once with audio flags, retry without on 400.
-    let mut response = client
-        .post(&url)
-        .header("Authorization", format!("Bearer {}", api_key))
-        .json(&payload)
-        .send()
-        .await
-        .map_err(|e| format!("Request failed: {}", e))?;
+    // 1080p plan gating: SuperGrok (non-Heavy) plans may not include 1080p yet — only
+    // SuperGrok Heavy and API-key (prepaid) billing are guaranteed to. Try 1080p first
+    // (so users on a plan that does include it get it), and when the API rejects it as a
+    // plan/entitlement problem, optionally fall back to 720p instead of failing.
+    let want_fallback = fallback_720p.unwrap_or(false) && res_str == "1080p";
+    let attempts: Vec<&str> = if want_fallback { vec!["1080p", "720p"] } else { vec![res_str] };
+    let mut body: Option<Value> = None;
+    let mut resolution_served = res_str.to_string();
+    let mut fallback_note: Option<String> = None;
 
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        let body_lower = body.to_lowercase();
-        let audio_field_rejected = status.as_u16() == 400
-            && (body_lower.contains("with_audio")
-                || body_lower.contains("generate_audio")
-                || body_lower.contains("unknown field")
-                || body_lower.contains("extra field"));
-
-        if audio_field_rejected {
-            info!(
-                "[generate_video] Audio flags rejected ({}), retrying without them",
-                status
-            );
-            let mut retry_payload = payload.clone();
-            if let Some(obj) = retry_payload.as_object_mut() {
-                obj.remove("with_audio");
-                obj.remove("generate_audio");
+    for (i, res_try) in attempts.iter().enumerate() {
+        let mut payload = base_payload.clone();
+        payload["resolution"] = json!(res_try);
+        info!(
+            "[generate_video] POST {} model={} resolution={} has_image={} ref_images={} with_audio={} supergrok={}",
+            url, model, res_try, has_image, ref_count, audio_enabled, is_supergrok
+        );
+        match submit_video_request(&client, &url, &api_key, payload).await {
+            Ok(v) => {
+                body = Some(v);
+                resolution_served = res_try.to_string();
+                break;
             }
-            response = client
-                .post(&url)
-                .header("Authorization", format!("Bearer {}", api_key))
-                .json(&retry_payload)
-                .send()
-                .await
-                .map_err(|e| format!("Request failed: {}", e))?;
-
-            if !response.status().is_success() {
-                let status = response.status();
-                let body = response.text().await.unwrap_or_default();
-                info!("[generate_video] Submit error {}: {}", status, body);
-                return Err(format_video_api_error("Video request failed", status, &body));
+            Err(VideoSubmitError::Transport(e)) => return Err(e),
+            Err(VideoSubmitError::Api(status, err_body)) => {
+                let is_last = i + 1 == attempts.len();
+                let plan_gated = *res_try == "1080p" && is_plan_resolution_error(status, &err_body);
+                if plan_gated && !is_last {
+                    info!(
+                        "[generate_video] 1080p rejected as plan-gated ({}): {} — retrying at 720p",
+                        status, err_body
+                    );
+                    let _ = app_handle.emit(
+                        "video-progress",
+                        json!({ "message": "1080p isn't included in this plan — retrying at 720p…", "elapsed": 0 }),
+                    );
+                    fallback_note = Some(hd_fallback_note(is_supergrok));
+                    continue;
+                }
+                info!("[generate_video] Submit error {}: {}", status, err_body);
+                if plan_gated {
+                    return Err(hd_plan_user_message(is_supergrok));
+                }
+                return Err(format_video_api_error("Video request failed", status, &err_body));
             }
-        } else {
-            info!("[generate_video] Submit error {}: {}", status, body);
-            return Err(format_video_api_error("Video request failed", status, &body));
         }
     }
-
-    let body: Value = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+    let body = body.ok_or_else(|| "No response from video API".to_string())?;
 
     let request_id = body
         .get("request_id")
@@ -1046,8 +1198,16 @@ Try a different prompt."
                             .and_then(|i| i.as_str())
                             .unwrap_or(&request_id)
                             .to_string();
-                        info!("[generate_video] Done in {}s — url={} id={}", elapsed, url_val, video_id);
-                        return Ok(json!({ "url": url_val, "videoId": video_id }));
+                        info!(
+                            "[generate_video] Done in {}s — url={} id={} served={}",
+                            elapsed, url_val, video_id, resolution_served
+                        );
+                        return Ok(json!({
+                            "url": url_val,
+                            "videoId": video_id,
+                            "resolutionServed": resolution_served,
+                            "fallbackNote": fallback_note,
+                        }));
                     }
                 }
                 return Err("Video succeeded but no URL found".to_string());

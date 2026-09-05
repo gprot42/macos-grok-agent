@@ -35,6 +35,16 @@ interface GenerateImageOptions {
   /** "1k" | "2k" — xAI resolution field */
   resolution?: string;
   /**
+   * "auto" (default) | "low" | "medium" — Imagine Image 2.0 quality tier.
+   * Auto lets xAI pick the tier per request; you are billed at the tier served.
+   */
+  quality?: string;
+  /**
+   * Multi-reference editing (Imagine Image 2.0): up to 5 source images.
+   * When provided, overrides `editImage`. Refer to them in the prompt as <IMAGE_0>, <IMAGE_1>, …
+   */
+  referenceImages?: { data: string; mimeType: string }[];
+  /**
    * How many images to generate. UI values: Auto (1), 4, 8, 12.
    * Pass undefined / 0 for Auto. API max per request is 10; 12 is batched.
    */
@@ -251,6 +261,11 @@ export function useChat() {
         region: options.region || null,
         resolution: options.resolution || null,
         n: options.n && options.n > 0 ? options.n : null,
+        quality: options.quality && options.quality !== "auto" ? options.quality : null,
+        referenceImages:
+          options.referenceImages && options.referenceImages.length > 0
+            ? options.referenceImages
+            : null,
       });
 
       if (cancelledRef.current) return;

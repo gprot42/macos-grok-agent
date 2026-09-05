@@ -17,7 +17,11 @@ export const DEFAULT_IMAGE_MODEL_ID = "grok-imagine-image-2";
 /** Official xAI API model id for Imagine Image 2.0. */
 export const IMAGINE_IMAGE_20_API_ID = "grok-imagine-image-2.0";
 
-/** Official xAI API model id for Imagine Image 1.5 (Quality Mode). */
+/**
+ * Official xAI API model id for Imagine Image 1.5 (Quality Mode).
+ * Retired 2 November 2026: from then on this id serves Image 2.0 at `quality: low`,
+ * $0.01 less per image than 2.0 at auto.
+ */
 export const IMAGINE_IMAGE_15_API_ID = "grok-imagine-image-quality";
 
 export function isGrok46(model?: ModelConfig | null): boolean {
@@ -242,7 +246,7 @@ export const MODELS: Record<string, ModelConfig> = {
     icon: "image",
     color: "#00CFFF",
     description:
-      "Imagine Image 2.0 — next-gen generation & editing: precise instruction following, crisp text/layout, multi-ref edits (default, $0.04/image)",
+      "Imagine Image 2.0 — generation & editing with quality: auto (default), up to 5 reference images per edit, 21:9 / 5:2 widescreen & banner ratios (default, ~$0.04/image, billed at tier served)",
     pricing: { input: 0, output: 0, perImage: 0.04 },
     supportsImageGeneration: true,
     endpointSupport: ["xai"],
@@ -257,23 +261,8 @@ export const MODELS: Record<string, ModelConfig> = {
     icon: "image",
     color: "#7C3AED",
     description:
-      "Imagine Image 1.5 — previous Quality Mode (API: grok-imagine-image-quality, ~$0.05/image). Prefer Image 2.0 for new work.",
-    pricing: { input: 0, output: 0, perImage: 0.05 },
-    supportsImageGeneration: true,
-    endpointSupport: ["xai"],
-  },
-  "grok-imagine": {
-    id: "grok-imagine",
-    publisher: "xai",
-    modelId: "grok-imagine-image",
-    displayName: "Grok Imagine Standard (Legacy)",
-    maxInputTokens: 32768,
-    maxOutputTokens: 8192,
-    icon: "image",
-    color: "#E91E63",
-    description:
-      "Legacy standard image model (~$0.02/image) — being deprecated; use Imagine Image 2.0 for new requests",
-    pricing: { input: 0, output: 0, perImage: 0.02 },
+      "Imagine Image 1.5 — previous Quality Mode (API: grok-imagine-image-quality). Retired 2 Nov 2026: now serves Image 2.0 at quality: low (~$0.03/image). Prefer Image 2.0.",
+    pricing: { input: 0, output: 0, perImage: 0.03 },
     supportsImageGeneration: true,
     endpointSupport: ["xai"],
   },
@@ -501,6 +490,8 @@ export function defaultChatModelId(endpoint?: string): string {
 
 const IMAGE_MODEL_ALIASES: Record<string, string> = {
   "grok-imagine-quality": "grok-imagine-image-1-5",
+  // Removed legacy Standard model — saved selections fall through to the default (Image 2.0).
+  "grok-imagine": DEFAULT_IMAGE_MODEL_ID,
 };
 
 export function resolveImageModelId(id?: string | null): string {

@@ -472,6 +472,7 @@ function App() {
               apiKey={getXaiCredential()}
               modelId={selectedVideoModelConfig.modelId}
               modelDisplayName={selectedVideoModelConfig.displayName}
+              isSuperGrok={settings.authMode === "SUPERGROK_OAUTH"}
             />
           </div>
 
@@ -765,7 +766,7 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
                  <li>• Memory - Claude models remember across conversations</li>
                  <li>• Grok 4.6 Mode — Auto, Fast, Expert, or Heavy reasoning</li>
                  <li>• Deep Thinking - Extended reasoning for complex problems</li>
-                 <li>• Image Generation - Create images with Grok Imagine Image 2.0 (Image 1.5 &amp; Standard available)</li>
+                 <li>• Image Generation - Create &amp; edit images with Grok Imagine Image 2.0: quality auto/low/medium, up to 5 reference images, 21:9 &amp; 5:2 ratios (Image 1.5 also available)</li>
                </ul>
              </div>
 
@@ -819,9 +820,8 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
               <div>
                 <h5 className="text-sm font-semibold text-emerald-800 dark:text-emerald-200 mb-1">Image generation (per image)</h5>
                 <ul className="text-sm text-emerald-700 dark:text-emerald-300 space-y-0.5">
-                  <li>• <strong>grok-imagine-image-2.0</strong> (Image 2.0, default) — $0.04 / image</li>
-                  <li>• <strong>grok-imagine-image-quality</strong> (Image 1.5) — $0.05 / image</li>
-                  <li>• <strong>grok-imagine-image</strong> (legacy standard) — $0.02 / image</li>
+                  <li>• <strong>grok-imagine-image-2.0</strong> (Image 2.0, default) — ~$0.04 / image at quality: auto (billed at the tier served: low for generation, medium for editing)</li>
+                  <li>• <strong>grok-imagine-image-quality</strong> (Image 1.5) — retired 2 Nov 2026; now serves Image 2.0 at quality: low, $0.01 less per image</li>
                   <li>• Input images (editing) are also charged per image</li>
                 </ul>
               </div>

@@ -16,6 +16,8 @@ const ASPECT_RATIOS = [
   { value: "2:3",  name: "Portrait Photo", bestFor: "Vertical photos",              dims: "768×1152"  },
   { value: "4:3",  name: "Standard",       bestFor: "Classic photos",               dims: "1152×864"  },
   { value: "3:4",  name: "Portrait Std",   bestFor: "Vertical standard",            dims: "864×1152"  },
+  { value: "21:9", name: "Ultrawide",      bestFor: "Cinematic, widescreen",        dims: "1344×576"  },
+  { value: "5:2",  name: "Banner",         bestFor: "Headers, web banners",         dims: "1280×512"  },
 ] as const;
 
 type AspectRatioValue = typeof ASPECT_RATIOS[number]["value"];
@@ -113,6 +115,28 @@ const IMAGE_COUNT_OPTIONS = [
 
 type ImageCountValue = (typeof IMAGE_COUNT_OPTIONS)[number]["value"];
 
+/**
+ * Imagine Image 2.0 quality tiers. `auto` (API default) picks the tier per
+ * request to cut latency — currently `low` for generation and `medium` for
+ * editing — and you are billed at the tier actually served.
+ */
+const IMAGE_QUALITY_OPTIONS = [
+  { value: "auto" as const,   label: "Auto",   hint: "API default — picks low for generation, medium for editing; billed at tier served" },
+  { value: "low" as const,    label: "Low",    hint: "Fastest / cheapest tier" },
+  { value: "medium" as const, label: "Medium", hint: "Higher fidelity tier (default for edits under Auto)" },
+] as const;
+
+type ImageQualityValue = (typeof IMAGE_QUALITY_OPTIONS)[number]["value"];
+
+/** Max source images per edit request (Imagine Image 2.0 multi-image editing). */
+const MAX_REFERENCE_IMAGES = 5;
+
+interface SourceImage {
+  data: string;
+  name: string;
+  mimeType: string;
+}
+
 interface ImageGeneratorProps {
   apiKey: string;
   onGenerateImage: (options: {
@@ -126,6 +150,10 @@ interface ImageGeneratorProps {
     region?: string;
     resolution?: string;
     n?: number;
+    /** "auto" | "low" | "medium" */
+    quality?: string;
+    /** Up to 5 source images for multi-reference editing (overrides editImage). */
+    referenceImages?: { data: string; mimeType: string }[];
   }) => Promise<string[] | undefined>;
   generatedImages: string[];
   /** Actual per-image cost in USD returned by the API (index-aligned with generatedImages). */
@@ -165,11 +193,9 @@ export function ImageGenerator({
   const [prompt, setPrompt] = useState("");
   const [lastPrompt, setLastPrompt] = useState("");
   const [imagePrompts, setImagePrompts] = useState<string[]>([]);
-  const [sourceImage, setSourceImage] = useState<{
-    data: string;
-    name: string;
-    mimeType: string;
-  } | null>(null);
+  const [sourceImage, setSourceImage] = useState<SourceImage | null>(null);
+  /** Additional reference images (2nd…5th) for multi-image editing. `sourceImage` is <IMAGE_0>. */
+  const [extraRefs, setExtraRefs] = useState<SourceImage[]>([]);
   const [savedIdx, setSavedIdx] = useState<number | null>(null);
   const [imageFormat, setImageFormat] = useState<"png" | "jpg" | "webp">("png");
   const [searchMode, setSearchMode] = useState<"none" | "reference" | "change-ratio">("none");
@@ -184,6 +210,8 @@ export function ImageGenerator({
   const [resolution, setResolution] = useState<"1k" | "2k">("1k");
   /** How many images to generate: Auto (1), 4, 8, or 12 */
   const [imageCount, setImageCount] = useState<ImageCountValue>("auto");
+  /** Quality tier: auto (default) | low | medium */
+  const [quality, setQuality] = useState<ImageQualityValue>("auto");
   const generationStartRef = useRef<number | null>(null);
   const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -212,8 +240,8 @@ export function ImageGenerator({
       img.src = `data:${mimeType};base64,${base64}`;
     }), []);
 
-  // Shared helper: read a file path → set source image + detect dims
-  const loadImageFromPath = useCallback(async (selected: string) => {
+  // Read a file path into a base64 SourceImage
+  const readImageFile = useCallback(async (selected: string): Promise<SourceImage> => {
     const fileData = await readFile(selected);
     let binary = "";
     const chunkSize = 32768;
@@ -227,11 +255,49 @@ export function ImageGenerator({
     if (["jpg", "jpeg"].includes(ext)) mimeType = "image/jpeg";
     else if (ext === "gif") mimeType = "image/gif";
     else if (ext === "webp") mimeType = "image/webp";
+    return { data: base64, name: selected.split("/").pop() || "image", mimeType };
+  }, []);
 
-    setSourceImage({ data: base64, name: selected.split("/").pop() || "image", mimeType });
-    const dims = await detectDims(base64, mimeType);
+  // Shared helper: read a file path → set source image + detect dims
+  const loadImageFromPath = useCallback(async (selected: string) => {
+    const img = await readImageFile(selected);
+    setSourceImage(img);
+    const dims = await detectDims(img.data, img.mimeType);
     setSourceImageDims(dims);
-  }, [detectDims]);
+  }, [readImageFile, detectDims]);
+
+  /** Total source images that will be sent on the next edit (primary + extras). */
+  const totalRefs = (sourceImage ? 1 : 0) + extraRefs.length;
+  const canAddRefs = totalRefs < MAX_REFERENCE_IMAGES;
+
+  // Add one or more reference images (2nd…5th). If there is no primary yet, the first pick becomes it.
+  const handleAddReferences = async () => {
+    try {
+      const selected = await open({
+        multiple: true,
+        filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp"] }],
+      });
+      const paths = Array.isArray(selected) ? selected : selected ? [selected] : [];
+      if (paths.length === 0) return;
+      const imgs = await Promise.all(paths.map((p) => readImageFile(p)));
+      let primary = sourceImage;
+      const extras = [...extraRefs];
+      for (const img of imgs) {
+        if (!primary) {
+          primary = img;
+        } else if (1 + extras.length < MAX_REFERENCE_IMAGES) {
+          extras.push(img);
+        }
+      }
+      if (primary && primary !== sourceImage) {
+        setSourceImage(primary);
+        setSourceImageDims(await detectDims(primary.data, primary.mimeType));
+      }
+      setExtraRefs(extras);
+    } catch (e) {
+      console.error("Failed to add reference images:", e);
+    }
+  };
 
   const handleLoadImage = async () => {
     try {
@@ -269,6 +335,12 @@ export function ImageGenerator({
       region: region !== "auto" ? region : undefined,
       resolution,
       n: countOpt.n,
+      quality: quality !== "auto" ? quality : undefined,
+      // Multi-reference edit: primary + extras (max 5). Change-ratio always uses the single source.
+      referenceImages:
+        !isRatioMode && sourceImage && extraRefs.length > 0
+          ? [sourceImage, ...extraRefs].map((r) => ({ data: r.data, mimeType: r.mimeType }))
+          : undefined,
     });
     if (results && results.length > 0) {
       // One prompt entry per returned image so redraw/prompts stay index-aligned.
@@ -407,6 +479,7 @@ export function ImageGenerator({
       region: region !== "auto" ? region : undefined,
       resolution,
       n: 1,
+      quality: quality !== "auto" ? quality : undefined,
     });
     if (results && results.length > 0) {
       setImagePrompts((prev) => [
@@ -421,6 +494,7 @@ export function ImageGenerator({
     setImagePrompts([]);
     setSourceImage(null);
     setSourceImageDims(null);
+    setExtraRefs([]);
   };
 
   return (
@@ -484,7 +558,7 @@ export function ImageGenerator({
               </div>
               <div className="text-xl mt-1">Generate and edit images with Grok Imagine</div>
               <div className="text-sm font-mono text-gray-400 dark:text-tokyo-muted mt-1.5">
-                model: {imageModelId || "grok-imagine-image-2.0"} · {resolution.toUpperCase()}
+                model: {imageModelId || "grok-imagine-image-2.0"} · {resolution.toUpperCase()} · quality: {quality}
                 {imagePerImageCost != null && (
                   <> · ~${imagePerImageCost.toFixed(2)}/image</>
                 )}
@@ -588,7 +662,9 @@ export function ImageGenerator({
                   {sourceImage
                     ? imageCount !== "auto"
                       ? `Editing · ${IMAGE_COUNT_OPTIONS.find((o) => o.value === imageCount)?.n ?? 1} images…`
-                      : "Editing image…"
+                      : totalRefs >= 2
+                        ? `Editing with ${totalRefs} reference images…`
+                        : "Editing image…"
                     : imageCount !== "auto"
                       ? `Generating ${IMAGE_COUNT_OPTIONS.find((o) => o.value === imageCount)?.n ?? 1} images…`
                       : "Generating image…"}
@@ -815,15 +891,94 @@ export function ImageGenerator({
                 if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleGenerate(); }
               }}
               placeholder={
-                searchMode === "reference"
-                  ? "Describe the scene to place your subject in… (Ctrl+Enter)"
-                  : sourceImage
-                    ? "Describe how to edit this image… (Ctrl+Enter)"
-                    : "Describe the image you want to create… (Ctrl+Enter)"
+                totalRefs >= 2
+                  ? "Describe the scene — refer to images as <IMAGE_0>, <IMAGE_1>, … (Ctrl+Enter)"
+                  : searchMode === "reference"
+                    ? "Describe the scene to place your subject in… (Ctrl+Enter)"
+                    : sourceImage
+                      ? "Describe how to edit this image… (Ctrl+Enter)"
+                      : "Describe the image you want to create… (Ctrl+Enter)"
               }
               className="w-full resize-none"
               style={{ height: `${textareaHeight}px`, minHeight: "60px", maxHeight: "300px" }}
             />
+
+            {/* ── Reference images strip (multi-image editing, up to 5) ─────── */}
+            {(searchMode === "reference" || sourceImage) && (
+              <div className="rounded-xl border theme-border px-3 py-2 space-y-1.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-semibold theme-text">References:</span>
+                  <span className="text-xs font-mono theme-text-muted">
+                    {totalRefs}/{MAX_REFERENCE_IMAGES}
+                  </span>
+                  <span className="text-xs theme-text-muted">
+                    {totalRefs === 0
+                      ? "Add up to 5 images — e.g. one character, three props and one location."
+                      : totalRefs === 1
+                        ? "Single-image edit. Add more to combine subjects, props and locations."
+                        : "Multi-image edit — refer to images as <IMAGE_0>…<IMAGE_" + (totalRefs - 1) + "> in the prompt."}
+                  </span>
+                  {canAddRefs && (
+                    <button
+                      type="button"
+                      onClick={handleAddReferences}
+                      className="ml-auto text-xs px-2 py-0.5 rounded border border-dashed theme-border theme-text-muted hover:theme-text hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                      title={`Add reference images (max ${MAX_REFERENCE_IMAGES})`}
+                    >
+                      + Add images
+                    </button>
+                  )}
+                </div>
+                {totalRefs > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {[...(sourceImage ? [sourceImage] : []), ...extraRefs].map((img, index) => (
+                      <div key={`${img.name}-${index}`} className="relative group flex flex-col items-center gap-0.5">
+                        <div className="relative">
+                          <img
+                            src={`data:${img.mimeType};base64,${img.data}`}
+                            alt={img.name}
+                            className={`h-14 w-14 rounded-md border object-cover ${index === 0 ? "ring-2 ring-indigo-500" : "theme-border"}`}
+                          />
+                          <span className="absolute bottom-0 left-0 right-0 bg-black/55 text-white text-[9px] text-center font-mono leading-tight py-px rounded-b-md">
+                            IMAGE_{index}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (index === 0) {
+                                // Promote the next extra to primary, if any.
+                                const [next, ...rest] = extraRefs;
+                                setSourceImage(next ?? null);
+                                setSourceImageDims(null);
+                                setExtraRefs(next ? rest : []);
+                              } else {
+                                setExtraRefs((prev) => prev.filter((_, i) => i !== index - 1));
+                              }
+                            }}
+                            className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-red-500 text-white text-[11px] leading-none opacity-0 group-hover:opacity-100 shadow"
+                            title="Remove"
+                            aria-label={`Remove image ${index}`}
+                          >
+                            ×
+                          </button>
+                        </div>
+                        <div className="text-[10px] font-mono theme-text-muted max-w-[3.5rem] truncate">{img.name}</div>
+                      </div>
+                    ))}
+                    {extraRefs.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setExtraRefs([])}
+                        className="self-center text-[11px] text-red-500 hover:underline px-1"
+                      >
+                        Clear extras
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Aspect ratio selector */}
             <AspectRatioSelector value={aspectRatio} onChange={setAspectRatio} />
           </>
@@ -884,6 +1039,31 @@ export function ImageGenerator({
             </span>
           </div>
 
+          {/* Quality */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm font-semibold theme-text">Quality:</span>
+            {IMAGE_QUALITY_OPTIONS.map((q) => (
+              <button
+                key={q.value}
+                type="button"
+                onClick={() => setQuality(q.value)}
+                title={q.hint}
+                className={`px-2.5 py-1 text-xs rounded-md font-mono transition-colors ${
+                  quality === q.value
+                    ? "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 font-bold ring-1 ring-amber-400 dark:ring-amber-600"
+                    : "theme-text-muted hover:bg-gray-100 dark:hover:bg-gray-800"
+                }`}
+              >
+                {q.label}
+              </button>
+            ))}
+            <span className="text-xs theme-text-muted">
+              {quality === "auto"
+                ? sourceImage ? "serves medium for edits" : "serves low for generation"
+                : "billed at tier served"}
+            </span>
+          </div>
+
           {/* Region */}
           <div className="flex items-center gap-1.5">
             <span className="text-sm font-semibold theme-text">Region:</span>
@@ -917,8 +1097,13 @@ export function ImageGenerator({
               Resend
             </Button>
             {searchMode !== "change-ratio" && (
-              <Button onClick={handleLoadImage} size="sm">
+              <Button onClick={handleLoadImage} size="sm" title="Load a single source image (replaces the primary)">
                 Load Image
+              </Button>
+            )}
+            {searchMode !== "change-ratio" && canAddRefs && (
+              <Button onClick={handleAddReferences} size="sm" title={`Add reference images (up to ${MAX_REFERENCE_IMAGES})`}>
+                + Refs
               </Button>
             )}
             <Button onClick={handleClear} size="sm" disabled={generatedImages.length === 0 && !sourceImage}>

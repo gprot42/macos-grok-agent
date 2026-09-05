@@ -97,12 +97,13 @@ describe("MODELS registry", () => {
     expect(image15.supportsImageGeneration).toBe(true);
     expect(image15.modelId).toBe(IMAGINE_IMAGE_15_API_ID);
     expect(image15.displayName).toMatch(/1\.5/);
-    expect(image15.pricing.perImage).toBe(0.05);
+    // Retired 2 Nov 2026: serves Image 2.0 at quality: low, $0.01 under 2.0 auto.
+    expect(image15.pricing.perImage).toBe(0.03);
     expect(isChatModel(image15)).toBe(false);
 
-    const imageMod = MODELS["grok-imagine"];
-    expect(imageMod).toBeDefined();
-    expect(imageMod.supportsImageGeneration).toBe(true);
+    // Legacy Standard image model was removed; saved selections resolve to the default.
+    expect(MODELS["grok-imagine"]).toBeUndefined();
+    expect(resolveImageModelId("grok-imagine")).toBe(DEFAULT_IMAGE_MODEL_ID);
 
     expect(resolveImageModelId("grok-imagine-quality")).toBe("grok-imagine-image-1-5");
     expect(resolveImageModel("grok-imagine-quality").id).toBe("grok-imagine-image-1-5");
