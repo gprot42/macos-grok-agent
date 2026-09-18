@@ -54,7 +54,7 @@ const MODES: {
   {
     id: "transcribe",
     title: "Transcribe",
-    subtitle: "Upload audio or video and get the transcript",
+    subtitle: "Upload a file or transcribe live from the mic",
     model: "grok-voice-transcribe-2.0",
     icon: FileAudio,
     activeRing: "border-amber-500 ring-2 ring-amber-500/30",

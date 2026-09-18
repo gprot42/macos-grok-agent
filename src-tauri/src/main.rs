@@ -2,6 +2,7 @@
 
 mod agent_chain;
 mod api;
+mod live_stt;
 mod codegen;
 mod mcp;
 mod skills;
@@ -599,6 +600,48 @@ async fn transcribe_audio(
     .await
 }
 
+/// Start a live transcription session (streaming `wss://api.x.ai/v1/stt`, proxied here
+/// because the webview cannot send an Authorization header). Events arrive as `stt-live`.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+async fn live_transcribe_start(
+    app_handle: tauri::AppHandle,
+    api_key: String,
+    model_id: Option<String>,
+    sample_rate: u32,
+    language: Option<String>,
+    diarize: Option<bool>,
+    filler_words: Option<bool>,
+    keyterms: Option<Vec<String>>,
+    endpointing_ms: Option<u32>,
+) -> Result<serde_json::Value, String> {
+    let bearer = resolve_xai_credential_for_request(&api_key).await?;
+    live_stt::start(
+        app_handle,
+        bearer,
+        model_id,
+        sample_rate,
+        language,
+        diarize.unwrap_or(false),
+        filler_words.unwrap_or(false),
+        keyterms.unwrap_or_default(),
+        endpointing_ms,
+    )
+    .await
+}
+
+/// Push one base64 PCM16 mono chunk (≈100 ms) to the live transcription session.
+#[tauri::command]
+async fn live_transcribe_audio(audio_base64: String) -> Result<(), String> {
+    live_stt::push_audio(audio_base64).await
+}
+
+/// Flush and end the live session; the final `transcript.done` event still arrives.
+#[tauri::command]
+async fn live_transcribe_stop() -> Result<(), String> {
+    live_stt::stop().await
+}
+
 #[tauri::command]
 async fn list_custom_voices(
     api_key: String,
@@ -931,6 +974,9 @@ fn main() {
             generate_speech,
             create_custom_voice,
             transcribe_audio,
+            live_transcribe_start,
+            live_transcribe_audio,
+            live_transcribe_stop,
             list_custom_voices,
             get_custom_voice,
             delete_custom_voice,
