@@ -1518,6 +1518,191 @@ fn format_custom_voice_error(context: &str, status: reqwest::StatusCode, body: &
     format!("{context} (HTTP {code}): {body}")
 }
 
+/// Max upload size accepted by `POST /v1/stt` (xAI limit).
+const STT_MAX_FILE_BYTES: u64 = 500 * 1024 * 1024;
+/// Default speech-to-text model — Grok Voice Transcribe 2.0.
+pub const STT_DEFAULT_MODEL: &str = "grok-voice-transcribe-2.0";
+
+/// Best-effort MIME type from a filename extension (the API auto-detects containers).
+fn audio_mime_from_name(name: &str) -> &'static str {
+    match name.rsplit('.').next().unwrap_or("").to_ascii_lowercase().as_str() {
+        "wav" => "audio/wav",
+        "mp3" => "audio/mpeg",
+        "ogg" | "oga" => "audio/ogg",
+        "opus" => "audio/opus",
+        "flac" => "audio/flac",
+        "aac" => "audio/aac",
+        "m4a" => "audio/mp4",
+        "mp4" | "m4v" | "mov" => "video/mp4",
+        "mkv" => "video/x-matroska",
+        "webm" => "audio/webm",
+        _ => "application/octet-stream",
+    }
+}
+
+/// Transcribe an audio file with Grok Voice Transcribe (`POST /v1/stt`, multipart).
+///
+/// The audio comes either from `file_path` (read from disk here, so large files never
+/// cross the IPC bridge as base64) or from `audio_base64` (mic recordings / dropped files).
+/// Returns the raw API JSON: `{ text, language, duration, words[], channels? }`.
+#[allow(clippy::too_many_arguments)]
+pub async fn transcribe_audio(
+    api_key: String,
+    file_path: Option<String>,
+    audio_base64: Option<String>,
+    filename: Option<String>,
+    mime_type: Option<String>,
+    model_id: Option<String>,
+    language: Option<String>,
+    format: Option<bool>,
+    diarize: Option<bool>,
+    filler_words: Option<bool>,
+    multichannel: Option<bool>,
+    keyterms: Option<Vec<String>>,
+) -> Result<Value, String> {
+    let model = model_id
+        .filter(|m| !m.trim().is_empty())
+        .unwrap_or_else(|| STT_DEFAULT_MODEL.to_string());
+
+    // Resolve audio bytes + a filename for the multipart part.
+    let (audio_bytes, part_name) = match file_path.as_deref().filter(|p| !p.is_empty()) {
+        Some(path) => {
+            let meta = tokio::fs::metadata(path)
+                .await
+                .map_err(|e| format!("Cannot read audio file: {}", e))?;
+            if meta.len() == 0 {
+                return Err("Audio file is empty.".to_string());
+            }
+            if meta.len() > STT_MAX_FILE_BYTES {
+                return Err(format!(
+                    "Audio file is {:.0} MB — the transcription limit is 500 MB.",
+                    meta.len() as f64 / (1024.0 * 1024.0)
+                ));
+            }
+            let bytes = tokio::fs::read(path)
+                .await
+                .map_err(|e| format!("Cannot read audio file: {}", e))?;
+            let name = filename
+                .clone()
+                .filter(|n| !n.is_empty())
+                .or_else(|| {
+                    std::path::Path::new(path)
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                })
+                .unwrap_or_else(|| "audio".to_string());
+            (bytes, name)
+        }
+        None => {
+            let b64 = audio_base64
+                .as_deref()
+                .filter(|d| !d.is_empty())
+                .ok_or("No audio provided — choose a file or record from the microphone.")?;
+            let bytes = BASE64
+                .decode(b64)
+                .map_err(|e| format!("Invalid audio data: {}", e))?;
+            if bytes.len() as u64 > STT_MAX_FILE_BYTES {
+                return Err("Audio exceeds the 500 MB transcription limit.".to_string());
+            }
+            let name = filename
+                .clone()
+                .filter(|n| !n.is_empty())
+                .unwrap_or_else(|| "recording.m4a".to_string());
+            (bytes, name)
+        }
+    };
+
+    let mime = mime_type
+        .filter(|m| !m.is_empty())
+        .unwrap_or_else(|| audio_mime_from_name(&part_name).to_string());
+    let size_bytes = audio_bytes.len();
+
+    // Text fields first, `file` last (matches the documented request order).
+    let mut form = reqwest::multipart::Form::new().text("model", model.clone());
+    if let Some(lang) = language.as_deref().map(str::trim).filter(|l| !l.is_empty() && *l != "auto") {
+        form = form.text("language", lang.to_string());
+    }
+    // Inverse text normalisation ("twenty five dollars" → "$25"). Needs a language hint.
+    if format.unwrap_or(false) {
+        form = form.text("format", "true");
+    }
+    if diarize.unwrap_or(false) {
+        form = form.text("diarize", "true");
+    }
+    if filler_words.unwrap_or(false) {
+        form = form.text("filler_words", "true");
+    }
+    if multichannel.unwrap_or(false) {
+        form = form.text("multichannel", "true");
+    }
+    // Up to 100 key terms, 50 chars each — bias recognition toward names / jargon.
+    let terms: Vec<String> = keyterms
+        .unwrap_or_default()
+        .into_iter()
+        .map(|t| t.trim().chars().take(50).collect::<String>())
+        .filter(|t| !t.is_empty())
+        .take(100)
+        .collect();
+    for term in &terms {
+        form = form.text("keyterm", term.clone());
+    }
+
+    let part = reqwest::multipart::Part::bytes(audio_bytes)
+        .file_name(part_name.clone())
+        .mime_str(&mime)
+        .map_err(|e| format!("Invalid audio MIME type: {}", e))?;
+    form = form.part("file", part);
+
+    let url = format!("{}/stt", XAI_ENDPOINT);
+    info!(
+        "[transcribe_audio] POST {} model={} file={} size={}B mime={} language={:?} format={} diarize={} fillers={} multichannel={} keyterms={}",
+        url,
+        model,
+        part_name,
+        size_bytes,
+        mime,
+        language,
+        format.unwrap_or(false),
+        diarize.unwrap_or(false),
+        filler_words.unwrap_or(false),
+        multichannel.unwrap_or(false),
+        terms.len()
+    );
+
+    let client = Client::new();
+    let response = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        info!("[transcribe_audio] error {}: {}", status, body);
+        return Err(format_video_api_error("Transcription failed", status, &body));
+    }
+
+    let mut body: Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse response: {}", e))?;
+
+    info!(
+        "[transcribe_audio] done duration={:?}s language={:?} chars={}",
+        body.get("duration").and_then(|d| d.as_f64()),
+        body.get("language").and_then(|l| l.as_str()),
+        body.get("text").and_then(|t| t.as_str()).map(|t| t.len()).unwrap_or(0)
+    );
+    if let Some(obj) = body.as_object_mut() {
+        obj.insert("model".to_string(), json!(model));
+        obj.insert("filename".to_string(), json!(part_name));
+    }
+    Ok(body)
+}
+
 /// Create a custom voice from a reference audio clip (max 120s).
 ///
 /// `POST /v1/custom-voices` multipart. API create is Enterprise-gated; region

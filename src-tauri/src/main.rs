@@ -571,6 +571,34 @@ async fn create_custom_voice(
     .await
 }
 
+/// Speech-to-text with Grok Voice Transcribe (`/v1/stt`). Audio comes from a file
+/// path (preferred — read in Rust) or base64 (mic recordings / dropped files).
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+async fn transcribe_audio(
+    api_key: String,
+    file_path: Option<String>,
+    audio_base64: Option<String>,
+    filename: Option<String>,
+    mime_type: Option<String>,
+    model_id: Option<String>,
+    // BCP-47-ish code ("en", "fr", …). None / "auto" → auto-detect.
+    language: Option<String>,
+    // Inverse text normalisation (numbers, currency, dates).
+    format: Option<bool>,
+    diarize: Option<bool>,
+    filler_words: Option<bool>,
+    multichannel: Option<bool>,
+    keyterms: Option<Vec<String>>,
+) -> Result<serde_json::Value, String> {
+    let bearer = resolve_xai_credential_for_request(&api_key).await?;
+    api::transcribe_audio(
+        bearer, file_path, audio_base64, filename, mime_type, model_id,
+        language, format, diarize, filler_words, multichannel, keyterms,
+    )
+    .await
+}
+
 #[tauri::command]
 async fn list_custom_voices(
     api_key: String,
@@ -902,6 +930,7 @@ fn main() {
             extend_video,
             generate_speech,
             create_custom_voice,
+            transcribe_audio,
             list_custom_voices,
             get_custom_voice,
             delete_custom_voice,

@@ -24,6 +24,7 @@ A desktop AI assistant for interacting with multiple Large Language Models via *
 - **Grok 4.x** — earlier Grok models (4.3, 4.20, 4.1) with X search and built-in reasoning
 - **Grok Imagine Image 2.0** — Image generation and editing (default; Image 1.5 also available). Quality tiers `auto` (default) / `low` / `medium`, up to **5 reference images** per edit (`<IMAGE_0>`…`<IMAGE_4>` prompt tags), and widescreen **21:9** / banner **5:2** aspect ratios. The `grok-imagine-image-quality` (1.5) id is retired on 2 Nov 2026 and serves 2.0 at `quality: low`.
 - **Grok Voice** — Text-to-speech (27 voices) and **Voice Think Fast 2.0** live speech-to-speech agent
+- **Grok Voice Transcribe 2.0** — Upload audio or video (WAV, MP3, OGG, Opus, FLAC, AAC, M4A, MP4, MKV, up to 500 MB) or record from the mic and get the transcript: speaker labels (diarization), word-level timestamps, key-term biasing, number/date formatting, and export to `.txt` or `.srt` subtitles
 - **Grok Video** — Text-to-video, image-to-video and reference-to-video at 480p / 720p / 1080p. 1080p is tried first on every plan; on SuperGrok (non-Heavy) it is plan-gated, so an optional "Fall back to 720p" safety net retries at 720p and tells you why
 - **Claude 4 Opus / Sonnet / Haiku** — Anthropic's latest models (via OpenRouter or Kilo Code)
 - **GPT-4o** — OpenAI's advanced model (via OpenRouter)

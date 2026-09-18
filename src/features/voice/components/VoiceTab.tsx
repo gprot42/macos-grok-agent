@@ -1,13 +1,16 @@
 import { useState } from "react";
-import { Mic, Radio, Wand2 } from "lucide-react";
+import { FileAudio, Mic, Radio, Wand2 } from "lucide-react";
 import { GrokVoicePanel } from "./GrokVoicePanel";
+import { SpeechToTextPanel } from "./SpeechToTextPanel";
 import { VoiceAgentPanel } from "./VoiceAgentPanel";
 
 interface VoiceTabProps {
   apiKey: string;
+  /** When set, transcripts are saved into this project's outputs folder. */
+  activeProject?: string | null;
 }
 
-type VoiceMode = "agent" | "tts" | "clone";
+type VoiceMode = "agent" | "tts" | "transcribe" | "clone";
 
 const MODES: {
   id: VoiceMode;
@@ -49,6 +52,19 @@ const MODES: {
     borderSelected: "border-blue-500",
   },
   {
+    id: "transcribe",
+    title: "Transcribe",
+    subtitle: "Upload audio or video and get the transcript",
+    model: "grok-voice-transcribe-2.0",
+    icon: FileAudio,
+    activeRing: "border-amber-500 ring-2 ring-amber-500/30",
+    activeBg: "bg-amber-50 dark:bg-amber-950/40",
+    activeIcon: "bg-amber-500 text-white",
+    activeDot: "bg-amber-500",
+    codeClass: "text-amber-700 dark:text-amber-300",
+    borderSelected: "border-amber-500",
+  },
+  {
     id: "clone",
     title: "Voice Clone",
     subtitle: "Record or upload a sample and clone your voice",
@@ -63,12 +79,12 @@ const MODES: {
   },
 ];
 
-export function VoiceTab({ apiKey }: VoiceTabProps) {
+export function VoiceTab({ apiKey, activeProject = null }: VoiceTabProps) {
   const [mode, setMode] = useState<VoiceMode>("agent");
 
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
-      {/* Mode picker — three clear selectable cards */}
+      {/* Mode picker — clear selectable cards */}
       <div className="flex-shrink-0 border-b theme-border theme-surface px-4 pt-3 pb-3 space-y-2">
         <div className="flex items-center justify-between gap-2">
           <span className="text-xs font-semibold uppercase tracking-wide theme-text-muted">
@@ -80,7 +96,7 @@ export function VoiceTab({ apiKey }: VoiceTabProps) {
         </div>
 
         <div
-          className="grid grid-cols-1 sm:grid-cols-3 gap-2"
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2"
           role="radiogroup"
           aria-label="Voice mode"
         >
@@ -159,8 +175,13 @@ export function VoiceTab({ apiKey }: VoiceTabProps) {
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-hidden">
-        {mode === "agent" ? (
+      {/* Transcribe stays mounted so transcripts and in-flight uploads survive mode switches */}
+      <div className={`flex-1 min-h-0 overflow-hidden ${mode === "transcribe" ? "" : "hidden"}`}>
+        <SpeechToTextPanel apiKey={apiKey} activeProject={activeProject} />
+      </div>
+
+      <div className={`flex-1 min-h-0 overflow-hidden ${mode === "transcribe" ? "hidden" : ""}`}>
+        {mode === "transcribe" ? null : mode === "agent" ? (
           <VoiceAgentPanel apiKey={apiKey} />
         ) : (
           <GrokVoicePanel

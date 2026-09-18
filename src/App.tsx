@@ -389,7 +389,7 @@ function App() {
               <div>
                 <div className="text-lg font-medium theme-text">Grok Voice</div>
                 <div className="text-sm theme-text">
-                  Live Agent · Text to Speech · Voice Clone
+                  Live Agent · Text to Speech · Transcribe · Voice Clone
                 </div>
               </div>
             </div>
@@ -478,7 +478,7 @@ function App() {
 
           {/* Voice — always mounted to preserve audio state */}
           <div className={`flex flex-col flex-1 min-h-0 overflow-hidden ${activeTab === "voice" ? "" : "hidden"}`}>
-            <VoiceTab apiKey={getXaiCredential()} />
+            <VoiceTab apiKey={getXaiCredential()} activeProject={activeProject} />
           </div>
 
           {/* Code — always mounted to preserve agent conversation and working dir */}
@@ -723,6 +723,7 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
                    <li>• Grok 4.20 Reasoning / Multi-Agent / Fast — xAI (Beta)</li>
                    <li>• Grok 4.1 — xAI with deep thinking &amp; X search</li>
                    <li>• Grok Imagine Image 2.0 / Video 1.5 / Voice — image, video, TTS &amp; Think Fast live agent</li>
+                   <li>• Grok Voice Transcribe 2.0 — upload audio/video or record, get transcripts with speakers, timestamps &amp; SRT export</li>
                  </ul>
              </div>
 
