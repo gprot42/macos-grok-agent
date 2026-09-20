@@ -832,6 +832,144 @@ fn is_uuid_str(s: &str) -> bool {
     true
 }
 
+/// Fast chat model used to rewrite video prompts (falls back to the flagship on error).
+const PROMPT_ENHANCE_MODELS: [&str; 2] = ["grok-4.20-0309-non-reasoning", "grok-4.6"];
+
+const VIDEO_PROMPT_ENHANCER_SYSTEM: &str = "You are a prompt writer for Grok Imagine Video, a \
+text/image-to-video model with native audio. Rewrite the user's idea into ONE vivid, production-ready \
+video prompt.\n\nRules:\n\
+- Keep the user's subject, intent, named characters and any <IMAGE_n> tags exactly as written.\n\
+- Describe, in this order: subject and action; setting and time of day; camera (shot size, angle, \
+movement such as slow dolly-in, handheld, orbit, static); lighting and colour; visual style; and, if \
+audio is on, sound (ambience, effects, music mood, or a short line of dialogue in quotes).\n\
+- Motion must fit the clip duration: a few seconds holds one continuous beat, not a montage.\n\
+- Compose for the given aspect ratio.\n\
+- When start-frame or reference images are attached, do not re-describe what is already visible — \
+describe how it should move and what happens next, staying consistent with the image.\n\
+- Plain prose, present tense, 50-110 words. No lists, no headings, no quotes around the whole prompt, \
+no preamble or explanation. Do not add text overlays, logos or watermarks unless asked.\n\
+- Reply in the same language as the user's prompt.\n\
+Output only the rewritten prompt.";
+
+/// Rewrite a rough video idea into a detailed Grok Imagine Video prompt.
+#[allow(clippy::too_many_arguments)]
+pub async fn enhance_video_prompt(
+    api_key: String,
+    prompt: String,
+    duration_seconds: Option<u32>,
+    aspect_ratio: Option<String>,
+    resolution: Option<String>,
+    with_audio: Option<bool>,
+    images: Option<Vec<VideoReferenceImage>>,
+) -> Result<String, String> {
+    let idea = prompt.trim();
+    if idea.is_empty() {
+        return Err("Enter a prompt to enhance.".to_string());
+    }
+    let imgs: Vec<&VideoReferenceImage> = images
+        .as_ref()
+        .map(|v| v.iter().filter(|i| !i.data.is_empty()).take(VIDEO_REFERENCE_IMAGES_MAX).collect())
+        .unwrap_or_default();
+    let mode = match imgs.len() {
+        0 => "text-to-video".to_string(),
+        1 => "image-to-video (the attached image is the first frame)".to_string(),
+        n => format!(
+            "reference-to-video ({} attached reference images, referred to as <IMAGE_1>…<IMAGE_{}>)",
+            n, n
+        ),
+    };
+    let brief = format!(
+        "Mode: {}\nDuration: {}s\nAspect ratio: {}\nResolution: {}\nNative audio: {}\n\nUser prompt:\n{}",
+        mode,
+        duration_seconds.unwrap_or(10),
+        aspect_ratio.as_deref().filter(|a| !a.is_empty()).unwrap_or("16:9"),
+        resolution.as_deref().unwrap_or("720p"),
+        if with_audio.unwrap_or(true) { "on" } else { "off (do not describe sound)" },
+        idea
+    );
+
+    let client = Client::new();
+    let url = format!("{}/chat/completions", XAI_ENDPOINT);
+    let mut last_err = String::new();
+
+    // Try with images (vision) first, then text-only; fast model first, then flagship.
+    let image_passes: &[bool] = if imgs.is_empty() { &[false] } else { &[true, false] };
+    for &with_images in image_passes {
+        for model in PROMPT_ENHANCE_MODELS {
+            let user_content = if with_images {
+                let mut parts = vec![json!({ "type": "text", "text": brief })];
+                for img in &imgs {
+                    let mime = img.mime_type.as_deref().unwrap_or("image/png");
+                    parts.push(json!({
+                        "type": "image_url",
+                        "image_url": { "url": format!("data:{};base64,{}", mime, img.data) }
+                    }));
+                }
+                json!(parts)
+            } else {
+                json!(brief)
+            };
+            let payload = json!({
+                "model": model,
+                "messages": [
+                    { "role": "system", "content": VIDEO_PROMPT_ENHANCER_SYSTEM },
+                    { "role": "user", "content": user_content }
+                ],
+                "temperature": 0.8,
+                "max_tokens": 600,
+                "stream": false
+            });
+            info!(
+                "[enhance_video_prompt] POST {} model={} images={}",
+                url,
+                model,
+                if with_images { imgs.len() } else { 0 }
+            );
+            let response = match client
+                .post(&url)
+                .header("Authorization", format!("Bearer {}", api_key))
+                .json(&payload)
+                .send()
+                .await
+            {
+                Ok(r) => r,
+                Err(e) => {
+                    last_err = format!("Request failed: {}", e);
+                    continue;
+                }
+            };
+            if !response.status().is_success() {
+                let status = response.status();
+                let body = response.text().await.unwrap_or_default();
+                info!("[enhance_video_prompt] error {}: {}", status, body);
+                last_err = format_video_api_error("Prompt enhancement failed", status, &body);
+                // Auth / credit problems won't improve with another model.
+                if matches!(status.as_u16(), 401 | 402 | 429) {
+                    return Err(last_err);
+                }
+                continue;
+            }
+            let body: Value = response
+                .json()
+                .await
+                .map_err(|e| format!("Failed to parse response: {}", e))?;
+            let text = body
+                .pointer("/choices/0/message/content")
+                .and_then(|c| c.as_str())
+                .unwrap_or("")
+                .trim()
+                .trim_matches('"')
+                .trim()
+                .to_string();
+            if !text.is_empty() {
+                return Ok(text);
+            }
+            last_err = "The model returned an empty prompt.".to_string();
+        }
+    }
+    Err(last_err)
+}
+
 /// Max reference images for Grok Imagine video (xAI reference-to-video limit).
 const VIDEO_REFERENCE_IMAGES_MAX: usize = 7;
 

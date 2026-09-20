@@ -214,6 +214,10 @@ export function GrokVideoPanel({
   const [fallback720, setFallback720] = useState(true);
   /** Set when the last result was served at a different resolution than requested. */
   const [servedNote, setServedNote] = useState<string | null>(null);
+  /** Prompt enhancement: rewrites the idea into a detailed video prompt via a Grok chat model. */
+  const [isEnhancing, setIsEnhancing] = useState(false);
+  /** The user's prompt before the last enhancement, so it can be restored. */
+  const [originalPrompt, setOriginalPrompt] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -287,6 +291,33 @@ export function GrokVideoPanel({
       }
     }
     return String(e);
+  };
+
+  const handleEnhance = async () => {
+    const idea = prompt.trim();
+    if (!idea || isEnhancing) return;
+    setIsEnhancing(true);
+    setError(null);
+    try {
+      const enhanced = await invoke<string>("enhance_video_prompt", {
+        prompt: idea,
+        apiKey,
+        durationSeconds: duration,
+        aspectRatio,
+        resolution: effectiveResolution,
+        withAudio,
+        images: sourceImages.length > 0
+          ? sourceImages.map((img) => ({ data: img.data, mimeType: img.mimeType }))
+          : null,
+      });
+      // Keep the very first original across repeated enhancements.
+      setOriginalPrompt((prev) => prev ?? prompt);
+      setPrompt(enhanced);
+    } catch (e: unknown) {
+      setError(formatInvokeError(e));
+    } finally {
+      setIsEnhancing(false);
+    }
   };
 
   const handleGenerate = async () => {
@@ -712,14 +743,18 @@ export function GrokVideoPanel({
         <div className="space-y-2">
           <Textarea
             value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
+            onChange={(e) => {
+              setPrompt(e.target.value);
+              if (!e.target.value.trim()) setOriginalPrompt(null);
+            }}
+            disabled={isEnhancing}
             placeholder={
               isReferenceMode
                 ? "Describe the shot… reference images as <IMAGE_1>, <IMAGE_2>, …"
                 : "Describe the video you want to generate… (images optional)"
             }
             rows={3}
-            className="min-h-[4.5rem] max-h-28 resize-none text-sm"
+            className="min-h-[4.5rem] max-h-40 resize-y text-sm"
             onKeyDown={(e) => {
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && canGenerate && !isLoading) {
                 e.preventDefault();
@@ -740,6 +775,25 @@ export function GrokVideoPanel({
             >
               {isLoading ? "Generating…" : "Generate Video"}
             </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void handleEnhance()}
+              disabled={isEnhancing || isLoading || !prompt.trim()}
+              title="Rewrite your idea into a detailed video prompt — camera, lighting, motion and sound — tuned to the duration, aspect ratio and attached images"
+            >
+              {isEnhancing ? "Enhancing…" : originalPrompt !== null ? "✨ Enhance again" : "✨ Enhance prompt"}
+            </Button>
+            {originalPrompt !== null && !isEnhancing && (
+              <button
+                type="button"
+                onClick={() => { setPrompt(originalPrompt); setOriginalPrompt(null); }}
+                className="text-xs text-muted-foreground hover:underline"
+                title={originalPrompt}
+              >
+                Undo (restore original)
+              </button>
+            )}
             {!apiKey && (
               <span className="text-xs text-amber-700 dark:text-amber-300 font-medium">
                 Uses Settings auth (SuperGrok or API key)

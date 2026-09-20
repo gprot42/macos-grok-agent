@@ -477,6 +477,25 @@ async fn deep_research(
     ).await
 }
 
+/// Rewrite a rough idea into a detailed Grok Imagine Video prompt (uses a Grok chat model).
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+async fn enhance_video_prompt(
+    api_key: String,
+    prompt: String,
+    duration_seconds: Option<u32>,
+    aspect_ratio: Option<String>,
+    resolution: Option<String>,
+    with_audio: Option<bool>,
+    images: Option<Vec<VideoReferenceImage>>,
+) -> Result<String, String> {
+    let bearer = resolve_xai_credential_for_request(&api_key).await?;
+    api::enhance_video_prompt(
+        bearer, prompt, duration_seconds, aspect_ratio, resolution, with_audio, images,
+    )
+    .await
+}
+
 #[tauri::command]
 async fn generate_video(
     app_handle: tauri::AppHandle,
@@ -970,6 +989,7 @@ fn main() {
             coding_agent_chat,
             coding_agent_stop,
             generate_video,
+            enhance_video_prompt,
             extend_video,
             generate_speech,
             create_custom_voice,
