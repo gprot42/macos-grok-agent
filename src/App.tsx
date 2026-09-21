@@ -718,7 +718,9 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
              <div>
                <h4 className="font-semibold text-gray-800 dark:text-tokyo-text mb-2">AI Models</h4>
                 <ul className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
-                   <li>• Grok 4.6 — xAI flagship, Auto / Fast / Expert / Heavy, 500k context</li>
+                   <li>• Grok 4.7 — xAI flagship, Auto / Fast / Expert / Heavy, 500k context, text + image input</li>
+                   <li>• Grok 4.7 Fast — same model on faster infrastructure (Grok Build / Cursor auth only)</li>
+                   <li>• Grok 4.6 — previous flagship, Auto / Fast / Expert / Heavy, 500k context</li>
                    <li>• Grok 4.3 — previous flagship, 2M context, built-in reasoning</li>
                    <li>• Grok 4.20 Reasoning / Multi-Agent / Fast — xAI (Beta)</li>
                    <li>• Grok 4.1 — xAI with deep thinking &amp; X search</li>
@@ -765,7 +767,7 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
                <ul className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
                  <li>• 1M Context - Extended context window for large documents</li>
                  <li>• Memory - Claude models remember across conversations</li>
-                 <li>• Grok 4.6 Mode — Auto, Fast, Expert, or Heavy reasoning</li>
+                 <li>• Grok 4.7 / 4.6 Mode — Auto, Fast, Expert, or Heavy reasoning</li>
                  <li>• Deep Thinking - Extended reasoning for complex problems</li>
                  <li>• Image Generation - Create &amp; edit images with Grok Imagine Image 2.0: quality auto/low/medium, up to 5 reference images, 21:9 &amp; 5:2 ratios (Image 1.5 also available)</li>
                </ul>
@@ -811,6 +813,8 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
               <div>
                 <h5 className="text-sm font-semibold text-emerald-800 dark:text-emerald-200 mb-1">Chat models (per million tokens)</h5>
                  <ul className="text-sm text-emerald-700 dark:text-emerald-300 space-y-0.5">
+                   <li>• <strong>Grok 4.7</strong> — $2.00 in / $6.00 out (doubles above 200k prompt tokens)</li>
+                   <li>• <strong>Grok 4.7 Fast</strong> — ~2x standard rates; Grok Build / Cursor only</li>
                    <li>• <strong>Grok 4.6</strong> — $2.00 in / $6.00 out (doubles above 200k prompt tokens)</li>
                    <li>• <strong>Grok 4.3</strong> — $1.25 in / $2.50 out</li>
                    <li>• <strong>Grok 4.20 Reasoning / Multi-Agent / Fast</strong> — $2.00 in / $6.00 out</li>

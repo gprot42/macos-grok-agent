@@ -13,7 +13,7 @@ import { DebugLogPanel } from "./DebugLogPanel";
 import { McpPanel } from "./McpPanel";
 import { FileHistoryPanel, FileHistory, FileVersion } from "./FileHistoryPanel";
 import { SkillsPanel } from "./SkillsPanel";
-import { MODELS, GROK_46_THINKING_OPTIONS, isGrok46 } from "@shared/constants/models";
+import { MODELS, GROK_46_THINKING_OPTIONS, usesGrokConsumerModes } from "@shared/constants/models";
 import type { ModelConfig, EndpointType } from "@shared/types";
 
 interface ToolCallEntry {
@@ -934,14 +934,14 @@ export function CodingAgentPanel({
                 </div>
               );
             }
-            if (isGrok46(model)) {
+            if (usesGrokConsumerModes(model)) {
               return (
-                <div className="flex items-center rounded-lg border theme-border overflow-hidden" title="Grok 4.6 mode">
+                <div className="flex items-center rounded-lg border theme-border overflow-hidden" title={`${model?.displayName ?? "Grok"} mode`}>
                   {GROK_46_THINKING_OPTIONS.map((opt) => (
                     <button
                       key={opt.value}
                       onClick={() => setThinkingLevel(opt.value)}
-                      title={`Grok 4.6 ${opt.label}`}
+                      title={`${model?.displayName ?? "Grok"} ${opt.label}`}
                       className={`px-2 py-1.5 text-xs font-medium transition-colors ${
                         thinkingLevel === opt.value
                           ? "bg-purple-500 text-white"

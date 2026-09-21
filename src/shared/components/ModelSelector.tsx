@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MODELS, getThinkingOptions, isChatModel, isGrok46 } from "@shared/constants/models";
+import { MODELS, getThinkingOptions, isChatModel, usesGrokConsumerModes } from "@shared/constants/models";
 import { Select, Checkbox, Input } from "./index";
 import { useAppStore } from "@store/appStore";
 import { useSettings } from "@/hooks";
@@ -46,10 +46,10 @@ export function ModelSelector() {
     label: `${ICONS[m.icon] || "🤖"} ${m.displayName}`,
   }));
 
-  // xAI uses grok.com labels on 4.6 (Auto / Fast / Expert / Heavy);
+  // xAI uses grok.com labels on 4.6 / 4.7 (Auto / Fast / Expert / Heavy);
   // other xAI models use Fast / Expert; multi-agent adds Ultra (xhigh = 16 agents)
   const isMultiAgent = model?.id === "grok-4-20-multi-agent";
-  const grok46 = isGrok46(model);
+  const grok46 = usesGrokConsumerModes(model);
   const thinkingOptions = getThinkingOptions(model, selectedEndpoint);
 
   return (

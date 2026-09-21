@@ -20,7 +20,9 @@ A desktop AI assistant for interacting with multiple Large Language Models via *
 
 ### AI Models
 
-- **Grok 4.6** — xAI flagship with Auto / Fast / Expert / Heavy modes, 500k context, X search, and reasoning
+- **Grok 4.7** — xAI flagship (default) with Auto / Fast / Expert / Heavy modes, 500k context, text + image input, X search
+- **Grok 4.7 Fast** — the same model on faster infrastructure at ~2x token rates. Served only through Grok Build / Cursor, so it needs SuperGrok sign-in; a prepaid API key is rejected
+- **Grok 4.6** — previous flagship, same modes and 500k context
 - **Grok 4.x** — earlier Grok models (4.3, 4.20, 4.1) with X search and built-in reasoning
 - **Grok Imagine Image 2.0** — Image generation and editing (default; Image 1.5 also available). Quality tiers `auto` (default) / `low` / `medium`, up to **5 reference images** per edit (`<IMAGE_0>`…`<IMAGE_4>` prompt tags), and widescreen **21:9** / banner **5:2** aspect ratios. The `grok-imagine-image-quality` (1.5) id is retired on 2 Nov 2026 and serves 2.0 at `quality: low`.
 - **Grok Voice** — Text-to-speech (27 voices) and **Voice Think Fast 2.0** live speech-to-speech agent

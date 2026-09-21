@@ -13,6 +13,8 @@ import {
   imagineImageVersionLabel,
   isChatModel,
   isGrok46,
+  isGrok47,
+  usesGrokConsumerModes,
   resolveImageModel,
   resolveImageModelId,
   resolveThinkingLevel,
@@ -38,9 +40,9 @@ describe("MODELS registry", () => {
   });
 
   it("defaults chat to Grok 4.6", () => {
-    expect(DEFAULT_CHAT_MODEL_ID).toBe("grok-4-6");
-    expect(defaultChatModelId()).toBe("grok-4-6");
-    expect(defaultChatModelId("xai")).toBe("grok-4-6");
+    expect(DEFAULT_CHAT_MODEL_ID).toBe("grok-4-7");
+    expect(defaultChatModelId()).toBe("grok-4-7");
+    expect(defaultChatModelId("xai")).toBe("grok-4-7");
     expect(defaultChatModelId("openrouter")).toBe("claude-haiku-4-5");
     expect(isChatModel(MODELS["grok-4-6"])).toBe(true);
     expect(isChatModel(MODELS["grok-imagine-image-2"])).toBe(false);
@@ -57,6 +59,23 @@ describe("MODELS registry", () => {
     expect(grok46.maxInputTokens).toBe(500000);
     expect(grok46.endpointSupport).toEqual(["xai"]);
     expect(isGrok46(grok46)).toBe(true);
+
+    const grok47 = MODELS["grok-4-7"];
+    expect(grok47.modelId).toBe("grok-4.7");
+    expect(grok47.maxInputTokens).toBe(500000);
+    expect(grok47.defaultThinkingLevel).toBe("high");
+    expect(isGrok47(grok47)).toBe(true);
+    expect(isGrok46(grok47)).toBe(false);
+    expect(usesGrokConsumerModes(grok47)).toBe(true);
+    expect(usesGrokConsumerModes(grok46)).toBe(true);
+
+    // Fast tier is the same model on Grok Build / Cursor infrastructure.
+    const fast = MODELS["grok-4-7-fast"];
+    expect(fast.modelId).toBe("grok-4.7-fast");
+    expect(isGrok47(fast)).toBe(true);
+    expect(usesGrokConsumerModes(fast)).toBe(true);
+    expect(fast.pricing.input).toBeGreaterThan(grok47.pricing.input);
+    expect(getThinkingOptions(fast, "xai").map((o) => o.label)).toContain("Heavy");
 
     const labels = GROK_46_THINKING_OPTIONS.map((o) => o.label);
     expect(labels).toEqual(["Auto", "Fast", "Expert", "Heavy"]);

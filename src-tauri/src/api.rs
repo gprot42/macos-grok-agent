@@ -60,6 +60,38 @@ const OPENROUTER_ENDPOINT: &str = "https://openrouter.ai/api/v1";
 const XAI_ENDPOINT: &str = "https://api.x.ai/v1";
 const KILOCODE_ENDPOINT: &str = "https://api.kilocode.ai/v1";
 
+/// Turn a raw chat API error into a user-facing message.
+///
+/// Grok 4.7 Fast is served only through Grok Build / Cursor, so a prepaid API key gets
+/// "model not found" — say so instead of leaking the raw body.
+fn format_chat_api_error(model_id: &str, status: reqwest::StatusCode, body: &str) -> String {
+    let body_l = body.to_lowercase();
+    let unknown_model = status.as_u16() == 404
+        || body_l.contains("does not exist")
+        || body_l.contains("model not found")
+        || body_l.contains("unknown model")
+        || (body_l.contains("model") && body_l.contains("not found"));
+
+    if unknown_model && model_id.contains("4.7-fast") {
+        return format!(
+            "{} is not available on this account.\n\n\
+             Grok 4.7 Fast is the same model on faster infrastructure, served only through \
+             Grok Build and Cursor — it is not on the public xAI API.\n\
+             • In Settings → Authentication, sign in with SuperGrok (Grok Build OAuth).\n\
+             • A prepaid console.x.ai API key cannot reach it — use Grok 4.7 instead.",
+            model_id
+        );
+    }
+    if unknown_model {
+        return format!(
+            "Model '{}' was rejected by the API ({}). It may not be available on this \
+             account or endpoint yet.\n\n{}",
+            model_id, status, body
+        );
+    }
+    format!("API error {}: {}", status, body)
+}
+
 pub async fn send_chat_message(
     prompt: String,
     history: Vec<Message>,
@@ -131,7 +163,7 @@ pub async fn send_chat_message(
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        return Err(format!("API error {}: {}", status, body));
+        return Err(format_chat_api_error(&model_id, status, &body));
     }
 
     let body = response
@@ -378,7 +410,7 @@ pub async fn stream_chat_message(
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        return Err(format!("API error {}: {}", status, body));
+        return Err(format_chat_api_error(&model_id, status, &body));
     }
 
     let mut full_content = String::new();

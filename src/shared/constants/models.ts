@@ -1,6 +1,6 @@
 import type { EndpointType, ModelConfig } from "@shared/types";
 
-/** Grok 4.6 consumer modes (grok.com Auto / Fast / Expert / Heavy) → API reasoning.effort. */
+/** Grok 4.6 / 4.7 consumer modes (grok.com Auto / Fast / Expert / Heavy) → API reasoning.effort. */
 export const GROK_46_THINKING_OPTIONS = [
   { value: "medium", label: "Auto" },
   { value: "low", label: "Fast" },
@@ -9,7 +9,7 @@ export const GROK_46_THINKING_OPTIONS = [
 ] as const;
 
 /** Chat tab default — xAI flagship. Used for first launch and persist fallbacks. */
-export const DEFAULT_CHAT_MODEL_ID = "grok-4-6";
+export const DEFAULT_CHAT_MODEL_ID = "grok-4-7";
 
 /** Image tab default — Imagine Image 2.0 (store id). */
 export const DEFAULT_IMAGE_MODEL_ID = "grok-imagine-image-2";
@@ -28,6 +28,19 @@ export function isGrok46(model?: ModelConfig | null): boolean {
   return model?.modelId === "grok-4.6" || model?.id === "grok-4-6";
 }
 
+/** Grok 4.7 — the standard model and the Grok Build / Cursor "Fast" tier. */
+export function isGrok47(model?: ModelConfig | null): boolean {
+  return (
+    model?.modelId?.startsWith("grok-4.7") === true ||
+    model?.id?.startsWith("grok-4-7") === true
+  );
+}
+
+/** Models that expose the grok.com Auto / Fast / Expert / Heavy mode picker. */
+export function usesGrokConsumerModes(model?: ModelConfig | null): boolean {
+  return isGrok46(model) || isGrok47(model);
+}
+
 export function isChatModel(model: ModelConfig): boolean {
   return (
     !model.supportsImageGeneration &&
@@ -42,7 +55,7 @@ export function getThinkingOptions(
   endpoint: EndpointType | string,
 ): { value: string; label: string }[] {
   const isXai = endpoint === "xai";
-  if (isXai && isGrok46(model)) {
+  if (isXai && usesGrokConsumerModes(model)) {
     return GROK_46_THINKING_OPTIONS.map((o) => ({ value: o.value, label: o.label }));
   }
   if (isXai && model?.id === "grok-4-20-multi-agent") {
@@ -74,7 +87,7 @@ export function resolveThinkingLevel(
   model: ModelConfig | undefined,
   current: string,
 ): string {
-  if (isGrok46(model)) {
+  if (usesGrokConsumerModes(model)) {
     const allowed = new Set<string>(GROK_46_THINKING_OPTIONS.map((o) => o.value));
     return allowed.has(current) ? current : (model?.defaultThinkingLevel ?? "medium");
   }
@@ -144,6 +157,40 @@ export const MODELS: Record<string, ModelConfig> = {
     supportsMemory: true,
     endpointSupport: ["openrouter"],
   },
+  "grok-4-7": {
+    id: "grok-4-7",
+    publisher: "xai",
+    modelId: "grok-4.7",
+    displayName: "Grok 4.7",
+    maxInputTokens: 500000,
+    maxOutputTokens: 131072,
+    icon: "crown",
+    color: "#F59E0B",
+    description:
+      "xAI flagship — 500k context, text + image input, Auto / Fast / Expert / Heavy reasoning (defaults to Expert). Best for code, agents, and knowledge work",
+    pricing: { input: 0.002, output: 0.006, inputPremium: 0.004, outputPremium: 0.012 },
+    supportsSearch: true,
+    supportsDeepThinking: true,
+    defaultThinkingLevel: "high",
+    endpointSupport: ["xai"],
+  },
+  "grok-4-7-fast": {
+    id: "grok-4-7-fast",
+    publisher: "xai",
+    modelId: "grok-4.7-fast",
+    displayName: "Grok 4.7 Fast",
+    maxInputTokens: 500000,
+    maxOutputTokens: 131072,
+    icon: "zap",
+    color: "#FF9800",
+    description:
+      "Same Grok 4.7 on faster infrastructure at ~2x token rates. Grok Build / Cursor only — sign in with SuperGrok in Settings; a prepaid API key is rejected",
+    pricing: { input: 0.004, output: 0.012, inputPremium: 0.006, outputPremium: 0.018 },
+    supportsSearch: true,
+    supportsDeepThinking: true,
+    defaultThinkingLevel: "high",
+    endpointSupport: ["xai"],
+  },
   "grok-4-6": {
     id: "grok-4-6",
     publisher: "xai",
@@ -154,7 +201,7 @@ export const MODELS: Record<string, ModelConfig> = {
     icon: "crown",
     color: "#F59E0B",
     description:
-      "xAI flagship — 500k context, Auto / Fast / Expert / Heavy reasoning. Best for code, agents, and knowledge work",
+      "Previous flagship — 500k context, Auto / Fast / Expert / Heavy reasoning. Same token rates as 4.7",
     pricing: { input: 0.002, output: 0.006, inputPremium: 0.004, outputPremium: 0.012 },
     supportsSearch: true,
     supportsDeepThinking: true,

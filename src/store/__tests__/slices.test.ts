@@ -9,7 +9,7 @@ const reset = () =>
     showProjects: false,
     showAbout: false,
     showApiKeyPrompt: false,
-    selectedModel: "grok-4-6",
+    selectedModel: "grok-4-7",
     selectedEndpoint: "xai",
     selectedImageModel: "grok-imagine-image-2",
     use1MContext: false,
@@ -66,9 +66,9 @@ describe("ModalSlice", () => {
 // ── ModelSlice ────────────────────────────────────────────────────────────────
 
 describe("ModelSlice", () => {
-  it("defaults to grok-4-6 / xai and Imagine Image 2.0", () => {
+  it("defaults to grok-4-7 / xai and Imagine Image 2.0", () => {
     const s = useAppStore.getState();
-    expect(s.selectedModel).toBe("grok-4-6");
+    expect(s.selectedModel).toBe("grok-4-7");
     expect(s.selectedEndpoint).toBe("xai");
     expect(s.selectedImageModel).toBe("grok-imagine-image-2");
     expect(MODELS[s.selectedImageModel]?.displayName).toMatch(/2\.0/);

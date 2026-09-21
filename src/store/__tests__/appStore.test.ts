@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useAppStore, migratePersistedAppState } from "../appStore";
+import { DEFAULT_CHAT_MODEL_ID } from "@shared/constants/models";
 import { MODELS } from "@shared/constants/models";
 
 // Reset Zustand store state between tests
@@ -10,7 +11,7 @@ beforeEach(() => {
     showProjects: false,
     showAbout: false,
     showApiKeyPrompt: false,
-    selectedModel: "grok-4-6",
+    selectedModel: "grok-4-7",
     selectedEndpoint: "xai",
     selectedImageModel: "grok-imagine-image-2",
     use1MContext: false,
@@ -57,9 +58,9 @@ describe("useAppStore – modal flags", () => {
 });
 
 describe("useAppStore – model/endpoint config", () => {
-  it("defaults to grok-4-6 on xai endpoint", () => {
+  it("defaults to grok-4-7 on xai endpoint", () => {
     const s = useAppStore.getState();
-    expect(s.selectedModel).toBe("grok-4-6");
+    expect(s.selectedModel).toBe("grok-4-7");
     expect(s.selectedEndpoint).toBe("xai");
   });
 
@@ -108,7 +109,7 @@ describe("useAppStore – model/endpoint config", () => {
 });
 
 describe("migratePersistedAppState", () => {
-  it("promotes the previous xAI chat default (Grok 4.3) to Grok 4.6", () => {
+  it("promotes the previous xAI chat default (Grok 4.3) to the current default", () => {
     const next = migratePersistedAppState(
       {
         selectedModel: "grok-4-3",
@@ -117,7 +118,7 @@ describe("migratePersistedAppState", () => {
       },
       0,
     );
-    expect(next.selectedModel).toBe("grok-4-6");
+    expect(next.selectedModel).toBe(DEFAULT_CHAT_MODEL_ID);
   });
 
   it("keeps an explicit non-default xAI model", () => {
@@ -131,7 +132,7 @@ describe("migratePersistedAppState", () => {
     expect(next.selectedModel).toBe("grok-4-1");
   });
 
-  it("falls back to Grok 4.6 when the stored model no longer exists", () => {
+  it("falls back to the current default when the stored model no longer exists", () => {
     const next = migratePersistedAppState(
       {
         selectedModel: "grok-deleted",
@@ -139,7 +140,7 @@ describe("migratePersistedAppState", () => {
       },
       0,
     );
-    expect(next.selectedModel).toBe("grok-4-6");
+    expect(next.selectedModel).toBe(DEFAULT_CHAT_MODEL_ID);
   });
 
   it("does not re-migrate after version 1", () => {
