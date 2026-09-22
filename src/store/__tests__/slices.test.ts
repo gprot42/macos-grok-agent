@@ -84,8 +84,8 @@ describe("ModelSlice", () => {
   });
 
   it("setSelectedModel updates model and resets grounding to model default", () => {
-    useAppStore.getState().setSelectedModel("grok-4-1");
-    expect(useAppStore.getState().selectedModel).toBe("grok-4-1");
+    useAppStore.getState().setSelectedModel("grok-4-6");
+    expect(useAppStore.getState().selectedModel).toBe("grok-4-6");
   });
 
   it("setSelectedModel on Grok 4.6 applies Auto when think-level is none", () => {
@@ -100,9 +100,10 @@ describe("ModelSlice", () => {
     expect(useAppStore.getState().thinkingLevel).toBe("xhigh");
   });
 
-  it("setSelectedModel on Grok 4.3 clears thinking (auto-reasoning)", () => {
-    useAppStore.getState().setSelectedModel("grok-4-3");
-    expect(useAppStore.getState().selectedModel).toBe("grok-4-3");
+  it("setSelectedModel on a model without deep thinking clears the think level", () => {
+    useAppStore.setState({ thinkingLevel: "high" });
+    useAppStore.getState().setSelectedModel("openrouter-gpt-4o");
+    expect(useAppStore.getState().selectedModel).toBe("openrouter-gpt-4o");
     expect(useAppStore.getState().thinkingLevel).toBe("none");
   });
 

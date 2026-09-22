@@ -907,33 +907,6 @@ export function CodingAgentPanel({
 
           {/* Thinking level — only shown for models that support it */}
           {model?.supportsDeepThinking && (() => {
-            const isMultiAgent = model.modelId?.includes("multi-agent");
-            if (isMultiAgent) {
-              // Multi-agent: two discrete tiers — 4 agents (low/medium) or 16 agents (high/xhigh)
-              const tier = (thinkingLevel === "high" || thinkingLevel === "xhigh") ? "high" : "low";
-              return (
-                <div className="flex items-center rounded-lg border theme-border overflow-hidden" title="Number of parallel agents">
-                  <button
-                    onClick={() => setThinkingLevel("low")}
-                    title="4 agents — fast, focused queries"
-                    className={`px-2.5 py-1.5 text-xs font-medium transition-colors ${
-                      tier === "low" ? "bg-purple-500 text-white" : "theme-surface theme-text-muted hover:theme-text"
-                    }`}
-                  >
-                    4 agents
-                  </button>
-                  <button
-                    onClick={() => setThinkingLevel("high")}
-                    title="16 agents — deep research, complex topics"
-                    className={`px-2.5 py-1.5 text-xs font-medium transition-colors ${
-                      tier === "high" ? "bg-purple-500 text-white" : "theme-surface theme-text-muted hover:theme-text"
-                    }`}
-                  >
-                    16 agents
-                  </button>
-                </div>
-              );
-            }
             if (usesGrokConsumerModes(model)) {
               return (
                 <div className="flex items-center rounded-lg border theme-border overflow-hidden" title={`${model?.displayName ?? "Grok"} mode`}>

@@ -25,7 +25,12 @@ const VIDEO_ASPECT_RATIOS = [
   { value: "16:9", label: "16:9", w: 22, h: 12 },
 ] as const;
 
-const VIDEO_DURATIONS = [6, 10, 15] as const;
+const VIDEO_DURATIONS = [6, 10, 15, 20, 25, 30] as const;
+
+/** Longest single generation the API accepts; longer clips are built by extending. */
+const MAX_SINGLE_CLIP_SECONDS = 15;
+/** Longest total length xAI supports for an extended video. */
+const MAX_TOTAL_SECONDS = 30;
 
 type VideoResolution = "480p" | "720p" | "1080p";
 
@@ -214,6 +219,8 @@ export function GrokVideoPanel({
   const [fallback720, setFallback720] = useState(true);
   /** Set when the last result was served at a different resolution than requested. */
   const [servedNote, setServedNote] = useState<string | null>(null);
+  /** Seconds actually delivered — may be short of the target if an extension failed. */
+  const [finalSeconds, setFinalSeconds] = useState<number | null>(null);
   /** Prompt enhancement: rewrites the idea into a detailed video prompt via a Grok chat model. */
   const [isEnhancing, setIsEnhancing] = useState(false);
   /** The user's prompt before the last enhancement, so it can be restored. */
@@ -327,12 +334,17 @@ export function GrokVideoPanel({
     setVideoUrl(null);
     setDownloadStatus(null);
     setServedNote(null);
+    setFinalSeconds(null);
 
     // 1080p is only on Video 1.5 (T2V + I2V) — upgrade model when needed.
     // Multi-ref clamps to 720p below.
     const res = effectiveResolution;
     const effectiveModelId =
       res === "1080p" && !isVideo15 ? VIDEO_15_MODEL : modelId;
+    // One call maxes out at 15s; anything longer starts here and is extended,
+    // up to the 30s total that xAI supports for an extended video.
+    const targetDuration = Math.min(duration, MAX_TOTAL_SECONDS);
+    const baseDuration = Math.min(targetDuration, MAX_SINGLE_CLIP_SECONDS);
 
     const modeLabel =
       imageCount === 0
@@ -340,7 +352,11 @@ export function GrokVideoPanel({
         : imageCount === 1
           ? "image-to-video"
           : `reference-to-video (${imageCount} refs)`;
-    setProgress(`Submitting ${modeLabel} (${res})…`);
+    setProgress(
+      targetDuration > MAX_SINGLE_CLIP_SECONDS
+        ? `Submitting ${modeLabel} (${res}) — ${baseDuration}s base, extending to ${targetDuration}s…`
+        : `Submitting ${modeLabel} (${res})…`,
+    );
 
     // Listen for progress events from the Rust polling loop
     unlistenRef.current?.();
@@ -357,7 +373,7 @@ export function GrokVideoPanel({
         prompt,
         apiKey,
         modelId: effectiveModelId,
-        durationSeconds: duration,
+        durationSeconds: baseDuration,
         aspectRatio,
         resolution: res,
         withAudio,
@@ -387,13 +403,54 @@ export function GrokVideoPanel({
         resolutionServed?: string;
         fallbackNote?: string | null;
       }>("generate_video", payload);
-      setVideoUrl(result.url);
-      if (result.fallbackNote) {
-        setServedNote(result.fallbackNote);
-        setProgress(`✅ Video ready (served at ${result.resolutionServed ?? "720p"})`);
-      } else {
-        setProgress("✅ Video ready!");
+
+      let url = result.url;
+      let videoId = result.videoId;
+      let seconds = baseDuration;
+      const notes: string[] = [];
+      if (result.fallbackNote) notes.push(result.fallbackNote);
+
+      // Beyond 15s the API needs chained extensions, each continuing from the
+      // last frame. Show the finished base clip if an extension later fails.
+      while (seconds < targetDuration) {
+        if (!videoId) {
+          notes.push(
+            `The API did not return a video id, so this clip could not be extended past ${seconds}s.`,
+          );
+          break;
+        }
+        const add = Math.min(targetDuration - seconds, MAX_SINGLE_CLIP_SECONDS);
+        const target = seconds + add;
+        setProgress(`Extending ${seconds}s → ${target}s of ${targetDuration}s…`);
+        try {
+          const ext = await invoke<{ url: string; videoId?: string }>("extend_video", {
+            videoId,
+            apiKey,
+            modelId: effectiveModelId,
+            durationSeconds: add,
+            // The extension prompt describes what happens next, so keep the
+            // original scene but tell the model to carry the shot on.
+            prompt: `Continue this exact shot without cutting or restarting. ${prompt}`,
+          });
+          url = ext.url;
+          videoId = ext.videoId;
+          seconds = target;
+        } catch (e: unknown) {
+          notes.push(
+            `Stopped at ${seconds}s — the extension to ${target}s failed: ${formatInvokeError(e)}`,
+          );
+          break;
+        }
       }
+
+      setVideoUrl(url);
+      setFinalSeconds(seconds);
+      if (notes.length > 0) setServedNote(notes.join("\n\n"));
+      setProgress(
+        seconds < targetDuration
+          ? `⚠️ Video ready — ${seconds}s of ${targetDuration}s`
+          : `✅ Video ready${seconds > MAX_SINGLE_CLIP_SECONDS ? ` — ${seconds}s continuous` : ""}!`,
+      );
     } catch (e: unknown) {
       setError(formatInvokeError(e));
       setProgress("");
@@ -555,6 +612,12 @@ export function GrokVideoPanel({
                   </button>
                 ))}
               </div>
+              {duration > MAX_SINGLE_CLIP_SECONDS && (
+                <span className="text-[11px] text-muted-foreground">
+                  {Math.ceil(duration / MAX_SINGLE_CLIP_SECONDS)} segments · continuous · ~$
+                  {(duration * 0.08).toFixed(2)}
+                </span>
+              )}
             </div>
 
             <div className="flex items-center gap-1.5">
@@ -849,7 +912,9 @@ export function GrokVideoPanel({
             </div>
           )}
           <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="text-xs text-green-600 font-medium">Video ready</div>
+            <div className="text-xs text-green-600 font-medium">
+              Video ready{finalSeconds != null ? ` · ${finalSeconds}s` : ""}
+            </div>
             <div className="flex items-center gap-2 min-w-0">
               {downloadStatus && (
                 <button

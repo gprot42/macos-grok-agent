@@ -32,10 +32,8 @@ export type PersistedState = Pick<
   | "activeProject"
 >;
 
-/** Persist schema version. v1 promotes the previous xAI chat default (Grok 4.3) to Grok 4.6. */
+/** Persist schema version. v1 moves a stored model that no longer exists to the current default. */
 export const APP_STATE_VERSION = 1;
-
-const PREVIOUS_XAI_CHAT_DEFAULT = "grok-4-3";
 
 export function migratePersistedAppState(
   persistedState: unknown,
@@ -44,10 +42,8 @@ export function migratePersistedAppState(
   const state = { ...(persistedState as PersistedState) };
   if (version < 1) {
     const endpoint = state.selectedEndpoint ?? "xai";
-    const modelMissing = !state.selectedModel || !MODELS[state.selectedModel];
-    const oldXaiDefault =
-      endpoint === "xai" && state.selectedModel === PREVIOUS_XAI_CHAT_DEFAULT;
-    if (modelMissing || oldXaiDefault) {
+    // Retired models (Grok 4.1 / 4.3 / 4.20) are no longer in MODELS — fall back to the default.
+    if (!state.selectedModel || !MODELS[state.selectedModel]) {
       state.selectedModel = defaultChatModelId(endpoint);
     }
   }

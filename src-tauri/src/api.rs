@@ -865,7 +865,7 @@ fn is_uuid_str(s: &str) -> bool {
 }
 
 /// Fast chat model used to rewrite video prompts (falls back to the flagship on error).
-const PROMPT_ENHANCE_MODELS: [&str; 2] = ["grok-4.20-0309-non-reasoning", "grok-4.6"];
+const PROMPT_ENHANCE_MODELS: [&str; 2] = ["grok-4.7", "grok-4.6"];
 
 const VIDEO_PROMPT_ENHANCER_SYSTEM: &str = "You are a prompt writer for Grok Imagine Video, a \
 text/image-to-video model with native audio. Rewrite the user's idea into ONE vivid, production-ready \
@@ -1455,7 +1455,8 @@ pub async fn extend_video(
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        return Err(format!("API error {}: {}", status, body));
+        info!("[extend_video] Submit error {}: {}", status, body);
+        return Err(format_video_api_error("Video extension failed", status, &body));
     }
 
     let body: Value = response.json().await.map_err(|e| format!("Parse error: {}", e))?;

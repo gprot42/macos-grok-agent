@@ -65,8 +65,8 @@ describe("useAppStore – model/endpoint config", () => {
   });
 
   it("setSelectedModel updates model id", () => {
-    useAppStore.getState().setSelectedModel("grok-4-1");
-    expect(useAppStore.getState().selectedModel).toBe("grok-4-1");
+    useAppStore.getState().setSelectedModel("grok-4-6");
+    expect(useAppStore.getState().selectedModel).toBe("grok-4-6");
   });
 
   it("setSelectedEndpoint switches to openrouter and auto-selects a compatible model", () => {
@@ -124,12 +124,12 @@ describe("migratePersistedAppState", () => {
   it("keeps an explicit non-default xAI model", () => {
     const next = migratePersistedAppState(
       {
-        selectedModel: "grok-4-1",
+        selectedModel: "grok-4-6",
         selectedEndpoint: "xai",
       },
       0,
     );
-    expect(next.selectedModel).toBe("grok-4-1");
+    expect(next.selectedModel).toBe("grok-4-6");
   });
 
   it("falls back to the current default when the stored model no longer exists", () => {

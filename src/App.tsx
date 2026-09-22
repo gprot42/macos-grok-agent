@@ -721,10 +721,8 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
                    <li>• Grok 4.7 — xAI flagship, Auto / Fast / Expert / Heavy, 500k context, text + image input</li>
                    <li>• Grok 4.7 Fast — same model on faster infrastructure (Grok Build / Cursor auth only)</li>
                    <li>• Grok 4.6 — previous flagship, Auto / Fast / Expert / Heavy, 500k context</li>
-                   <li>• Grok 4.3 — previous flagship, 2M context, built-in reasoning</li>
-                   <li>• Grok 4.20 Reasoning / Multi-Agent / Fast — xAI (Beta)</li>
-                   <li>• Grok 4.1 — xAI with deep thinking &amp; X search</li>
                    <li>• Grok Imagine Image 2.0 / Video 1.5 / Voice — image, video, TTS &amp; Think Fast live agent</li>
+                   <li>• Grok Imagine Video — up to 30s continuous (15s base, auto-extended from the last frame)</li>
                    <li>• Grok Voice Transcribe 2.0 — upload audio/video or record, get transcripts with speakers, timestamps &amp; SRT export</li>
                  </ul>
              </div>
@@ -816,9 +814,6 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
                    <li>• <strong>Grok 4.7</strong> — $2.00 in / $6.00 out (doubles above 200k prompt tokens)</li>
                    <li>• <strong>Grok 4.7 Fast</strong> — ~2x standard rates; Grok Build / Cursor only</li>
                    <li>• <strong>Grok 4.6</strong> — $2.00 in / $6.00 out (doubles above 200k prompt tokens)</li>
-                   <li>• <strong>Grok 4.3</strong> — $1.25 in / $2.50 out</li>
-                   <li>• <strong>Grok 4.20 Reasoning / Multi-Agent / Fast</strong> — $2.00 in / $6.00 out</li>
-                   <li>• <strong>Grok 4.1</strong> — see <AboutLink href="https://x.ai/api">x.ai/api</AboutLink> for current pricing</li>
                  </ul>
               </div>
 
