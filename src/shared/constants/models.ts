@@ -245,6 +245,21 @@ export const MODELS: Record<string, ModelConfig> = {
     supportsVideoGeneration: true,
     endpointSupport: ["xai"],
   },
+  "grok-imagine-video-1-5-lite": {
+    id: "grok-imagine-video-1-5-lite",
+    publisher: "xai",
+    modelId: "grok-imagine-video-1.5-lite",
+    displayName: "Grok Imagine Video 1.5 Lite",
+    maxInputTokens: 32768,
+    maxOutputTokens: 8192,
+    icon: "video",
+    color: "#14B8A6",
+    description:
+      "Lightweight Video 1.5 — text/image-to-video with native audio, 480p/720p/1080p, from $0.02/sec (480p). Best for fast, cheap drafts",
+    pricing: { input: 0, output: 0.02 },
+    supportsVideoGeneration: true,
+    endpointSupport: ["xai"],
+  },
   "grok-imagine-video": {
     id: "grok-imagine-video",
     publisher: "xai",

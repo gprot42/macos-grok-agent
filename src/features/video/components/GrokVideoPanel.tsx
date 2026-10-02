@@ -43,55 +43,78 @@ const VIDEO_RESOLUTIONS: { value: VideoResolution; label: string; hint: string }
 
 const VIDEO_15_MODEL = "grok-imagine-video-1.5";
 
+type VideoModelKind = "legacy" | "v15" | "lite";
+
+function videoModelKind(modelId: string): VideoModelKind {
+  if (modelId.includes("1.5-lite")) return "lite";
+  if (modelId.includes("1.5")) return "v15";
+  return "legacy";
+}
+
+/** Approximate output price per second, for the cost hint next to the duration pills. */
+function videoRatePerSecond(modelId: string, resolution: string): number {
+  switch (videoModelKind(modelId)) {
+    case "lite":
+      // Lite is tiered by resolution.
+      return resolution === "1080p" ? 0.14 : resolution === "720p" ? 0.03 : 0.02;
+    case "v15":
+      return 0.08;
+    default:
+      return 0.05;
+  }
+}
+
 /** Comparison rows for Legacy vs Video 1.5 helper. */
-const MODEL_COMPARE_ROWS: { label: string; legacy: string; v15: string }[] = [
-  { label: "API model ID", legacy: "grok-imagine-video", v15: "grok-imagine-video-1.5" },
-  { label: "Role", legacy: "Original / classic Imagine video model", v15: "Current generation (successor)" },
-  { label: "Primary strength", legacy: "Flexible modes (text + image + references)", v15: "Best motion, audio, and quality" },
+const MODEL_COMPARE_ROWS: { label: string; legacy: string; v15: string; lite: string }[] = [
+  { label: "API model ID", legacy: "grok-imagine-video", v15: "grok-imagine-video-1.5", lite: "grok-imagine-video-1.5-lite" },
+  { label: "Role", legacy: "Original / classic Imagine video model", v15: "Current generation (successor)", lite: "Lightweight 1.5 for fast, cheap drafts" },
+  { label: "Primary strength", legacy: "Flexible modes (text + image + references)", v15: "Best motion, audio, and quality", lite: "Lowest cost per second" },
   {
     label: "Text-to-video",
     legacy: "Yes (prompt only)",
-    v15: "Yes — prompt only, native 1080p",
+    v15: "Yes — prompt only, native 1080p", lite: "Yes"
   },
-  { label: "Image-to-video", legacy: "Yes (image as first frame)", v15: "Yes — main intended mode, native 1080p" },
-  { label: "Reference-to-video", legacy: "Yes (up to ~7 reference images)", v15: "Yes (up to 7 refs; res capped ~720p)" },
+  { label: "Image-to-video", legacy: "Yes (image as first frame)", v15: "Yes — main intended mode, native 1080p", lite: "Yes" },
+  { label: "Reference-to-video", legacy: "Yes (up to ~7 reference images)", v15: "Yes (up to 7 refs; res capped ~720p)", lite: "Not documented" },
   {
     label: "Video edit / extend",
     legacy: "Supported on classic pipeline",
-    v15: "Supported; focus is generation quality",
+    v15: "Supported; focus is generation quality", lite: "Not documented — 30s extends may fail"
   },
-  { label: "Quality", legacy: "Solid baseline", v15: "Better motion, physics, faces, audio sync" },
+  { label: "Quality", legacy: "Solid baseline", v15: "Better motion, physics, faces, audio sync", lite: "Lighter than 1.5" },
   {
     label: "Speed",
     legacy: "Slower (e.g. ~40s+ for short 720p clips)",
-    v15: "Faster (e.g. ~25s for 6s 720p on Fast path)",
+    v15: "Faster (e.g. ~25s for 6s 720p on Fast path)", lite: "Fastest"
   },
-  { label: "Resolutions", legacy: "480p, 720p", v15: "480p, 720p, 1080p (T2V + I2V; 1080p on SuperGrok is plan-gated — Heavy includes it)" },
-  { label: "Duration", legacy: "About 1–15s (API range)", v15: "About 1–15s" },
-  { label: "Audio", legacy: "Native video-audio model", v15: "Improved native audio; voice refs (API)" },
-  { label: "Pricing (approx.)", legacy: "~$0.05 / sec", v15: "~$0.08 / sec (higher at 1080p)" },
+  { label: "Resolutions", legacy: "480p, 720p", v15: "480p, 720p, 1080p (T2V + I2V; 1080p on SuperGrok is plan-gated — Heavy includes it)", lite: "480p, 720p, 1080p" },
+  { label: "Duration", legacy: "About 1–15s (API range)", v15: "About 1–15s", lite: "About 1–15s" },
+  { label: "Audio", legacy: "Native video-audio model", v15: "Improved native audio; voice refs (API)", lite: "Native audio" },
+  { label: "Pricing (approx.)", legacy: "~$0.05 / sec", v15: "~$0.08 / sec (higher at 1080p)", lite: "$0.02 / sec 480p · $0.03 720p · $0.14 1080p" },
   {
     label: "Best when",
     legacy: "Cheaper experiments, classic pipeline",
-    v15: "Best quality, text-to-video, 1080p, references",
+    v15: "Best quality, text-to-video, 1080p, references", lite: "Iterating on prompts before a final 1.5 render"
   },
   {
     label: "In this app",
     legacy: "Optional lower-cost path",
-    v15: "Recommended default",
+    v15: "Recommended default", lite: "Draft mode"
   },
 ];
 
 function VideoModelCompareHelper({
   open,
   onToggle,
-  highlightV15,
+  selected,
 }: {
   open: boolean;
   onToggle: () => void;
-  /** When true, highlight the 1.5 column (current selection is 1.5). */
-  highlightV15: boolean;
+  /** Column to highlight — the currently selected model. */
+  selected: VideoModelKind;
 }) {
+  const highlightV15 = selected === "v15";
+  const highlightLite = selected === "lite";
   return (
     <div className="rounded-xl border border-border bg-card overflow-hidden">
       <button
@@ -105,7 +128,7 @@ function VideoModelCompareHelper({
             ?
           </span>
           <span className="text-xs font-semibold theme-text truncate">
-            Legacy vs 1.5 — which model should I pick?
+            Legacy vs 1.5 vs 1.5 Lite — which model should I pick?
           </span>
         </span>
         <span className="text-[11px] text-muted-foreground shrink-0">
@@ -120,11 +143,11 @@ function VideoModelCompareHelper({
             use <span className="font-medium">1.5</span> for text-to-video, image-to-video, and{" "}
             <span className="font-medium">1080p</span>
             {" · "}
-            <span className="font-medium">Legacy</span> for cheaper lower-res experiments
+            <span className="font-medium">1.5 Lite</span> for fast, cheap drafts (from $0.02/sec)
           </p>
 
           <div className="overflow-x-auto rounded-lg border border-border">
-            <table className="w-full text-[11px] border-collapse min-w-[32rem]">
+            <table className="w-full text-[11px] border-collapse min-w-[44rem]">
               <thead>
                 <tr className="bg-muted/50 border-b border-border">
                   <th className="text-left font-semibold px-2.5 py-1.5 w-[7.5rem] text-muted-foreground">
@@ -132,7 +155,7 @@ function VideoModelCompareHelper({
                   </th>
                   <th
                     className={`text-left font-semibold px-2.5 py-1.5 text-foreground ${
-                      !highlightV15
+                      selected === "legacy"
                         ? "bg-sky-500/20 ring-1 ring-inset ring-sky-500/40"
                         : ""
                     }`}
@@ -154,6 +177,18 @@ function VideoModelCompareHelper({
                       grok-imagine-video-1.5
                     </div>
                   </th>
+                  <th
+                    className={`text-left font-semibold px-2.5 py-1.5 text-foreground ${
+                      highlightLite
+                        ? "bg-teal-500/20 ring-1 ring-inset ring-teal-500/40"
+                        : ""
+                    }`}
+                  >
+                    Video 1.5 Lite
+                    <div className="font-mono font-normal text-[10px] text-muted-foreground mt-0.5">
+                      grok-imagine-video-1.5-lite
+                    </div>
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -164,7 +199,7 @@ function VideoModelCompareHelper({
                     </td>
                     <td
                       className={`px-2.5 py-1.5 leading-snug text-foreground ${
-                        !highlightV15 ? "bg-sky-500/10" : ""
+                        selected === "legacy" ? "bg-sky-500/10" : ""
                       }`}
                     >
                       {row.legacy}
@@ -175,6 +210,13 @@ function VideoModelCompareHelper({
                       }`}
                     >
                       {row.v15}
+                    </td>
+                    <td
+                      className={`px-2.5 py-1.5 leading-snug text-foreground ${
+                        highlightLite ? "bg-teal-500/10" : ""
+                      }`}
+                    >
+                      {row.lite}
                     </td>
                   </tr>
                 ))}
@@ -551,7 +593,7 @@ export function GrokVideoPanel({
         <VideoModelCompareHelper
           open={showModelHelp}
           onToggle={() => setShowModelHelp((v) => !v)}
-          highlightV15={isVideo15}
+          selected={videoModelKind(modelId)}
         />
 
         {/* Settings card — single dense block */}
@@ -615,7 +657,7 @@ export function GrokVideoPanel({
               {duration > MAX_SINGLE_CLIP_SECONDS && (
                 <span className="text-[11px] text-muted-foreground">
                   {Math.ceil(duration / MAX_SINGLE_CLIP_SECONDS)} segments · continuous · ~$
-                  {(duration * 0.08).toFixed(2)}
+                  {(duration * videoRatePerSecond(modelId, effectiveResolution)).toFixed(2)}
                 </span>
               )}
             </div>

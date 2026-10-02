@@ -831,6 +831,7 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
                 <ul className="text-sm text-emerald-700 dark:text-emerald-300 space-y-0.5">
                   <li>• <strong>grok-imagine-video-1.5</strong> — $0.08 per second (default)</li>
                   <li>• A 5 s clip ≈ $0.40 · 10 s ≈ $0.80 · 15 s (max) ≈ $1.20</li>
+                  <li>• <strong>grok-imagine-video-1.5-lite</strong> — $0.02 / sec at 480p, $0.03 at 720p, $0.14 at 1080p</li>
                   <li>• <strong>grok-imagine-video</strong> (legacy) — $0.05 per second</li>
                 </ul>
               </div>
