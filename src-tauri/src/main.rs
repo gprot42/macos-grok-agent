@@ -147,6 +147,18 @@ pub struct VideoReferenceImage {
     pub mime_type: Option<String>,
 }
 
+/// One mid-clip keyframe for Grok Imagine Video 1.5 (`keyframes[]`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VideoKeyframe {
+    /// Raw base64 (no data-URI prefix).
+    pub data: String,
+    #[serde(default, rename = "mimeType")]
+    pub mime_type: Option<String>,
+    /// Seconds into the clip; must be strictly inside it, on a 1/3 s grid.
+    #[serde(rename = "timestampS")]
+    pub timestamp_s: f64,
+}
+
 #[tauri::command]
 async fn load_settings() -> Result<Option<AppSettings>, String> {
     storage::load_settings().await
@@ -488,10 +500,11 @@ async fn enhance_video_prompt(
     resolution: Option<String>,
     with_audio: Option<bool>,
     images: Option<Vec<VideoReferenceImage>>,
+    mode_hint: Option<String>,
 ) -> Result<String, String> {
     let bearer = resolve_xai_credential_for_request(&api_key).await?;
     api::enhance_video_prompt(
-        bearer, prompt, duration_seconds, aspect_ratio, resolution, with_audio, images,
+        bearer, prompt, duration_seconds, aspect_ratio, resolution, with_audio, images, mode_hint,
     )
     .await
 }
@@ -513,6 +526,10 @@ async fn generate_video(
     with_audio: Option<bool>,
     // When true and the plan rejects 1080p, retry the same request at 720p.
     fallback_720p: Option<bool>,
+    // Video 1.5 frame pinning: the image the video ends on, and mid-clip keyframes.
+    last_frame: Option<String>,
+    last_frame_mime_type: Option<String>,
+    keyframes: Option<Vec<VideoKeyframe>>,
 ) -> Result<serde_json::Value, String> {
     let bearer = resolve_xai_credential_for_request(&api_key).await?;
     let is_supergrok = {
@@ -533,6 +550,9 @@ async fn generate_video(
         with_audio,
         fallback_720p,
         is_supergrok,
+        last_frame,
+        last_frame_mime_type,
+        keyframes,
     )
     .await
 }

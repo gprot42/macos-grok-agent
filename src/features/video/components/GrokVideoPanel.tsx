@@ -6,11 +6,23 @@ import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import { Button } from "@shared/components/ui/button";
 import { Textarea } from "@shared/components/ui/textarea";
 import { MODELS } from "@shared/constants/models";
+import {
+  FRAME_ROLE_OPTIONS,
+  formatTimestamp,
+  keyframeBounds,
+  planFrames,
+  suggestKeyframeTime,
+  type FrameRole,
+} from "../lib/frames";
 
 interface SourceImage {
   data: string;
   mimeType: string;
   name: string;
+  /** How the image is used: first/last frame, keyframe, loop, reference, or auto. */
+  role: FrameRole;
+  /** Seconds into the clip — keyframes only. */
+  timestampS?: number;
 }
 
 /** xAI reference-to-video max images (Grok Imagine Video). */
@@ -282,7 +294,12 @@ export function GrokVideoPanel({
   }, []);
 
   const imageCount = sourceImages.length;
-  const isReferenceMode = imageCount >= 2;
+  /** Seconds a frame-pinned clip can span — pins live inside one generation. */
+  const pinClipSeconds = Math.min(duration, MAX_SINGLE_CLIP_SECONDS);
+  const framePlan = planFrames(sourceImages, Math.min(duration, MAX_TOTAL_SECONDS), MAX_SINGLE_CLIP_SECONDS);
+  const isReferenceMode = framePlan.references.length > 0;
+  /** Pins (and a first frame + references) only work on full Video 1.5. */
+  const switchesToVideo15 = framePlan.requiresVideo15 && videoModelKind(modelId) !== "v15";
   const canAddMoreImages = imageCount < MAX_VIDEO_IMAGES;
   /** Reference-to-video is capped at 720p by the API. */
   const effectiveResolution: VideoResolution =
@@ -295,7 +312,7 @@ export function GrokVideoPanel({
         const result = reader.result as string;
         const [header, base64] = result.split(",");
         const mimeType = header.match(/data:(.*?);/)?.[1] ?? file.type ?? "image/png";
-        resolve({ data: base64, mimeType, name: file.name });
+        resolve({ data: base64, mimeType, name: file.name, role: "auto" });
       };
       reader.onerror = () => reject(new Error(`Failed to read ${file.name}`));
       reader.readAsDataURL(file);
@@ -323,9 +340,45 @@ export function GrokVideoPanel({
     setSourceImages((prev) => prev.filter((_, i) => i !== index));
   };
 
+  const setImageRole = (index: number, role: FrameRole) => {
+    setSourceImages((prev) =>
+      prev.map((img, i) => {
+        if (i !== index) return img;
+        if (role !== "keyframe") return { ...img, role };
+        const taken = prev
+          .filter((other, j) => j !== index && other.role === "keyframe" && other.timestampS != null)
+          .map((other) => other.timestampS as number);
+        return { ...img, role, timestampS: img.timestampS ?? suggestKeyframeTime(pinClipSeconds, taken) };
+      }),
+    );
+  };
+
+  const setImageTimestamp = (index: number, timestampS: number) => {
+    setSourceImages((prev) => prev.map((img, i) => (i === index ? { ...img, timestampS } : img)));
+  };
+
+  /** Plain-language description of the frame plan, for progress text and the prompt enhancer. */
+  const describeFramePlan = (): string => {
+    const parts: string[] = [];
+    if (framePlan.first && framePlan.first === framePlan.last) parts.push("loop (same image starts and ends the video)");
+    else {
+      if (framePlan.first) parts.push("pinned first frame");
+      if (framePlan.last) parts.push("pinned last frame");
+    }
+    if (framePlan.keyframes.length > 0) {
+      parts.push(`keyframes at ${framePlan.keyframes.map((k) => formatTimestamp(k.timestampS)).join(", ")}`);
+    }
+    if (framePlan.references.length > 0) {
+      parts.push(`${framePlan.references.length} reference image${framePlan.references.length > 1 ? "s" : ""}`);
+    }
+    return parts.join(" + ");
+  };
+
   // Text-to-video needs only a prompt. Auth is re-resolved on the backend from
   // Settings (SuperGrok OAuth or API key), so an empty frontend token is OK.
-  const canGenerate = prompt.trim().length > 0;
+  // With a last frame or keyframes pinned, the prompt is optional (xAI docs).
+  const canGenerate =
+    (prompt.trim().length > 0 || framePlan.usesPins) && framePlan.errors.length === 0;
 
   const formatInvokeError = (e: unknown): string => {
     if (e instanceof Error) return e.message;
@@ -358,6 +411,9 @@ export function GrokVideoPanel({
         images: sourceImages.length > 0
           ? sourceImages.map((img) => ({ data: img.data, mimeType: img.mimeType }))
           : null,
+        modeHint: framePlan.usesPins || framePlan.requiresVideo15
+          ? `frame-pinned video: ${describeFramePlan()} (images are attached in upload order)`
+          : null,
       });
       // Keep the very first original across repeated enhancements.
       setOriginalPrompt((prev) => prev ?? prompt);
@@ -382,7 +438,7 @@ export function GrokVideoPanel({
     // Multi-ref clamps to 720p below.
     const res = effectiveResolution;
     const effectiveModelId =
-      res === "1080p" && !isVideo15 ? VIDEO_15_MODEL : modelId;
+      switchesToVideo15 || (res === "1080p" && !isVideo15) ? VIDEO_15_MODEL : modelId;
     // One call maxes out at 15s; anything longer starts here and is extended,
     // up to the 30s total that xAI supports for an extended video.
     const targetDuration = Math.min(duration, MAX_TOTAL_SECONDS);
@@ -391,9 +447,11 @@ export function GrokVideoPanel({
     const modeLabel =
       imageCount === 0
         ? "text-to-video"
-        : imageCount === 1
-          ? "image-to-video"
-          : `reference-to-video (${imageCount} refs)`;
+        : framePlan.usesPins || framePlan.requiresVideo15
+          ? describeFramePlan()
+          : framePlan.first
+            ? "image-to-video"
+            : `reference-to-video (${framePlan.references.length} refs)`;
     setProgress(
       targetDuration > MAX_SINGLE_CLIP_SECONDS
         ? `Submitting ${modeLabel} (${res}) — ${baseDuration}s base, extending to ${targetDuration}s…`
@@ -409,7 +467,9 @@ export function GrokVideoPanel({
     unlistenRef.current = unlisten;
 
     try {
-      // 1 image → image-to-video (start frame); 2–7 → reference_images (cannot mix).
+      // Images go where their role says: first frame (`image`), `last_frame`,
+      // timed `keyframes`, or `reference_images`. Auto keeps the old behaviour
+      // (one image = first frame, several = references).
       // Backend re-resolves SuperGrok OAuth from Settings at request time.
       const payload: Record<string, unknown> = {
         prompt,
@@ -422,22 +482,22 @@ export function GrokVideoPanel({
         // Only meaningful for 1080p: retry at 720p when the plan doesn't include 1080p.
         fallback720p: res === "1080p" ? fallback720 : false,
       };
-      if (imageCount === 1) {
-        payload.image = sourceImages[0].data;
-        payload.imageMimeType = sourceImages[0].mimeType;
-        payload.referenceImages = null;
-      } else if (imageCount >= 2) {
-        payload.image = null;
-        payload.imageMimeType = null;
-        payload.referenceImages = sourceImages.map((img) => ({
-          data: img.data,
-          mimeType: img.mimeType,
-        }));
-      } else {
-        payload.image = null;
-        payload.imageMimeType = null;
-        payload.referenceImages = null;
-      }
+      payload.image = framePlan.first?.data ?? null;
+      payload.imageMimeType = framePlan.first?.mimeType ?? null;
+      payload.referenceImages =
+        framePlan.references.length > 0
+          ? framePlan.references.map((img) => ({ data: img.data, mimeType: img.mimeType }))
+          : null;
+      payload.lastFrame = framePlan.last?.data ?? null;
+      payload.lastFrameMimeType = framePlan.last?.mimeType ?? null;
+      payload.keyframes =
+        framePlan.keyframes.length > 0
+          ? framePlan.keyframes.map((k) => ({
+              data: k.image.data,
+              mimeType: k.image.mimeType,
+              timestampS: k.timestampS,
+            }))
+          : null;
 
       const result = await invoke<{
         url: string;
@@ -583,9 +643,11 @@ export function GrokVideoPanel({
           <div className="text-[11px] text-muted-foreground leading-snug min-w-0">
             {imageCount === 0
               ? "Text-to-video ready — type a prompt (images optional · up to 7)"
-              : imageCount === 1
-                ? "Image-to-video · animate your uploaded still as the first frame"
-                : `Reference-to-video · ${imageCount}/${MAX_VIDEO_IMAGES} refs (identity/style locks · max 720p)`}
+              : framePlan.usesPins || framePlan.requiresVideo15
+                ? `Frame-pinned video · ${describeFramePlan()}`
+                : framePlan.first
+                  ? "Image-to-video · animate your uploaded still as the first frame"
+                  : `Reference-to-video · ${framePlan.references.length}/${MAX_VIDEO_IMAGES} refs (identity/style locks · max 720p)`}
             {modelConfig?.description ? ` · ${modelConfig.description}` : ""}
           </div>
         </div>
@@ -648,7 +710,13 @@ export function GrokVideoPanel({
                     key={d}
                     type="button"
                     onClick={() => setDuration(d)}
-                    className={pillBtn(duration === d)}
+                    disabled={framePlan.usesPins && d > MAX_SINGLE_CLIP_SECONDS}
+                    title={
+                      framePlan.usesPins && d > MAX_SINGLE_CLIP_SECONDS
+                        ? "Last frame and keyframes pin a single clip (15s max)"
+                        : undefined
+                    }
+                    className={`${pillBtn(duration === d)} disabled:opacity-35 disabled:cursor-not-allowed`}
                   >
                     {d}s
                   </button>
@@ -760,10 +828,8 @@ export function GrokVideoPanel({
               </div>
               <p className="text-[11px] text-muted-foreground leading-snug mt-0.5">
                 {imageCount === 0
-                  ? "Skip for text-only. 1 image = animate as first frame. 2–7 = reference-to-video (character, product, scene…)."
-                  : imageCount === 1
-                    ? "1 image → image-to-video (start frame). Add more for multi-reference (up to 7)."
-                    : "Multi-reference mode: lock subjects/styles in the prompt with <IMAGE_1>… tags. Max 720p."}
+                  ? "Skip for text-only. Give each image a role: first frame, keyframe at a moment, last frame, loop, or reference."
+                  : "Pick a role under each image. Auto: one image = first frame, several = references (<IMAGE_1>… tags, max 720p)."}
               </p>
             </div>
             {canAddMoreImages && (
@@ -790,7 +856,7 @@ export function GrokVideoPanel({
               {sourceImages.map((img, index) => (
                 <div
                   key={`${img.name}-${index}`}
-                  className="relative group flex flex-col items-center gap-0.5"
+                  className="relative group flex flex-col items-center gap-1 w-28"
                 >
                   <div className="relative">
                     <img
@@ -811,9 +877,45 @@ export function GrokVideoPanel({
                       ×
                     </button>
                   </div>
-                  <div className="text-[10px] font-mono text-muted-foreground max-w-[3.5rem] truncate">
+                  <div className="text-[10px] font-mono text-muted-foreground max-w-full truncate">
                     {img.name}
                   </div>
+                  <select
+                    value={img.role}
+                    onChange={(e) => setImageRole(index, e.target.value as FrameRole)}
+                    title={FRAME_ROLE_OPTIONS.find((o) => o.value === img.role)?.hint}
+                    aria-label={`Role for image ${index + 1}`}
+                    className="w-full text-[11px] rounded-md border border-border bg-background px-1 py-0.5"
+                  >
+                    {FRAME_ROLE_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value} title={o.hint}>
+                        {o.value === "auto"
+                          ? `Auto (${framePlan.resolvedRoles[index] === "first" ? "first frame" : "reference"})`
+                          : o.label}
+                      </option>
+                    ))}
+                  </select>
+                  {img.role === "keyframe" && (() => {
+                    const { min, max } = keyframeBounds(pinClipSeconds);
+                    const t = img.timestampS ?? min;
+                    return (
+                      <div className="w-full">
+                        <input
+                          type="range"
+                          min={min}
+                          max={max}
+                          step={1 / 3}
+                          value={Math.min(Math.max(t, min), max)}
+                          onChange={(e) => setImageTimestamp(index, Number(e.target.value))}
+                          aria-label={`Keyframe time for image ${index + 1}`}
+                          className="w-full accent-current"
+                        />
+                        <div className="text-[10px] text-center font-mono text-muted-foreground">
+                          at {formatTimestamp(t)} of {pinClipSeconds}s
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               ))}
               {canAddMoreImages && (
@@ -842,6 +944,49 @@ export function GrokVideoPanel({
               )}
             </div>
           )}
+
+          {/* Timeline of pinned frames: first → keyframes → last */}
+          {(framePlan.first || framePlan.last || framePlan.keyframes.length > 0) && framePlan.usesPins && (
+            <div className="space-y-1">
+              <div className="relative h-9 rounded-md bg-muted/60 border border-border">
+                {[
+                  ...(framePlan.first ? [{ img: framePlan.first, t: 0, label: "start" }] : []),
+                  ...framePlan.keyframes.map((k) => ({ img: k.image, t: k.timestampS, label: formatTimestamp(k.timestampS) })),
+                  ...(framePlan.last ? [{ img: framePlan.last, t: pinClipSeconds, label: "end" }] : []),
+                ].map((pin, i) => (
+                  <div
+                    key={i}
+                    className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 flex flex-col items-center"
+                    style={{ left: `${Math.min(97, Math.max(3, (pin.t / pinClipSeconds) * 100))}%` }}
+                    title={`${pin.img.name} · ${pin.label}`}
+                  >
+                    <img
+                      src={`data:${pin.img.mimeType};base64,${pin.img.data}`}
+                      alt=""
+                      className="h-7 w-7 rounded border-2 border-background object-cover shadow"
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="flex justify-between text-[10px] font-mono text-muted-foreground">
+                <span>0s</span>
+                <span>{pinClipSeconds}s</span>
+              </div>
+            </div>
+          )}
+
+          {switchesToVideo15 && (
+            <p className="text-[11px] text-amber-700 dark:text-amber-300">
+              Frame pinning runs on Grok Imagine Video 1.5 — this video will use it instead of {modelConfig?.displayName ?? modelId}.
+            </p>
+          )}
+          {framePlan.errors.length > 0 && (
+            <ul className="text-[11px] text-red-600 dark:text-red-400 space-y-0.5 list-disc pl-4">
+              {framePlan.errors.map((e) => (
+                <li key={e}>{e}</li>
+              ))}
+            </ul>
+          )}
         </div>
 
         {/* Prompt + generate */}
@@ -854,9 +999,11 @@ export function GrokVideoPanel({
             }}
             disabled={isEnhancing}
             placeholder={
-              isReferenceMode
-                ? "Describe the shot… reference images as <IMAGE_1>, <IMAGE_2>, …"
-                : "Describe the video you want to generate… (images optional)"
+              framePlan.usesPins
+                ? "Optional — describe the motion between your pinned frames…"
+                : isReferenceMode
+                  ? "Describe the shot… reference images as <IMAGE_1>, <IMAGE_2>, …"
+                  : "Describe the video you want to generate… (images optional)"
             }
             rows={3}
             className="min-h-[4.5rem] max-h-40 resize-y text-sm"
@@ -873,7 +1020,9 @@ export function GrokVideoPanel({
               onClick={handleGenerate}
               disabled={isLoading || !canGenerate}
               title={
-                !prompt.trim()
+                framePlan.errors.length > 0
+                  ? "Fix the image roles above to generate"
+                  : !prompt.trim() && !framePlan.usesPins
                   ? "Enter a prompt to generate"
                   : "Generate video (uses SuperGrok or API key from Settings)"
               }
@@ -904,7 +1053,7 @@ export function GrokVideoPanel({
                 Uses Settings auth (SuperGrok or API key)
               </span>
             )}
-            {prompt.trim().length === 0 && (
+            {prompt.trim().length === 0 && !framePlan.usesPins && (
               <span className="text-xs text-muted-foreground">
                 Enter a prompt to enable Generate
               </span>

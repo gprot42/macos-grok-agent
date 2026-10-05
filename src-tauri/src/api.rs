@@ -1,4 +1,7 @@
-use crate::{codegen, mcp, AttachedFile, ChatResponse, ImageResponse, Message, VideoReferenceImage};
+use crate::{
+    codegen, mcp, AttachedFile, ChatResponse, ImageResponse, Message, VideoKeyframe,
+    VideoReferenceImage,
+};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use futures_util::StreamExt;
 use reqwest::Client;
@@ -878,6 +881,8 @@ audio is on, sound (ambience, effects, music mood, or a short line of dialogue i
 - Compose for the given aspect ratio.\n\
 - When start-frame or reference images are attached, do not re-describe what is already visible — \
 describe how it should move and what happens next, staying consistent with the image.\n\
+- When a last frame or timed keyframes are pinned, write the motion that carries the shot from each \
+pinned image to the next at the stated times, ending exactly on the last frame.\n\
 - Plain prose, present tense, 50-110 words. No lists, no headings, no quotes around the whole prompt, \
 no preamble or explanation. Do not add text overlays, logos or watermarks unless asked.\n\
 - Reply in the same language as the user's prompt.\n\
@@ -893,6 +898,9 @@ pub async fn enhance_video_prompt(
     resolution: Option<String>,
     with_audio: Option<bool>,
     images: Option<Vec<VideoReferenceImage>>,
+    // Describes how the images are used (first/last frame, keyframes, references)
+    // when the UI pins frames; overrides the count-based guess below.
+    mode_hint: Option<String>,
 ) -> Result<String, String> {
     let idea = prompt.trim();
     if idea.is_empty() {
@@ -902,13 +910,16 @@ pub async fn enhance_video_prompt(
         .as_ref()
         .map(|v| v.iter().filter(|i| !i.data.is_empty()).take(VIDEO_REFERENCE_IMAGES_MAX).collect())
         .unwrap_or_default();
-    let mode = match imgs.len() {
+    let mode = match mode_hint.as_deref().map(str::trim).filter(|m| !m.is_empty()) {
+        Some(hint) => hint.to_string(),
+        None => match imgs.len() {
         0 => "text-to-video".to_string(),
         1 => "image-to-video (the attached image is the first frame)".to_string(),
         n => format!(
             "reference-to-video ({} attached reference images, referred to as <IMAGE_1>…<IMAGE_{}>)",
             n, n
         ),
+        },
     };
     let brief = format!(
         "Mode: {}\nDuration: {}s\nAspect ratio: {}\nResolution: {}\nNative audio: {}\n\nUser prompt:\n{}",
@@ -1140,6 +1151,66 @@ fn hd_plan_user_message(is_supergrok: bool) -> String {
     }
 }
 
+/// Max mid-clip keyframes per request (xAI limit).
+const VIDEO_KEYFRAMES_MAX: usize = 4;
+
+/// Keyframe anchors live on a 1/3-second grid; send the snapped value.
+fn snap_keyframe_time(t: f64) -> f64 {
+    ((t * 3.0).round() / 3.0 * 1000.0).round() / 1000.0
+}
+
+/// Check frame-pinning rules before spending a request. Mirrors the xAI docs:
+/// `last_frame` / `keyframes` are Video 1.5 only, at most 4 keyframes, each
+/// strictly inside the clip and in its own 1/3 s slot. A first-frame `image`
+/// may be combined with `reference_images` on Video 1.5.
+fn validate_frame_pins(
+    model: &str,
+    has_image: bool,
+    has_refs: bool,
+    has_last: bool,
+    keyframes: &[&VideoKeyframe],
+    clip_seconds: u32,
+) -> Result<(), String> {
+    let is_full_15 = model.contains("1.5") && !model.contains("lite");
+    if (has_last || !keyframes.is_empty()) && !is_full_15 {
+        return Err(format!(
+            "Last frame and keyframes need Grok Imagine Video 1.5 — {} doesn't support them.",
+            model
+        ));
+    }
+    if has_image && has_refs && !is_full_15 {
+        return Err(
+            "A pinned first frame plus reference images needs Grok Imagine Video 1.5. \
+             Use one image for image-to-video, or references only."
+                .to_string(),
+        );
+    }
+    if keyframes.len() > VIDEO_KEYFRAMES_MAX {
+        return Err(format!(
+            "Too many keyframes ({}). Maximum is {}.",
+            keyframes.len(),
+            VIDEO_KEYFRAMES_MAX
+        ));
+    }
+    let mut slots = std::collections::HashSet::new();
+    for k in keyframes {
+        let t = snap_keyframe_time(k.timestamp_s);
+        if !(t > 0.0 && t < clip_seconds as f64) {
+            return Err(format!(
+                "Keyframe at {:.1}s must be inside the {}s clip.",
+                t, clip_seconds
+            ));
+        }
+        if !slots.insert((k.timestamp_s * 3.0).round() as i64) {
+            return Err(format!(
+                "Two keyframes land on {:.1}s — keep them at least 1/3 s apart.",
+                t
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub async fn generate_video(
     app_handle: tauri::AppHandle,
     prompt: String,
@@ -1156,6 +1227,10 @@ pub async fn generate_video(
     fallback_720p: Option<bool>,
     // True when the bearer is a SuperGrok / SuperGrok Heavy OAuth token (plan-gated 1080p).
     is_supergrok: bool,
+    // Video 1.5 frame pinning (see `validate_frame_pins`).
+    last_frame: Option<String>,
+    last_frame_mime_type: Option<String>,
+    keyframes: Option<Vec<VideoKeyframe>>,
 ) -> Result<Value, String> {
     let client = Client::new();
     let model = model_id.unwrap_or_else(|| "grok-imagine-video".to_string());
@@ -1171,13 +1246,14 @@ pub async fn generate_video(
     let ref_count = refs.len();
     let has_refs = ref_count > 0;
 
-    // API rejects combining image (I2V) with reference_images (R2V).
-    if has_image && has_refs {
-        return Err(
-            "Cannot use both a start-frame image and reference images. Use one image for image-to-video, or 1–7 references for reference-to-video."
-                .to_string(),
-        );
-    }
+    let has_last = last_frame.as_ref().is_some_and(|d| !d.is_empty());
+    let mut kfs: Vec<&VideoKeyframe> = keyframes
+        .as_ref()
+        .map(|v| v.iter().filter(|k| !k.data.is_empty()).collect())
+        .unwrap_or_default();
+    kfs.sort_by(|a, b| a.timestamp_s.total_cmp(&b.timestamp_s));
+    let clip_seconds = duration_seconds.unwrap_or(10);
+    validate_frame_pins(&model, has_image, has_refs, has_last, &kfs, clip_seconds)?;
     if ref_count > VIDEO_REFERENCE_IMAGES_MAX {
         return Err(format!(
             "Too many reference images ({}). Maximum is {}.",
@@ -1230,7 +1306,8 @@ pub async fn generate_video(
             "url": format!("data:{};base64,{}", mime, image.as_ref().unwrap()),
             "type": "image_url"
         });
-    } else if has_refs {
+    }
+    if has_refs {
         // Reference-to-video: each entry is { "url": "data:...;base64,..." } (or HTTPS / file_id).
         let ref_payload: Vec<Value> = refs
             .iter()
@@ -1240,6 +1317,25 @@ pub async fn generate_video(
             })
             .collect();
         base_payload["reference_images"] = json!(ref_payload);
+    }
+    if has_last {
+        let mime = last_frame_mime_type.as_deref().unwrap_or("image/png");
+        base_payload["last_frame"] = json!({
+            "url": format!("data:{};base64,{}", mime, last_frame.as_ref().unwrap())
+        });
+    }
+    if !kfs.is_empty() {
+        let kf_payload: Vec<Value> = kfs
+            .iter()
+            .map(|k| {
+                let mime = k.mime_type.as_deref().unwrap_or("image/png");
+                json!({
+                    "image": { "url": format!("data:{};base64,{}", mime, k.data) },
+                    "timestamp_s": snap_keyframe_time(k.timestamp_s),
+                })
+            })
+            .collect();
+        base_payload["keyframes"] = json!(kf_payload);
     }
 
     // 1080p plan gating: SuperGrok (non-Heavy) plans may not include 1080p yet — only
@@ -1256,8 +1352,8 @@ pub async fn generate_video(
         let mut payload = base_payload.clone();
         payload["resolution"] = json!(res_try);
         info!(
-            "[generate_video] POST {} model={} resolution={} has_image={} ref_images={} with_audio={} supergrok={}",
-            url, model, res_try, has_image, ref_count, audio_enabled, is_supergrok
+            "[generate_video] POST {} model={} resolution={} has_image={} ref_images={} last_frame={} keyframes={} with_audio={} supergrok={}",
+            url, model, res_try, has_image, ref_count, has_last, kfs.len(), audio_enabled, is_supergrok
         );
         match submit_video_request(&client, &url, &api_key, payload).await {
             Ok(v) => {
@@ -3292,3 +3388,41 @@ async fn execute_tool(
 }
 
 
+
+#[cfg(test)]
+mod frame_pin_tests {
+    use super::*;
+
+    fn kf(t: f64) -> VideoKeyframe {
+        VideoKeyframe { data: "AA==".into(), mime_type: None, timestamp_s: t }
+    }
+
+    #[test]
+    fn snaps_to_thirds() {
+        assert_eq!(snap_keyframe_time(7.3), 7.333);
+        assert_eq!(snap_keyframe_time(2.0), 2.0);
+    }
+
+    #[test]
+    fn pins_need_full_video_15() {
+        let k = kf(3.0);
+        assert!(validate_frame_pins("grok-imagine-video-1.5", true, false, true, &[&k], 10).is_ok());
+        assert!(validate_frame_pins("grok-imagine-video", false, false, true, &[], 10).is_err());
+        assert!(validate_frame_pins("grok-imagine-video-1.5-lite", false, false, false, &[&k], 10).is_err());
+        // First frame + references is fine on 1.5, rejected elsewhere.
+        assert!(validate_frame_pins("grok-imagine-video-1.5", true, true, false, &[], 10).is_ok());
+        assert!(validate_frame_pins("grok-imagine-video", true, true, false, &[], 10).is_err());
+    }
+
+    #[test]
+    fn keyframe_limits() {
+        let ks: Vec<VideoKeyframe> = [1.0, 2.0, 3.0, 4.0, 5.0].into_iter().map(kf).collect();
+        let refs: Vec<&VideoKeyframe> = ks.iter().collect();
+        assert!(validate_frame_pins("grok-imagine-video-1.5", false, false, false, &refs, 10).is_err());
+        let (a, b) = (kf(10.0), kf(0.0));
+        assert!(validate_frame_pins("grok-imagine-video-1.5", false, false, false, &[&a], 10).is_err());
+        assert!(validate_frame_pins("grok-imagine-video-1.5", false, false, false, &[&b], 10).is_err());
+        let (c, d) = (kf(2.0), kf(2.1));
+        assert!(validate_frame_pins("grok-imagine-video-1.5", false, false, false, &[&c, &d], 10).is_err());
+    }
+}

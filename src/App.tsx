@@ -723,6 +723,7 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
                    <li>• Grok 4.6 — previous flagship, Auto / Fast / Expert / Heavy, 500k context</li>
                    <li>• Grok Imagine Image 2.0 / Video 1.5 / Voice — image, video, TTS &amp; Think Fast live agent</li>
                    <li>• Grok Imagine Video — up to 30s continuous (15s base, auto-extended from the last frame)</li>
+                   <li>• Grok Imagine Video keyframes — pin first, last and up to 4 mid-clip frames; Grok fills in the motion</li>
                    <li>• Grok Voice Transcribe 2.0 — upload audio/video or record, get transcripts with speakers, timestamps &amp; SRT export</li>
                  </ul>
              </div>

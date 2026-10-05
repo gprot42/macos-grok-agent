@@ -13,7 +13,12 @@ import { DebugLogPanel } from "./DebugLogPanel";
 import { McpPanel } from "./McpPanel";
 import { FileHistoryPanel, FileHistory, FileVersion } from "./FileHistoryPanel";
 import { SkillsPanel } from "./SkillsPanel";
-import { MODELS, GROK_46_THINKING_OPTIONS, usesGrokConsumerModes } from "@shared/constants/models";
+import {
+  DEFAULT_CHAT_MODEL_ID,
+  GROK_46_THINKING_OPTIONS,
+  MODELS,
+  usesGrokConsumerModes,
+} from "@shared/constants/models";
 import type { ModelConfig, EndpointType } from "@shared/types";
 
 interface ToolCallEntry {
@@ -100,7 +105,7 @@ export function CodingAgentPanel({
   const [stopping, setStopping] = useState(false);
   const [workingDir, setWorkingDir] = useState("");
   const [model, setModel] = useState<ModelConfig>(
-    CODING_MODELS.find((m: ModelConfig) => m.id === "grok-4-6") || CODING_MODELS[0]
+    CODING_MODELS.find((m: ModelConfig) => m.id === DEFAULT_CHAT_MODEL_ID) || CODING_MODELS[0]
   );
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
   const [attachedImage, setAttachedImage] = useState<{ data: string; mimeType: string; name: string } | null>(null);
