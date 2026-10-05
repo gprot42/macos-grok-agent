@@ -828,6 +828,14 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
               </div>
 
               <div>
+                <h5 className="text-sm font-semibold text-emerald-800 dark:text-emerald-200 mb-1">Speech to text</h5>
+                <ul className="text-sm text-emerald-700 dark:text-emerald-300 space-y-0.5">
+                  <li>• <strong>grok-voice-transcribe-2.0</strong> — $0.10 / hour for files, $0.20 / hour live (streaming)</li>
+                  <li>• grok-voice-transcribe-1.0 reached end of life; requests to it now run on 2.0</li>
+                </ul>
+              </div>
+
+              <div>
                 <h5 className="text-sm font-semibold text-emerald-800 dark:text-emerald-200 mb-1">Video generation</h5>
                 <ul className="text-sm text-emerald-700 dark:text-emerald-300 space-y-0.5">
                   <li>• <strong>grok-imagine-video-1.5</strong> — $0.08 per second (default)</li>

@@ -16,13 +16,14 @@ import {
 import { useAudioStream } from "../hooks/useAudioStream";
 import { Upload, Mic, Copy, Check, Download, X, Loader2, Trash2, Square, FileAudio, Captions, Radio } from "lucide-react";
 
-/** Grok Voice Transcribe models (`POST /v1/stt`). */
-const STT_MODELS = [
-  { id: "grok-voice-transcribe-2.0", label: "Transcribe 2.0", hint: "Latest — best accuracy, diarization and formatting" },
-  { id: "grok-voice-transcribe-1.0", label: "Transcribe 1.0", hint: "Original model" },
-] as const;
-
-type SttModelId = (typeof STT_MODELS)[number]["id"];
+/**
+ * Grok Voice Transcribe (`POST /v1/stt`). 1.0 reached end of life on the xAI API
+ * (Oct 2026) and requests to it are routed to 2.0, so 2.0 is the only model.
+ */
+const STT_MODEL = "grok-voice-transcribe-2.0";
+const STT_MODEL_LABEL = "Transcribe 2.0";
+/** xAI pricing: files over REST vs. live streaming. */
+const STT_PRICING_HINT = "$0.10/hr files · $0.20/hr live";
 
 /** Language hint for formatting. "auto" omits the field and lets the API detect it. */
 const LANGUAGES = [
@@ -135,7 +136,7 @@ type AudioSource =
   | { kind: "inline"; base64: string; mimeType: string; filename: string };
 
 export function SpeechToTextPanel({ apiKey, activeProject = null }: SpeechToTextPanelProps) {
-  const [model, setModel] = useState<SttModelId>("grok-voice-transcribe-2.0");
+  const model: string = STT_MODEL;
   const [language, setLanguage] = useState("auto");
   const [formatText, setFormatText] = useState(true);
   const [diarize, setDiarize] = useState(false);
@@ -705,11 +706,10 @@ export function SpeechToTextPanel({ apiKey, activeProject = null }: SpeechToText
         <div className="flex items-center gap-x-4 gap-y-2 flex-wrap">
           <div className="flex items-center gap-1.5">
             <span className="text-xs theme-text-muted font-medium">Model:</span>
-            {STT_MODELS.map((m) => (
-              <button key={m.id} type="button" onClick={() => setModel(m.id)} title={`${m.id} — ${m.hint}`} className={toggleBtn(model === m.id)}>
-                {m.label}
-              </button>
-            ))}
+            <span className={toggleBtn(true)} title={`${STT_MODEL} — xAI's only transcription model`}>
+              {STT_MODEL_LABEL}
+            </span>
+            <span className="text-[11px] theme-text-muted">{STT_PRICING_HINT}</span>
           </div>
 
           <div className="flex items-center gap-1.5">
@@ -853,7 +853,7 @@ export function SpeechToTextPanel({ apiKey, activeProject = null }: SpeechToText
                   Start Recording
                 </button>
                 <span className="text-xs theme-text-muted">
-                  Record from the mic, then transcribe with {STT_MODELS.find((m) => m.id === model)?.label}
+                  Record from the mic, then transcribe with {STT_MODEL_LABEL}
                 </span>
               </>
             )}
