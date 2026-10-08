@@ -255,7 +255,7 @@ export const MODELS: Record<string, ModelConfig> = {
     icon: "video",
     color: "#14B8A6",
     description:
-      "Lightweight Video 1.5 — text/image-to-video with native audio, 480p/720p/1080p, from $0.02/sec (480p). Best for fast, cheap drafts",
+      "Lightweight Video 1.5 — text/image-to-video with native audio, 1–15s, 480p/720p/1080p, 9 aspect ratios. $0.02/sec 480p · $0.03 720p · $0.14 1080p",
     pricing: { input: 0, output: 0.02 },
     supportsVideoGeneration: true,
     endpointSupport: ["xai"],

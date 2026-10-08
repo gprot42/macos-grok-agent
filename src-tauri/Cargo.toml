@@ -1,6 +1,6 @@
 [package]
 name = "grok-agent"
-version = "0.0.16"
+version = "0.0.17"
 description = "Grok Agent - AI Assistant"
 authors = ["Cortex Team"]
 license = "MIT"

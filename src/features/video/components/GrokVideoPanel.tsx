@@ -29,12 +29,17 @@ interface SourceImage {
 const MAX_VIDEO_IMAGES = 7;
 
 // ── Aspect ratio data ──────────────────────────────────────────────────────
+/** All 9 ratios the video API accepts, narrowest to widest. */
 const VIDEO_ASPECT_RATIOS = [
-  { value: "2:3", label: "2:3", w: 14, h: 20 },
-  { value: "3:2", label: "3:2", w: 20, h: 14 },
-  { value: "1:1", label: "1:1", w: 16, h: 16 },
-  { value: "9:16", label: "9:16", w: 14, h: 20 },
-  { value: "16:9", label: "16:9", w: 22, h: 12 },
+  { value: "9:16", label: "9:16", w: 12, h: 22 },
+  { value: "2:3", label: "2:3", w: 14, h: 21 },
+  { value: "3:4", label: "3:4", w: 15, h: 20 },
+  { value: "1:1", label: "1:1", w: 17, h: 17 },
+  { value: "4:3", label: "4:3", w: 20, h: 15 },
+  { value: "3:2", label: "3:2", w: 21, h: 14 },
+  { value: "16:9", label: "16:9", w: 24, h: 13.5 },
+  { value: "21:9", label: "21:9", w: 28, h: 12 },
+  { value: "5:2", label: "5:2", w: 30, h: 12 },
 ] as const;
 
 const VIDEO_DURATIONS = [6, 10, 15, 20, 25, 30] as const;
@@ -106,7 +111,7 @@ const MODEL_COMPARE_ROWS: { label: string; legacy: string; v15: string; lite: st
   {
     label: "Best when",
     legacy: "Cheaper experiments, classic pipeline",
-    v15: "Best quality, text-to-video, 1080p, references", lite: "Iterating on prompts before a final 1.5 render"
+    v15: "Best quality, text-to-video, 1080p, references", lite: "Drafts and high-volume runs (Batch API, 10 req/s)"
   },
   {
     label: "In this app",
@@ -699,6 +704,13 @@ export function GrokVideoPanel({
               ))}
             </div>
           </div>
+
+          {framePlan.first && (
+            <p className="text-[11px] text-muted-foreground -mt-1">
+              With a first-frame image the video keeps that image's shape — the aspect ratio
+              above is ignored by the API.
+            </p>
+          )}
 
           {/* Duration + Resolution + Audio on one row */}
           <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap">
