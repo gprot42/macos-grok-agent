@@ -6,6 +6,7 @@ import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import { Button } from "@shared/components/ui/button";
 import { Textarea } from "@shared/components/ui/textarea";
 import { MODELS } from "@shared/constants/models";
+import { BatchVideoSection } from "./BatchVideoSection";
 import {
   FRAME_ROLE_OPTIONS,
   formatTimestamp,
@@ -278,6 +279,8 @@ export function GrokVideoPanel({
   const [fallback720, setFallback720] = useState(true);
   /** Set when the last result was served at a different resolution than requested. */
   const [servedNote, setServedNote] = useState<string | null>(null);
+  /** Single realtime video, or many text-to-video jobs through the Batch API. */
+  const [panelMode, setPanelMode] = useState<"single" | "batch">("single");
   /** Seconds actually delivered — may be short of the target if an extension failed. */
   const [finalSeconds, setFinalSeconds] = useState<number | null>(null);
   /** Prompt enhancement: rewrites the idea into a detailed video prompt via a Grok chat model. */
@@ -663,6 +666,32 @@ export function GrokVideoPanel({
           selected={videoModelKind(modelId)}
         />
 
+        {/* Single video vs Batch API */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-0.5 bg-muted rounded-full p-0.5">
+            {(["single", "batch"] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setPanelMode(m)}
+                className={pillBtn(panelMode === m)}
+                title={
+                  m === "single"
+                    ? "Generate one video now"
+                    : "Queue many text-to-video jobs with the xAI Batch API (results within ~24h)"
+                }
+              >
+                {m === "single" ? "Single video" : "Batch"}
+              </button>
+            ))}
+          </div>
+          {panelMode === "batch" && (
+            <span className="text-[11px] text-muted-foreground">
+              One video per prompt, queued on xAI — come back for results
+            </span>
+          )}
+        </div>
+
         {/* Settings card — single dense block */}
         <div className="rounded-xl border border-border bg-card px-3.5 py-2.5 space-y-2.5">
           {/* Aspect ratio — compact row */}
@@ -722,11 +751,13 @@ export function GrokVideoPanel({
                     key={d}
                     type="button"
                     onClick={() => setDuration(d)}
-                    disabled={framePlan.usesPins && d > MAX_SINGLE_CLIP_SECONDS}
+                    disabled={(framePlan.usesPins || panelMode === "batch") && d > MAX_SINGLE_CLIP_SECONDS}
                     title={
-                      framePlan.usesPins && d > MAX_SINGLE_CLIP_SECONDS
-                        ? "Last frame and keyframes pin a single clip (15s max)"
-                        : undefined
+                      panelMode === "batch" && d > MAX_SINGLE_CLIP_SECONDS
+                        ? "Batch videos are single clips (15s max)"
+                        : framePlan.usesPins && d > MAX_SINGLE_CLIP_SECONDS
+                          ? "Last frame and keyframes pin a single clip (15s max)"
+                          : undefined
                     }
                     className={`${pillBtn(duration === d)} disabled:opacity-35 disabled:cursor-not-allowed`}
                   >
@@ -828,6 +859,24 @@ export function GrokVideoPanel({
           </div>
         </div>
 
+        {panelMode === "batch" && (
+          <BatchVideoSection
+            apiKey={apiKey}
+            modelId={effectiveResolution === "1080p" && !isVideo15 ? VIDEO_15_MODEL : modelId}
+            modelName={
+              effectiveResolution === "1080p" && !isVideo15
+                ? "Grok Imagine Video 1.5"
+                : modelConfig?.displayName ?? modelId
+            }
+            durationSeconds={Math.min(duration, MAX_SINGLE_CLIP_SECONDS)}
+            resolution={effectiveResolution}
+            aspectRatio={aspectRatio}
+            withAudio={withAudio}
+            ratePerSecond={videoRatePerSecond(modelId, effectiveResolution)}
+          />
+        )}
+
+        {panelMode === "single" && (<>
         {/* Source / reference images — optional, up to 7 */}
         <div className="rounded-xl border border-border bg-card px-3.5 py-2.5 space-y-2">
           <div className="flex items-start justify-between gap-2">
@@ -1146,6 +1195,7 @@ export function GrokVideoPanel({
           />
         </div>
       )}
+      </>)}
       </div>
       </div>
     </div>

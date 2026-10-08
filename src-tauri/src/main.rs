@@ -2,6 +2,7 @@
 
 mod agent_chain;
 mod api;
+mod batch;
 mod live_stt;
 mod codegen;
 mod mcp;
@@ -837,6 +838,42 @@ async fn get_default_working_dir(active_project: Option<String>) -> Result<Strin
     Ok(dir.to_string_lossy().to_string())
 }
 
+/// Submit a batch of text-to-video jobs (one per prompt) via the xAI Batch API.
+#[tauri::command]
+async fn video_batch_create(
+    api_key: String,
+    name: String,
+    items: Vec<batch::BatchVideoItem>,
+    settings: batch::BatchVideoSettings,
+) -> Result<serde_json::Value, String> {
+    let bearer = resolve_xai_credential_for_request(&api_key).await?;
+    batch::create_video_batch(&bearer, &name, items, settings).await
+}
+
+#[tauri::command]
+async fn video_batch_list(api_key: String, pagination_token: Option<String>) -> Result<serde_json::Value, String> {
+    let bearer = resolve_xai_credential_for_request(&api_key).await?;
+    batch::list_batches(&bearer, pagination_token).await
+}
+
+#[tauri::command]
+async fn video_batch_get(api_key: String, batch_id: String) -> Result<serde_json::Value, String> {
+    let bearer = resolve_xai_credential_for_request(&api_key).await?;
+    batch::get_batch(&bearer, &batch_id).await
+}
+
+#[tauri::command]
+async fn video_batch_results(api_key: String, batch_id: String) -> Result<serde_json::Value, String> {
+    let bearer = resolve_xai_credential_for_request(&api_key).await?;
+    batch::batch_results(&bearer, &batch_id).await
+}
+
+#[tauri::command]
+async fn video_batch_cancel(api_key: String, batch_id: String) -> Result<serde_json::Value, String> {
+    let bearer = resolve_xai_credential_for_request(&api_key).await?;
+    batch::cancel_batch(&bearer, &batch_id).await
+}
+
 #[tauri::command]
 async fn download_video(
     url: String,
@@ -1022,6 +1059,11 @@ fn main() {
             delete_custom_voice,
             create_voice_client_secret,
             download_video,
+            video_batch_create,
+            video_batch_list,
+            video_batch_get,
+            video_batch_results,
+            video_batch_cancel,
             get_default_working_dir,
             delete_file,
             save_sessions,

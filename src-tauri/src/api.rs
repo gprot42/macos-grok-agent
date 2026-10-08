@@ -748,7 +748,7 @@ fn credits_limit_user_message(context: &str) -> String {
 }
 
 /// Turn a raw xAI video API error body into a short, user-facing message.
-fn format_video_api_error(context: &str, status: reqwest::StatusCode, body: &str) -> String {
+pub(crate) fn format_video_api_error(context: &str, status: reqwest::StatusCode, body: &str) -> String {
     // Try JSON: { "code": "imagine:content-moderated", "error": "..." }
     if let Ok(v) = serde_json::from_str::<Value>(body) {
         let code = v
