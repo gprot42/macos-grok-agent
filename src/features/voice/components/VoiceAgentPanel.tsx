@@ -407,13 +407,13 @@ export function VoiceAgentPanel({ apiKey }: VoiceAgentPanelProps) {
               <div className="text-lg font-semibold theme-text">Live Voice Agent</div>
               <p className="text-sm leading-relaxed">
                 Real-time speech-to-speech. Select a model above — default is{" "}
-                <strong className="theme-text">Grok Voice Think Fast 2.0</strong>
-                {" "}(<code className="text-xs font-mono">grok-voice-think-fast-2.0</code>).
+                <strong className="theme-text">Grok Voice 3.0</strong>
+                {" "}(<code className="text-xs font-mono">grok-voice-3.0</code>).
                 Server VAD detects when you stop speaking; interrupt anytime.
               </p>
               <p className="text-xs opacity-70">
                 Currently selected: <span className="font-mono">{selectedModel.id}</span>
-                {" · "}$0.08/min (2.0) · $0.05/min (1.0)
+                {" · "}$0.08/min
               </p>
             </div>
           </div>

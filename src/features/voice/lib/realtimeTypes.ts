@@ -32,7 +32,7 @@ export interface VoiceAgentSessionConfig {
   modelId: string;
   voice: string;
   instructions: string;
-  /** Reasoning effort for Think Fast models. Defaults to "high". */
+  /** `reasoning.effort` — on by default ("high") for Voice 3.0; "none" turns it off. */
   reasoningEffort?: "high" | "none";
   /** Enable web_search tool. */
   webSearch?: boolean;
@@ -40,24 +40,24 @@ export interface VoiceAgentSessionConfig {
   xSearch?: boolean;
 }
 
-/** Default Speech-to-Speech model. */
-export const DEFAULT_VOICE_AGENT_MODEL = "grok-voice-think-fast-2.0";
+/** Default Speech-to-Speech model — Grok Voice 3.0 (xAI's flagship; 2.0 is deprecated). */
+export const DEFAULT_VOICE_AGENT_MODEL = "grok-voice-3.0";
 
 export const VOICE_AGENT_MODELS = [
   {
-    id: "grok-voice-think-fast-2.0",
-    label: "Grok Voice Think Fast 2.0",
+    id: "grok-voice-3.0",
+    label: "Grok Voice 3.0",
     desc: "Flagship · $0.08/min",
-  },
-  {
-    id: "grok-voice-think-fast-1.0",
-    label: "Grok Voice Think Fast 1.0",
-    desc: "Previous gen · $0.05/min",
   },
   {
     id: "grok-voice-latest",
     label: "Grok Voice (Latest)",
-    desc: "Alias · tracks newest",
+    desc: "Alias · currently 3.0",
+  },
+  {
+    id: "grok-voice-think-fast-2.0",
+    label: "Grok Voice Think Fast 2.0",
+    desc: "Deprecated · use 3.0",
   },
 ] as const;
 

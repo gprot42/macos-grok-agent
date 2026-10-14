@@ -29,7 +29,7 @@ const MODES: {
     id: "agent",
     title: "Live Agent",
     subtitle: "Real-time speech-to-speech conversation",
-    model: "grok-voice-think-fast-2.0",
+    model: "grok-voice-3.0",
     icon: Radio,
     activeRing: "border-sky-500 ring-2 ring-sky-500/30",
     activeBg: "bg-sky-50 dark:bg-sky-950/40",

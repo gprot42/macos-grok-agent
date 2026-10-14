@@ -145,18 +145,16 @@ describe("MODELS registry", () => {
     expect(ttsMod.supportsTextToSpeech).toBe(true);
   });
 
-  it("voice agent models include Think Fast 2.0", () => {
-    const v2 = MODELS["grok-voice-think-fast-2.0"];
-    expect(v2).toBeDefined();
-    expect(v2.supportsVoiceAgent).toBe(true);
-    expect(v2.modelId).toBe("grok-voice-think-fast-2.0");
-    expect(v2.endpointSupport).toContain("xai");
+  it("voice agent models: Grok Voice 3.0 flagship, Latest alias, deprecated 2.0", () => {
+    const v3 = MODELS["grok-voice-3.0"];
+    expect(v3).toBeDefined();
+    expect(v3.supportsVoiceAgent).toBe(true);
+    expect(v3.modelId).toBe("grok-voice-3.0");
+    expect(v3.endpointSupport).toContain("xai");
 
-    const v1 = MODELS["grok-voice-think-fast-1.0"];
-    expect(v1?.supportsVoiceAgent).toBe(true);
-
-    const latest = MODELS["grok-voice-latest"];
-    expect(latest?.supportsVoiceAgent).toBe(true);
+    expect(MODELS["grok-voice-think-fast-2.0"]?.description).toMatch(/deprecated/i);
+    expect(MODELS["grok-voice-think-fast-1.0"]).toBeUndefined();
+    expect(MODELS["grok-voice-latest"]?.description).toMatch(/3\.0/);
   });
 });
 

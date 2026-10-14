@@ -18,7 +18,7 @@ import type {
   VoiceAgentSessionConfig,
   VoiceAgentStatus,
 } from "../lib/realtimeTypes";
-import { DEFAULT_VOICE_INSTRUCTIONS } from "../lib/realtimeTypes";
+import { DEFAULT_VOICE_AGENT_MODEL, DEFAULT_VOICE_INSTRUCTIONS } from "../lib/realtimeTypes";
 
 const XAI_REALTIME_URL = "wss://api.x.ai/v1/realtime";
 
@@ -316,7 +316,7 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
           throw new Error("Empty client secret returned from xAI");
         }
 
-        const model = encodeURIComponent(config.modelId || "grok-voice-think-fast-2.0");
+        const model = encodeURIComponent(config.modelId || DEFAULT_VOICE_AGENT_MODEL);
         const url = `${XAI_REALTIME_URL}?model=${model}`;
 
         // Browser cannot set Authorization headers on WebSocket; pass the

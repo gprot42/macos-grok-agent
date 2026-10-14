@@ -721,7 +721,7 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
                    <li>• Grok 4.7 — xAI flagship, Auto / Fast / Expert / Heavy, 500k context, text + image input</li>
                    <li>• Grok 4.7 Fast — same model on faster infrastructure (Grok Build / Cursor auth only)</li>
                    <li>• Grok 4.6 — previous flagship, Auto / Fast / Expert / Heavy, 500k context</li>
-                   <li>• Grok Imagine Image 2.0 / Video 1.5 / Voice — image, video, TTS &amp; Think Fast live agent</li>
+                   <li>• Grok Imagine Image 2.0 / Video 1.5 / Voice — image, video, TTS &amp; Grok Voice 3.0 live agent</li>
                    <li>• Grok Imagine Video — up to 30s continuous (15s base, auto-extended from the last frame)</li>
                    <li>• Grok Imagine Video keyframes — pin first, last and up to 4 mid-clip frames; Grok fills in the motion</li>
                    <li>• Grok Imagine Video batches — queue many prompts via the xAI Batch API, track progress, download results</li>
@@ -849,8 +849,8 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
               <div>
                 <h5 className="text-sm font-semibold text-emerald-800 dark:text-emerald-200 mb-1">Voice</h5>
                 <ul className="text-sm text-emerald-700 dark:text-emerald-300 space-y-0.5">
-                  <li>• <strong>Think Fast 2.0</strong> (speech-to-speech) — $0.08 / min audio · $0.004 text input</li>
-                  <li>• <strong>Think Fast 1.0</strong> (speech-to-speech) — $0.05 / min audio · $0.004 text input</li>
+                  <li>• <strong>Grok Voice 3.0</strong> (speech-to-speech, default) — $0.08 / min audio · $0.004 text input</li>
+                  <li>• <strong>Think Fast 2.0</strong> — deprecated by xAI; same price, switch to 3.0</li>
                   <li>• <strong>grok-tts</strong> (text-to-speech) — $15 / 1M characters</li>
                 </ul>
               </div>
