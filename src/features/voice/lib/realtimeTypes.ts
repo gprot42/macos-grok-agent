@@ -55,8 +55,8 @@ export const VOICE_AGENT_MODELS = [
     desc: "Alias · currently 3.0",
   },
   {
-    id: "grok-voice-think-fast-2.0",
-    label: "Grok Voice Think Fast 2.0",
+    id: "grok-voice-2.0",
+    label: "Grok Voice 2.0",
     desc: "Deprecated · use 3.0",
   },
 ] as const;

@@ -304,11 +304,11 @@ export const MODELS: Record<string, ModelConfig> = {
     supportsVoiceAgent: true,
     endpointSupport: ["xai"],
   },
-  "grok-voice-think-fast-2.0": {
-    id: "grok-voice-think-fast-2.0",
+  "grok-voice-2.0": {
+    id: "grok-voice-2.0",
     publisher: "xai",
-    modelId: "grok-voice-think-fast-2.0",
-    displayName: "Grok Voice Think Fast 2.0",
+    modelId: "grok-voice-2.0",
+    displayName: "Grok Voice 2.0",
     maxInputTokens: 128000,
     maxOutputTokens: 32768,
     icon: "mic",

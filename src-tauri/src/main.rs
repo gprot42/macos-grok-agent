@@ -713,9 +713,18 @@ async fn delete_custom_voice(
 async fn create_voice_client_secret(
     api_key: String,
     expires_after_secs: Option<u64>,
+    // Session model and reasoning effort bound to the secret.
+    model: Option<String>,
+    reasoning_effort: Option<String>,
 ) -> Result<serde_json::Value, String> {
     let bearer = resolve_xai_credential_for_request(&api_key).await?;
-    api::create_voice_client_secret(bearer, expires_after_secs).await
+    api::create_voice_client_secret(bearer, expires_after_secs, model, reasoning_effort).await
+}
+
+/// Explain a failed realtime WebSocket handshake (the webview can't see why).
+#[tauri::command]
+async fn probe_voice_realtime(secret: String, model: String) -> Result<String, String> {
+    Ok(api::probe_voice_realtime(secret, model).await)
 }
 
 #[tauri::command]
@@ -1058,6 +1067,7 @@ fn main() {
             get_custom_voice,
             delete_custom_voice,
             create_voice_client_secret,
+            probe_voice_realtime,
             download_video,
             video_batch_create,
             video_batch_list,

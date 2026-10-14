@@ -152,7 +152,8 @@ describe("MODELS registry", () => {
     expect(v3.modelId).toBe("grok-voice-3.0");
     expect(v3.endpointSupport).toContain("xai");
 
-    expect(MODELS["grok-voice-think-fast-2.0"]?.description).toMatch(/deprecated/i);
+    expect(MODELS["grok-voice-2.0"]?.description).toMatch(/deprecated/i);
+    expect(MODELS["grok-voice-think-fast-2.0"]).toBeUndefined();
     expect(MODELS["grok-voice-think-fast-1.0"]).toBeUndefined();
     expect(MODELS["grok-voice-latest"]?.description).toMatch(/3\.0/);
   });

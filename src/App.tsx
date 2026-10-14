@@ -850,7 +850,7 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
                 <h5 className="text-sm font-semibold text-emerald-800 dark:text-emerald-200 mb-1">Voice</h5>
                 <ul className="text-sm text-emerald-700 dark:text-emerald-300 space-y-0.5">
                   <li>• <strong>Grok Voice 3.0</strong> (speech-to-speech, default) — $0.08 / min audio · $0.004 text input</li>
-                  <li>• <strong>Think Fast 2.0</strong> — deprecated by xAI; same price, switch to 3.0</li>
+                  <li>• <strong>Grok Voice 2.0</strong> — deprecated by xAI; same price, switch to 3.0</li>
                   <li>• <strong>grok-tts</strong> (text-to-speech) — $15 / 1M characters</li>
                 </ul>
               </div>

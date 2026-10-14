@@ -307,23 +307,28 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
       assistantIdRef.current = null;
 
       try {
+        const modelId = config.modelId || DEFAULT_VOICE_AGENT_MODEL;
         const secret = await invoke<ClientSecretResponse>("create_voice_client_secret", {
           apiKey,
           expiresAfterSecs: 300,
+          model: modelId,
+          reasoningEffort: config.reasoningEffort ?? "high",
         });
 
         if (!secret?.value) {
           throw new Error("Empty client secret returned from xAI");
         }
 
-        const model = encodeURIComponent(config.modelId || DEFAULT_VOICE_AGENT_MODEL);
+        const model = encodeURIComponent(modelId);
         const url = `${XAI_REALTIME_URL}?model=${model}`;
 
         // Browser cannot set Authorization headers on WebSocket; pass the
         // ephemeral token via the Sec-WebSocket-Protocol header (xAI convention).
         const ws = new WebSocket(url, [`xai-client-secret.${secret.value}`]);
+        let opened = false;
 
         ws.onopen = () => {
+          opened = true;
           setIsConnected(true);
           setStatus("connecting");
         };
@@ -338,7 +343,16 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
         };
 
         ws.onerror = () => {
-          pushError("WebSocket connection error");
+          if (opened) {
+            pushError("WebSocket connection error");
+            return;
+          }
+          // The webview hides why a handshake failed — ask Rust to repeat it and
+          // report the server's status and message.
+          pushError(`WebSocket connection error — checking why (model ${modelId})…`);
+          void invoke<string>("probe_voice_realtime", { secret: secret.value, model: modelId })
+            .then((why) => pushError(`WebSocket connection error (model ${modelId}): ${why}`))
+            .catch(() => {});
         };
 
         ws.onclose = (event) => {
