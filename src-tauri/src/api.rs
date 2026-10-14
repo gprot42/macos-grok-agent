@@ -2192,75 +2192,6 @@ pub async fn delete_custom_voice(api_key: String, voice_id: String) -> Result<Va
     }))
 }
 
-/// Create a short-lived ephemeral client secret for the Speech-to-Speech
-/// (realtime voice agent) WebSocket. The frontend connects directly to
-/// `wss://api.x.ai/v1/realtime` using this token so the long-lived API key
-/// never leaves the Tauri backend.
-pub async fn create_voice_client_secret(
-    api_key: String,
-    expires_after_secs: Option<u64>,
-    model: Option<String>,
-    reasoning_effort: Option<String>,
-) -> Result<Value, String> {
-    let client = Client::new();
-    let url = format!("{}/realtime/client_secrets", XAI_ENDPOINT);
-    let secs = expires_after_secs.unwrap_or(300).clamp(30, 3600);
-    let mut payload = json!({
-        "expires_after": { "seconds": secs }
-    });
-    // Bind the session's model and reasoning to the secret, as the REST reference
-    // documents; the WebSocket then opens with that configuration.
-    if let Some(m) = model.as_deref().filter(|m| !m.is_empty()) {
-        let mut session = json!({ "model": m });
-        if let Some(e) = reasoning_effort.as_deref().filter(|e| *e == "high" || *e == "none") {
-            session["reasoning"] = json!({ "effort": e });
-        }
-        payload["session"] = session;
-    }
-
-    info!(
-        "[voice] Requesting ephemeral client secret (expires_after={}s model={:?} reasoning={:?})",
-        secs, model, reasoning_effort
-    );
-
-    let response = client
-        .post(&url)
-        .header("Authorization", format!("Bearer {}", api_key))
-        .header("Content-Type", "application/json")
-        .json(&payload)
-        .send()
-        .await
-        .map_err(|e| format!("Failed to request voice client secret: {}", e))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!(
-            "Voice client secret request failed ({}): {}",
-            status, body
-        ));
-    }
-
-    let data: Value = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse voice client secret response: {}", e))?;
-
-    // API returns { value, expires_at }. Normalize for the frontend.
-    let value = data
-        .get("value")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| format!("Missing 'value' in client secret response: {}", data))?;
-    let expires_at = data
-        .get("expires_at")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0);
-
-    Ok(json!({
-        "value": value,
-        "expires_at": expires_at,
-    }))
-}
 pub(crate) fn build_url(
     endpoint: &str,
     _publisher: &str,
@@ -3402,49 +3333,6 @@ async fn execute_tool(
 }
 
 
-
-/// Repeat the browser's realtime WebSocket handshake from Rust to learn why it
-/// failed — the webview's `WebSocket` hides the server's HTTP status and body.
-/// Returns a one-line human explanation either way (closes immediately if it opens).
-pub async fn probe_voice_realtime(secret: String, model: String) -> String {
-    use tokio_tungstenite::tungstenite::{client::IntoClientRequest, http::HeaderValue, Error as WsError};
-
-    let url = format!("wss://api.x.ai/v1/realtime?model={}", model);
-    let mut request = match url.as_str().into_client_request() {
-        Ok(r) => r,
-        Err(e) => return format!("bad realtime URL: {}", e),
-    };
-    let protocol = match HeaderValue::from_str(&format!("xai-client-secret.{}", secret)) {
-        Ok(v) => v,
-        Err(_) => return "the client secret contains invalid characters".to_string(),
-    };
-    request.headers_mut().insert("Sec-WebSocket-Protocol", protocol);
-
-    match tokio_tungstenite::connect_async(request).await {
-        Ok((mut ws, _)) => {
-            let _ = ws.close(None).await;
-            "the server accepted the connection from Rust, so the webview's socket was blocked locally (network, proxy or VPN)".to_string()
-        }
-        Err(WsError::Http(resp)) => {
-            let status = resp.status();
-            let body = resp
-                .body()
-                .as_ref()
-                .map(|b| String::from_utf8_lossy(b).to_string())
-                .unwrap_or_default();
-            info!("[voice] realtime handshake rejected {} model={}: {}", status, model, body);
-            let detail = serde_json::from_str::<Value>(&body)
-                .ok()
-                .and_then(|v| {
-                    v.get("error")
-                        .and_then(|e| e.as_str().map(String::from).or_else(|| e.get("message").and_then(|m| m.as_str()).map(String::from)))
-                })
-                .unwrap_or(body);
-            format!("xAI rejected the connection ({}): {}", status, detail.trim())
-        }
-        Err(e) => format!("handshake failed: {}", e),
-    }
-}
 
 #[cfg(test)]
 mod frame_pin_tests {

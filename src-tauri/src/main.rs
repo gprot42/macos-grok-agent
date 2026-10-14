@@ -9,6 +9,7 @@ mod mcp;
 mod skills;
 mod storage;
 mod supergrok_auth;
+mod voice_ws;
 
 #[macro_use]
 extern crate log;
@@ -709,22 +710,52 @@ async fn delete_custom_voice(
     api::delete_custom_voice(bearer, voice_id).await
 }
 
+/// Open the Live Agent's realtime voice WebSocket through Rust.
+///
+/// Tries the Settings credential first (SuperGrok OAuth or API key). In
+/// SuperGrok mode, a saved xAI API key is tried next if the OAuth token is
+/// refused for realtime voice (401/403). Frames arrive as `voice-ws` events.
 #[tauri::command]
-async fn create_voice_client_secret(
-    api_key: String,
-    expires_after_secs: Option<u64>,
-    // Session model and reasoning effort bound to the secret.
-    model: Option<String>,
-    reasoning_effort: Option<String>,
-) -> Result<serde_json::Value, String> {
-    let bearer = resolve_xai_credential_for_request(&api_key).await?;
-    api::create_voice_client_secret(bearer, expires_after_secs, model, reasoning_effort).await
+async fn voice_ws_connect(app_handle: tauri::AppHandle, api_key: String, model: String) -> Result<serde_json::Value, String> {
+    let settings = storage::load_settings().await?.unwrap_or_default();
+    let mode = supergrok_auth::normalize_auth_mode(Some(&settings.auth_mode));
+    let mut candidates: Vec<voice_ws::Candidate> = Vec::new();
+    if mode == "SUPERGROK_OAUTH" {
+        if let Ok(resolved) = supergrok_auth::resolve_xai_auth(
+            &settings.auth_mode,
+            settings.xai_key.as_deref(),
+            &settings.api_key,
+        )
+        .await
+        {
+            candidates.push(voice_ws::Candidate { label: "SuperGrok sign-in".into(), bearer: resolved.bearer_token });
+        }
+        let key = settings
+            .xai_key
+            .clone()
+            .filter(|k| !k.trim().is_empty())
+            .or_else(|| Some(settings.api_key.clone()).filter(|k| k.trim().starts_with("xai-")));
+        if let Some(k) = key {
+            candidates.push(voice_ws::Candidate { label: "xAI API key".into(), bearer: k.trim().to_string() });
+        }
+    } else {
+        candidates.push(voice_ws::Candidate {
+            label: "xAI API key".into(),
+            bearer: resolve_xai_credential_for_request(&api_key).await?,
+        });
+    }
+    voice_ws::connect(app_handle, candidates, model).await
 }
 
-/// Explain a failed realtime WebSocket handshake (the webview can't see why).
 #[tauri::command]
-async fn probe_voice_realtime(secret: String, model: String) -> Result<String, String> {
-    Ok(api::probe_voice_realtime(secret, model).await)
+async fn voice_ws_send(text: String) -> Result<(), String> {
+    voice_ws::send(text).await
+}
+
+#[tauri::command]
+async fn voice_ws_close() -> Result<(), String> {
+    voice_ws::close().await;
+    Ok(())
 }
 
 #[tauri::command]
@@ -1066,8 +1097,9 @@ fn main() {
             list_custom_voices,
             get_custom_voice,
             delete_custom_voice,
-            create_voice_client_secret,
-            probe_voice_realtime,
+            voice_ws_connect,
+            voice_ws_send,
+            voice_ws_close,
             download_video,
             video_batch_create,
             video_batch_list,

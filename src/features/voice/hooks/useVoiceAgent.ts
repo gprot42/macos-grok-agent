@@ -2,15 +2,14 @@
  * Grok Voice Agent WebSocket session (Speech-to-Speech realtime API).
  *
  * Flow:
- *  1. Tauri backend mints an ephemeral client secret (API key never hits the WS)
- *  2. Browser opens wss://api.x.ai/v1/realtime?model=… with the secret as
- *     a Sec-WebSocket-Protocol token
- *  3. On conversation.created → session.update (voice, VAD, tools, audio format)
- *  4. Stream mic PCM16 ↔ play response audio deltas
+ *  1. The Rust backend opens wss://api.x.ai/v1/realtime?model=… with a real
+ *     Authorization header (SuperGrok sign-in, then a saved xAI API key if the
+ *     sign-in is refused) and relays frames — the key never reaches the webview
+ *  2. On conversation.created → session.update (voice, VAD, tools, audio format)
+ *  3. Stream mic PCM16 ↔ play response audio deltas
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import type {
   DebugLogEntry,
   RealtimeMessage,
@@ -19,13 +18,8 @@ import type {
   VoiceAgentStatus,
 } from "../lib/realtimeTypes";
 import { DEFAULT_VOICE_AGENT_MODEL, DEFAULT_VOICE_INSTRUCTIONS } from "../lib/realtimeTypes";
+import { RustVoiceSocket, SOCKET_OPEN } from "../lib/rustVoiceSocket";
 
-const XAI_REALTIME_URL = "wss://api.x.ai/v1/realtime";
-
-interface ClientSecretResponse {
-  value: string;
-  expires_at: number;
-}
 
 export interface UseVoiceAgentOptions {
   apiKey: string;
@@ -57,7 +51,7 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
   const [debugLogs, setDebugLogs] = useState<DebugLogEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  const wsRef = useRef<WebSocket | null>(null);
+  const wsRef = useRef<RustVoiceSocket | null>(null);
   const sessionReadyRef = useRef(false);
   const configRef = useRef<VoiceAgentSessionConfig | null>(null);
   const sampleRateRef = useRef(24000);
@@ -99,7 +93,7 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
     onErrorRef.current?.(message);
   }, []);
 
-  const configureSession = useCallback((ws: WebSocket) => {
+  const configureSession = useCallback((ws: RustVoiceSocket) => {
     const cfg = configRef.current;
     if (!cfg) return;
 
@@ -129,7 +123,7 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
     addLog("SEND", msg);
   }, [addLog]);
 
-  const sendGreeting = useCallback((ws: WebSocket) => {
+  const sendGreeting = useCallback((ws: RustVoiceSocket) => {
     const greeting = {
       type: "conversation.item.create",
       item: {
@@ -308,34 +302,24 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
 
       try {
         const modelId = config.modelId || DEFAULT_VOICE_AGENT_MODEL;
-        const secret = await invoke<ClientSecretResponse>("create_voice_client_secret", {
-          apiKey,
-          expiresAfterSecs: 300,
-          model: modelId,
-          reasoningEffort: config.reasoningEffort ?? "high",
+        // xAI recommends proxying realtime voice through a backend; Rust opens the
+        // socket with a real Authorization header (SuperGrok, then a saved API key).
+        const { socket: ws, info } = await RustVoiceSocket.connect(apiKey, modelId);
+        addLog("RECV", {
+          type: "proxy.connected",
+          delta: `${modelId} via ${info.credential}${
+            info.fallbackUsed ? " (SuperGrok sign-in was refused for realtime voice)" : ""
+          }`,
         });
 
-        if (!secret?.value) {
-          throw new Error("Empty client secret returned from xAI");
-        }
-
-        const model = encodeURIComponent(modelId);
-        const url = `${XAI_REALTIME_URL}?model=${model}`;
-
-        // Browser cannot set Authorization headers on WebSocket; pass the
-        // ephemeral token via the Sec-WebSocket-Protocol header (xAI convention).
-        const ws = new WebSocket(url, [`xai-client-secret.${secret.value}`]);
-        let opened = false;
-
         ws.onopen = () => {
-          opened = true;
           setIsConnected(true);
           setStatus("connecting");
         };
 
         ws.onmessage = (event) => {
           try {
-            const msg = JSON.parse(event.data as string) as RealtimeMessage;
+            const msg = JSON.parse(event.data) as RealtimeMessage;
             handleServerMessage(msg);
           } catch (e) {
             console.error("[voice] Failed to parse WS message:", e);
@@ -343,16 +327,7 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
         };
 
         ws.onerror = () => {
-          if (opened) {
-            pushError("WebSocket connection error");
-            return;
-          }
-          // The webview hides why a handshake failed — ask Rust to repeat it and
-          // report the server's status and message.
-          pushError(`WebSocket connection error — checking why (model ${modelId})…`);
-          void invoke<string>("probe_voice_realtime", { secret: secret.value, model: modelId })
-            .then((why) => pushError(`WebSocket connection error (model ${modelId}): ${why}`))
-            .catch(() => {});
+          pushError("Voice connection error — the session was interrupted");
         };
 
         ws.onclose = (event) => {
@@ -375,7 +350,7 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
         setIsConnected(false);
       }
     },
-    [apiKey, handleServerMessage, pushError]
+    [apiKey, addLog, handleServerMessage, pushError]
   );
 
   const disconnect = useCallback(() => {
@@ -394,7 +369,7 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
 
   const sendAudio = useCallback((base64Pcm16: string) => {
     const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN || !sessionReadyRef.current) return;
+    if (!ws || ws.readyState !== SOCKET_OPEN || !sessionReadyRef.current) return;
     ws.send(
       JSON.stringify({
         type: "input_audio_buffer.append",
@@ -406,7 +381,7 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
   const sendText = useCallback(
     (text: string) => {
       const ws = wsRef.current;
-      if (!ws || ws.readyState !== WebSocket.OPEN || !sessionReadyRef.current) return;
+      if (!ws || ws.readyState !== SOCKET_OPEN || !sessionReadyRef.current) return;
       const trimmed = text.trim();
       if (!trimmed) return;
 
