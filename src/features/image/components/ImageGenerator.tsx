@@ -137,6 +137,8 @@ interface SourceImage {
   mimeType: string;
 }
 
+const COMPACT_CONTROLS_KEY = "grok-agent.image.compactControls";
+
 interface ImageGeneratorProps {
   apiKey: string;
   /**
@@ -208,7 +210,26 @@ export function ImageGenerator({
   const [aspectRatio, setAspectRatio] = useState<string>("1:1");
   const [sourceImageDims, setSourceImageDims] = useState<{ width: number; height: number } | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
-  const [textareaHeight, setTextareaHeight] = useState(100);
+  const [textareaHeight, setTextareaHeight] = useState(72);
+  // Compact controls: hide the option rows so the image area gets the space.
+  const [compactControls, setCompactControls] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(COMPACT_CONTROLS_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const toggleCompactControls = () => {
+    setCompactControls((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(COMPACT_CONTROLS_KEY, next ? "1" : "0");
+      } catch {
+        /* preference just won't persist */
+      }
+      return next;
+    });
+  };
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   /** "auto" = global api.x.ai; "us-east-1" | "eu-west-1" = pinned region */
   const [region, setRegion] = useState<"auto" | "us-east-1" | "eu-west-1">("auto");
@@ -713,10 +734,21 @@ export function ImageGenerator({
         )}
       </div>
 
-      <div className="border-t theme-border p-4 space-y-3 relative z-10 theme-surface">
+      <div className="border-t theme-border px-4 pt-1 pb-3 space-y-2 relative z-10 theme-surface">
+        {/* Show/hide the option rows (mode, references, aspect, count…) */}
+        <button
+          type="button"
+          onClick={toggleCompactControls}
+          aria-expanded={!compactControls}
+          title={compactControls ? "Show all image options" : "Hide options to give the image more room"}
+          className="absolute right-4 top-1 z-10 text-xs px-2 py-0.5 rounded theme-text-muted hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+        >
+          {compactControls ? "▴ Show options" : "▾ Hide options"}
+        </button>
+
         {/* Resize handle */}
         <div
-          className="flex justify-center cursor-ns-resize py-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-t transition-colors"
+          className={`flex justify-center cursor-ns-resize py-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-t transition-colors ${compactControls ? "invisible" : ""}`}
           onMouseDown={(e) => {
             e.preventDefault();
             dragStartY.current = e.clientY;
@@ -738,7 +770,7 @@ export function ImageGenerator({
         </div>
 
         {/* Mode selector */}
-        <div className="flex items-center gap-1.5 flex-wrap">
+        <div className={`flex items-center gap-1.5 flex-wrap ${compactControls ? "hidden" : ""}`}>
           <span className="text-sm font-semibold theme-text">Mode:</span>
           {([
             { value: "none",         label: "Text → Image",       hint: "Pure creative generation from text" },
@@ -906,11 +938,15 @@ export function ImageGenerator({
                       : "Describe the image you want to create… (Ctrl+Enter)"
               }
               className="w-full resize-none"
-              style={{ height: `${textareaHeight}px`, minHeight: "60px", maxHeight: "300px" }}
+              style={
+                compactControls
+                  ? { height: "44px", minHeight: "44px" }
+                  : { height: `${textareaHeight}px`, minHeight: "60px", maxHeight: "300px" }
+              }
             />
 
             {/* ── Reference images strip (multi-image editing, up to 5) ─────── */}
-            {(searchMode === "reference" || sourceImage) && (
+            {!compactControls && (searchMode === "reference" || sourceImage) && (
               <div className="rounded-xl border theme-border px-3 py-2 space-y-1.5">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-sm font-semibold theme-text">References:</span>
@@ -986,12 +1022,12 @@ export function ImageGenerator({
             )}
 
             {/* Aspect ratio selector */}
-            <AspectRatioSelector value={aspectRatio} onChange={setAspectRatio} />
+            {!compactControls && <AspectRatioSelector value={aspectRatio} onChange={setAspectRatio} />}
           </>
         )}
 
         {/* ── Count + Resolution + Region controls ───────────────────────── */}
-        <div className="flex items-center gap-4 flex-wrap">
+        <div className={`flex items-center gap-4 flex-wrap ${compactControls ? "hidden" : ""}`}>
           {/* Image count */}
           <div className="flex items-center gap-1.5">
             <span className="text-sm font-semibold theme-text">Count:</span>
