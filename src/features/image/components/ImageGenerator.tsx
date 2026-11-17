@@ -139,6 +139,11 @@ interface SourceImage {
 
 interface ImageGeneratorProps {
   apiKey: string;
+  /**
+   * SuperGrok sign-in is active. The backend resolves (and refreshes) the OAuth
+   * token at request time, so an empty frontend token must not block generation.
+   */
+  isSuperGrok?: boolean;
   onGenerateImage: (options: {
     prompt: string;
     apiKey: string;
@@ -175,6 +180,7 @@ interface ImageGeneratorProps {
 
 export function ImageGenerator({
   apiKey,
+  isSuperGrok = false,
   onGenerateImage,
   generatedImages,
   imageCosts,
@@ -1116,7 +1122,7 @@ export function ImageGenerator({
             )}
           </div>
           <div className="flex items-center gap-3">
-            {!apiKey && (
+            {!apiKey && !isSuperGrok && (
               <span className="text-xs text-amber-600 dark:text-amber-400">
                 ⚠️ xAI API key required
               </span>
@@ -1130,7 +1136,7 @@ export function ImageGenerator({
               onClick={handleGenerate}
               disabled={
                 isLoading ||
-                !apiKey ||
+                (!apiKey && !isSuperGrok) ||
                 (searchMode === "change-ratio" ? !sourceImage : !prompt.trim())
               }
             >

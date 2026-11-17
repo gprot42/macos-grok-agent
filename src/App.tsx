@@ -449,6 +449,7 @@ function App() {
           <div className={`flex flex-col flex-1 min-h-0 overflow-hidden ${activeTab === "image" ? "" : "hidden"}`}>
             <ImageGenerator
               apiKey={getXaiCredential()}
+              isSuperGrok={settings.authMode === "SUPERGROK_OAUTH"}
               onGenerateImage={generateImage}
               generatedImages={generatedImages}
               imageCosts={imageCosts}
@@ -500,6 +501,7 @@ function App() {
           <SettingsPanel
             settings={settings}
             onUpdateSettings={updateSettings}
+            onAuthChanged={refreshXaiBearer}
             onClose={() => setShowSettings(false)}
           />
         )}

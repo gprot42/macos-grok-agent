@@ -13,6 +13,8 @@ import {
 interface SettingsPanelProps {
   settings: AppSettings;
   onUpdateSettings: (updates: Partial<AppSettings>) => void;
+  /** Called after the stored SuperGrok session changes (sign-in, import, sign-out). */
+  onAuthChanged?: () => void | Promise<void>;
   onClose: () => void;
 }
 
@@ -50,6 +52,7 @@ function SettingRow({
 export function SettingsPanel({
   settings,
   onUpdateSettings,
+  onAuthChanged,
   onClose,
 }: SettingsPanelProps) {
   const [openrouterKey, setOpenrouterKey] = useState(settings.openrouterKey || "");
@@ -133,6 +136,9 @@ export function SettingsPanel({
         oauthSignedIn: true,
         oauthEmail: info.email ?? undefined,
       });
+      // The stored session changed even if the mode flags did not (re-import or
+      // re-login over an expired session), so re-resolve the bearer explicitly.
+      void onAuthChanged?.();
     } catch (e) {
       if (loginAbortRef.current) return;
       setOauthLoginInProgress(false);
@@ -157,6 +163,7 @@ export function SettingsPanel({
         oauthSignedIn: false,
         oauthEmail: undefined,
       });
+      void onAuthChanged?.();
       setOauthLoginMessage("Signed out of SuperGrok. Using API key mode.");
     } catch (e) {
       setOauthLoginMessage(String(e));
@@ -175,6 +182,9 @@ export function SettingsPanel({
         oauthSignedIn: true,
         oauthEmail: info.email ?? undefined,
       });
+      // The stored session changed even if the mode flags did not (re-import or
+      // re-login over an expired session), so re-resolve the bearer explicitly.
+      void onAuthChanged?.();
       setOauthLoginMessage(
         info.email
           ? `Imported SuperGrok session for ${info.email}.`
