@@ -479,7 +479,11 @@ function App() {
 
           {/* Voice — always mounted to preserve audio state */}
           <div className={`flex flex-col flex-1 min-h-0 overflow-hidden ${activeTab === "voice" ? "" : "hidden"}`}>
-            <VoiceTab apiKey={getXaiCredential()} activeProject={activeProject} />
+            <VoiceTab
+              apiKey={getXaiCredential()}
+              isSuperGrok={settings.authMode === "SUPERGROK_OAUTH"}
+              activeProject={activeProject}
+            />
           </div>
 
           {/* Code — always mounted to preserve agent conversation and working dir */}

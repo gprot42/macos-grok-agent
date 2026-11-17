@@ -23,6 +23,8 @@ import { RustVoiceSocket, SOCKET_OPEN } from "../lib/rustVoiceSocket";
 
 export interface UseVoiceAgentOptions {
   apiKey: string;
+  /** SuperGrok sign-in is active; Rust resolves the credential when connecting. */
+  isSuperGrok?: boolean;
   onAudioDelta: (base64Pcm16: string) => void;
   onSpeechStarted: () => void;
   onError?: (message: string) => void;
@@ -43,7 +45,7 @@ export interface UseVoiceAgentReturn {
 }
 
 export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentReturn {
-  const { apiKey, onAudioDelta, onSpeechStarted, onError } = options;
+  const { apiKey, isSuperGrok = false, onAudioDelta, onSpeechStarted, onError } = options;
 
   const [status, setStatus] = useState<VoiceAgentStatus>("idle");
   const [isConnected, setIsConnected] = useState(false);
@@ -281,7 +283,7 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
 
   const connect = useCallback(
     async (config: VoiceAgentSessionConfig, sampleRate: number) => {
-      if (!apiKey?.trim()) {
+      if (!apiKey?.trim() && !isSuperGrok) {
         pushError("xAI API key required. Add it in Settings.");
         return;
       }
@@ -350,7 +352,7 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
         setIsConnected(false);
       }
     },
-    [apiKey, addLog, handleServerMessage, pushError]
+    [apiKey, isSuperGrok, addLog, handleServerMessage, pushError]
   );
 
   const disconnect = useCallback(() => {

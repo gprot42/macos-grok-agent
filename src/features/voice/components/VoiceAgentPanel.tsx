@@ -30,6 +30,11 @@ import {
 
 interface VoiceAgentPanelProps {
   apiKey: string;
+  /**
+   * SuperGrok sign-in is active. Rust resolves (and refreshes) the credential
+   * when the session opens, so an empty frontend token must not block Start.
+   */
+  isSuperGrok?: boolean;
 }
 
 function statusLabel(status: VoiceAgentStatus): string {
@@ -66,7 +71,8 @@ function statusDotClass(status: VoiceAgentStatus): string {
   }
 }
 
-export function VoiceAgentPanel({ apiKey }: VoiceAgentPanelProps) {
+export function VoiceAgentPanel({ apiKey, isSuperGrok = false }: VoiceAgentPanelProps) {
+  const hasCredential = !!apiKey || isSuperGrok;
   const [modelId, setModelId] = useState(DEFAULT_VOICE_AGENT_MODEL);
   const [voice, setVoice] = useState("eve");
   const [customVoices, setCustomVoices] = useState<CustomVoice[]>([]);
@@ -126,6 +132,7 @@ export function VoiceAgentPanel({ apiKey }: VoiceAgentPanelProps) {
     clearLogs,
   } = useVoiceAgent({
     apiKey,
+    isSuperGrok,
     onAudioDelta: playAudio,
     onSpeechStarted: stopPlayback,
   });
@@ -295,7 +302,7 @@ export function VoiceAgentPanel({ apiKey }: VoiceAgentPanelProps) {
           {!active ? (
             <Button
               onClick={handleStart}
-              disabled={!apiKey}
+              disabled={!hasCredential}
               className="gap-1.5 bg-sky-500 hover:bg-sky-600 text-white"
             >
               <Phone className="h-4 w-4" />
@@ -388,7 +395,7 @@ export function VoiceAgentPanel({ apiKey }: VoiceAgentPanelProps) {
           </div>
         )}
 
-        {!apiKey && (
+        {!hasCredential && (
           <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
             Add your xAI API key in Settings to start a live voice session.
           </div>

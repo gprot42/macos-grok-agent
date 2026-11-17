@@ -6,6 +6,8 @@ import { VoiceAgentPanel } from "./VoiceAgentPanel";
 
 interface VoiceTabProps {
   apiKey: string;
+  /** SuperGrok sign-in is active; the backend resolves the token per request. */
+  isSuperGrok?: boolean;
   /** When set, transcripts are saved into this project's outputs folder. */
   activeProject?: string | null;
 }
@@ -79,7 +81,7 @@ const MODES: {
   },
 ];
 
-export function VoiceTab({ apiKey, activeProject = null }: VoiceTabProps) {
+export function VoiceTab({ apiKey, isSuperGrok = false, activeProject = null }: VoiceTabProps) {
   const [mode, setMode] = useState<VoiceMode>("agent");
 
   return (
@@ -182,7 +184,7 @@ export function VoiceTab({ apiKey, activeProject = null }: VoiceTabProps) {
 
       <div className={`flex-1 min-h-0 overflow-hidden ${mode === "transcribe" ? "hidden" : ""}`}>
         {mode === "transcribe" ? null : mode === "agent" ? (
-          <VoiceAgentPanel apiKey={apiKey} />
+          <VoiceAgentPanel apiKey={apiKey} isSuperGrok={isSuperGrok} />
         ) : (
           <GrokVoicePanel
             apiKey={apiKey}
